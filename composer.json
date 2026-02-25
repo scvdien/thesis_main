@@ -1,0 +1,8 @@
+{
+  "name": "barangay-cabarian/hims",
+  "description": "Report export dependencies for PDF and Excel generation.",
+  "require": {
+    "setasign/fpdf": "^1.8",
+    "phpoffice/phpspreadsheet": "^1.29"
+  }
+}

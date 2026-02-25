@@ -1,0 +1,316 @@
+:root {
+  --ink:#0b2a3f;
+  --muted:#6b7280;
+  --accent:#0a66d3;
+  --accent-2:#0fb4a9;
+  --panel:#ffffff;
+  --radius:24px;
+  --shadow:0 24px 50px rgba(15, 23, 42, 0.18);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+
+body{
+  margin:0;
+  font-family:'Manrope', sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(900px 500px at 15% 10%, rgba(15, 180, 169, 0.12), transparent 60%),
+    radial-gradient(700px 400px at 90% 20%, rgba(10, 102, 211, 0.16), transparent 55%),
+    linear-gradient(180deg, #f7fbff 0%, #f2f6fb 100%);
+  display:flex;
+  flex-direction:column;
+}
+
+body::before,
+body::after{
+  content:'';
+  position:fixed;
+  width:320px;
+  height:320px;
+  border-radius:50%;
+  z-index:0;
+  opacity:0.3;
+  pointer-events:none;
+}
+body::before{
+  top:-120px;
+  right:-120px;
+  background:radial-gradient(circle at 30% 30%, rgba(10, 102, 211, 0.45), transparent 70%);
+}
+body::after{
+  bottom:-140px;
+  left:-140px;
+  background:radial-gradient(circle at 30% 30%, rgba(15, 180, 169, 0.45), transparent 70%);
+}
+
+.page{
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:32px 20px;
+  position:relative;
+  z-index:1;
+}
+
+.login-shell{
+  width:100%;
+  max-width:980px;
+  display:grid;
+  grid-template-columns:1.05fr 0.95fr;
+  gap:24px;
+  min-width:0;
+}
+
+.brand-panel{
+  background:linear-gradient(135deg, #0c3958 0%, #116e8a 100%);
+  color:#f8fafc;
+  padding:32px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+.brand-panel::after{
+  content:'';
+  position:absolute;
+  width:260px;
+  height:260px;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,0.2);
+  top:-90px;
+  right:-70px;
+}
+
+.brand-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.14);
+  text-transform:uppercase;
+  letter-spacing:0.12em;
+  font-size:0.72rem;
+  font-weight:600;
+}
+
+.brand-mark{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.brand-mark img{
+  width:56px;
+  height:56px;
+  border-radius:14px;
+  padding:6px;
+  background:#fff;
+  box-shadow:0 12px 22px rgba(0,0,0,0.18);
+}
+.brand-title{
+  font-family:'Fraunces', serif;
+  font-size:1.55rem;
+  letter-spacing:0.01em;
+}
+.brand-sub{
+  font-size:1rem;
+  color:rgba(248, 250, 252, 0.85);
+}
+.brand-desc{
+  margin:0;
+  color:rgba(248, 250, 252, 0.75);
+  line-height:1.6;
+}
+.brand-logos{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  margin-top:auto;
+}
+.brand-logos img{
+  width:44px;
+  height:44px;
+  border-radius:12px;
+  padding:6px;
+  background:rgba(255,255,255,0.15);
+}
+.brand-note{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:0.9rem;
+  font-weight:600;
+  color:#fef3c7;
+}
+
+.form-panel{
+  background:var(--panel);
+  border-radius:var(--radius);
+  padding:32px;
+  box-shadow:0 20px 40px rgba(15, 23, 42, 0.12);
+  border:1px solid rgba(15, 23, 42, 0.06);
+  display:flex;
+  flex-direction:column;
+  gap:24px;
+}
+
+.form-head h2{
+  margin:6px 0 0;
+  font-family:'Fraunces', serif;
+  font-size:1.6rem;
+}
+.form-head p{
+  margin:6px 0 0;
+  color:var(--muted);
+}
+
+.eyebrow{
+  font-size:0.72rem;
+  font-weight:700;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+.login-form{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+.form-error{
+  display:none;
+  border-radius:12px;
+  border:1px solid #fecaca;
+  background:#fff1f2;
+  color:#9f1239;
+  font-size:0.88rem;
+  padding:10px 12px;
+}
+
+.form-error.is-visible{
+  display:block;
+}
+
+.field label{
+  display:block;
+  margin-bottom:6px;
+  font-size:0.85rem;
+  color:var(--muted);
+  font-weight:600;
+}
+
+.input-wrap{
+  position:relative;
+}
+.input-wrap i{
+  position:absolute;
+  left:12px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#94a3b8;
+}
+
+.form-control{
+  border-radius:12px;
+  border:1px solid #e2e8f0;
+  padding:12px 14px 12px 40px;
+  font-size:0.95rem;
+  background:#f8fafc;
+}
+.form-control:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 4px rgba(10, 102, 211, 0.15);
+  background:#fff;
+}
+
+.form-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:0.85rem;
+  color:var(--muted);
+  gap:12px;
+}
+
+.check{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.link{
+  color:var(--accent);
+  text-decoration:none;
+  font-weight:600;
+}
+.link:hover{ text-decoration:underline; }
+
+.btn-primary{
+  background:linear-gradient(135deg, var(--accent), #1287d1);
+  border:none;
+  border-radius:12px;
+  padding:12px 18px;
+  font-weight:600;
+  box-shadow:0 14px 28px rgba(10, 102, 211, 0.2);
+}
+
+footer{
+  text-align:center;
+  padding:14px 12px 18px;
+  font-size:0.85rem;
+  color:var(--muted);
+}
+
+.reveal{
+  opacity:0;
+  transform:translateY(14px);
+  animation:revealUp 600ms ease forwards;
+}
+.delay-1{ animation-delay:120ms; }
+.delay-2{ animation-delay:220ms; }
+
+@keyframes revealUp{
+  to{ opacity:1; transform:translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .reveal{ animation:none; opacity:1; transform:none; }
+}
+
+@media (max-width: 980px){
+  .login-shell{ grid-template-columns:1fr; }
+  .brand-panel{ order:2; }
+  .form-panel{ order:1; }
+}
+
+@media (max-width: 600px){
+  .page{ padding:20px 16px; }
+  .brand-panel, .form-panel{ padding:24px; }
+  .brand-title{ font-size:1.35rem; }
+  .form-head h2{ font-size:1.4rem; }
+  .brand-mark{ align-items:flex-start; flex-direction:column; }
+  .brand-mark img{ width:52px; height:52px; }
+  .brand-desc{ font-size:0.95rem; }
+  .brand-logos img{ width:40px; height:40px; }
+  .form-row{ flex-direction:column; align-items:flex-start; }
+  .form-panel{ box-shadow:0 12px 26px rgba(15, 23, 42, 0.14); }
+}
+
+@media (max-width: 420px){
+  .page{ padding:16px 12px; }
+  .brand-panel, .form-panel{ padding:20px; border-radius:18px; }
+  .brand-title{ font-size:1.2rem; }
+  .brand-sub{ font-size:0.9rem; }
+  .form-head h2{ font-size:1.25rem; }
+  .form-control{ padding:10px 12px 10px 36px; }
+  .input-wrap i{ left:10px; }
+  .brand-logos{ gap:8px; }
+  .brand-logos img{ width:36px; height:36px; }
+}

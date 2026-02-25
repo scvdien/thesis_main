@@ -1,0 +1,78 @@
+#residentDetailsModal .modal-body {
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.resident-modal-accordion {
+  border: 1px solid #dce7f3;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.resident-modal-accordion .accordion-item {
+  border: 0;
+  border-bottom: 1px solid #dce7f3;
+}
+
+.resident-modal-accordion .accordion-item:last-child {
+  border-bottom: 0;
+}
+
+.resident-modal-accordion .accordion-button {
+  background: #f7fafe;
+  color: #0f4c6b;
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: none;
+}
+
+.resident-modal-accordion .accordion-button:not(.collapsed) {
+  background: #edf5ff;
+  color: #0f4c6b;
+}
+
+.resident-modal-accordion .accordion-body {
+  background: #fff;
+  padding: 12px;
+}
+
+.resident-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.resident-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resident-detail-item .k {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.resident-detail-item .v {
+  background: #f7fafe;
+  border: 1px solid #e0eaf6;
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-weight: 600;
+  color: #1b2a3a;
+}
+
+.resident-detail-item.full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 768px) {
+  .resident-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
