@@ -35,6 +35,128 @@ function reg_text(mixed $value, int $maxLength = 255): string
     return $text;
 }
 
+function reg_title_case_text(mixed $value): string
+{
+    $text = trim((string) $value);
+    $text = preg_replace('/[\x00-\x1F\x7F]/u', '', $text);
+    if (!is_string($text) || $text === '') {
+        return '';
+    }
+
+    $text = preg_replace('/\s+/u', ' ', $text);
+    if (!is_string($text) || $text === '') {
+        return '';
+    }
+
+    $parts = preg_split('/(\s+)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($parts) || count($parts) === 0) {
+        return $text;
+    }
+
+    $result = [];
+    foreach ($parts as $part) {
+        if ($part === '' || preg_match('/^\s+$/u', $part) === 1) {
+            $result[] = $part;
+            continue;
+        }
+
+        $lettersOnly = preg_replace('/[^[:alpha:]]/u', '', $part);
+        if (!is_string($lettersOnly) || $lettersOnly === '') {
+            $result[] = $part;
+            continue;
+        }
+
+        $hasUpper = preg_match('/[[:upper:]]/u', $part) === 1;
+        $hasLower = preg_match('/[[:lower:]]/u', $part) === 1;
+        $letterLength = function_exists('mb_strlen')
+            ? (int) mb_strlen($lettersOnly, 'UTF-8')
+            : strlen($lettersOnly);
+
+        // Keep short acronyms in all-caps (ex. SSS, PWD, RHU).
+        if ($hasUpper && !$hasLower && $letterLength > 0 && $letterLength <= 4) {
+            $result[] = $part;
+            continue;
+        }
+
+        if (function_exists('mb_convert_case') && function_exists('mb_strtolower')) {
+            $result[] = mb_convert_case(mb_strtolower($part, 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
+            continue;
+        }
+
+        $result[] = ucwords(strtolower($part));
+    }
+
+    return trim(implode('', $result));
+}
+
+/**
+ * @param array<string, mixed> $person
+ * @return array<string, mixed>
+ */
+function reg_normalize_person_text_fields(array $person): array
+{
+    $titleCaseFields = [
+        'first_name',
+        'middle_name',
+        'last_name',
+        'extension_name',
+        'head_name',
+        'sex',
+        'civil_status',
+        'citizenship',
+        'religion',
+        'blood_type',
+        'address',
+        'zone',
+        'barangay',
+        'city',
+        'province',
+        'education',
+        'degree',
+        'school_name',
+        'school_type',
+        'occupation',
+        'employment_status',
+        'work_type',
+        'relation_to_head',
+        'partner_name',
+        'ownership',
+        'house_type',
+        'toilet',
+        'water',
+        'health_illness_type',
+        'health_medicine_name',
+        'health_medicine_source',
+        'health_rhu_reason',
+        'health_hospitalized_reason',
+    ];
+
+    foreach ($titleCaseFields as $field) {
+        if (!array_key_exists($field, $person)) {
+            continue;
+        }
+        $person[$field] = reg_title_case_text($person[$field]);
+    }
+
+    $titleCaseArrayFields = [
+        'health_chronic_diseases',
+        'health_common_illnesses',
+        'health_disability_types',
+    ];
+
+    foreach ($titleCaseArrayFields as $field) {
+        if (!array_key_exists($field, $person) || !is_array($person[$field])) {
+            continue;
+        }
+        $person[$field] = array_values(array_map(
+            static fn (mixed $item): string => reg_title_case_text($item),
+            $person[$field]
+        ));
+    }
+
+    return $person;
+}
+
 function reg_json_encode(mixed $value): string
 {
     $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -211,6 +333,49 @@ function reg_identity_part(mixed $value): string
     return trim($text);
 }
 
+function reg_identity_birthday_part(mixed $value): string
+{
+    $raw = reg_text($value, 120);
+    if ($raw === '') {
+        return '';
+    }
+
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+
+    $formats = [
+        '!Y-m-d',
+        '!m/d/Y',
+        '!m-d-Y',
+        '!n/j/Y',
+        '!n-j-Y',
+        '!m/d/y',
+        '!m-d-y',
+    ];
+
+    foreach ($formats as $format) {
+        $date = DateTimeImmutable::createFromFormat($format, $raw);
+        $errors = DateTimeImmutable::getLastErrors();
+        if (
+            $date instanceof DateTimeImmutable
+            && is_array($errors)
+            && (int) ($errors['warning_count'] ?? 0) === 0
+            && (int) ($errors['error_count'] ?? 0) === 0
+        ) {
+            return $date->format('Y-m-d');
+        }
+    }
+
+    $timestamp = strtotime($raw);
+    if ($timestamp !== false) {
+        return gmdate('Y-m-d', $timestamp);
+    }
+
+    return reg_identity_part($raw);
+}
+
 /**
  * @param array<string, mixed> $head
  */
@@ -218,7 +383,7 @@ function reg_household_identity(array $head): string
 {
     $firstName = reg_identity_part($head['first_name'] ?? '');
     $lastName = reg_identity_part($head['last_name'] ?? '');
-    $birthday = reg_identity_part($head['birthday'] ?? '');
+    $birthday = reg_identity_birthday_part($head['birthday'] ?? '');
     if ($firstName === '' || $lastName === '' || $birthday === '') {
         return '';
     }
@@ -324,12 +489,17 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     }
 
     $head = is_array($record['head'] ?? null) ? $record['head'] : [];
-    $members = reg_normalize_members($record['members'] ?? []);
+    $head = reg_normalize_person_text_fields($head);
+
+    $members = [];
+    foreach (reg_normalize_members($record['members'] ?? []) as $memberRow) {
+        $members[] = reg_normalize_person_text_fields($memberRow);
+    }
     if (count($members) === 0) {
         throw new InvalidArgumentException('At least one household member is required.');
     }
 
-    $headName = reg_text($record['head_name'] ?? '', 180);
+    $headName = reg_text(reg_title_case_text($record['head_name'] ?? ''), 180);
     if ($headName === '') {
         $first = reg_text($head['first_name'] ?? '', 80);
         $last = reg_text($head['last_name'] ?? '', 80);
@@ -338,7 +508,11 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     if ($headName === '') {
         $headName = 'Unnamed household head';
     }
-    $zone = reg_text($record['zone'] ?? ($head['zone'] ?? ''), 80);
+    $zone = reg_text(reg_title_case_text($record['zone'] ?? ($head['zone'] ?? '')), 80);
+    if ($zone === '') {
+        throw new InvalidArgumentException('Zone/Purok is required.');
+    }
+    $head['zone'] = $zone;
     $source = reg_text($record['source'] ?? 'registration-module', 80);
     $memberCount = max(1, count($members) + 1);
     $actorUserId = (int) ($authUser['id'] ?? 0);
