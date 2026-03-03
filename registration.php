@@ -4,6 +4,40 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['staff', 'secretary', 'admin']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandSidebarLabel = $brandLabel;
+if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandLabel . ' ' . $brandCity);
+}
+$systemLabel = trim($brandSidebarLabel . ' Household Information Management System');
+$footerBarangayLabel = $brandLabel;
+if (stripos($footerBarangayLabel, 'barangay') !== 0) {
+  $footerBarangayLabel = trim('Barangay ' . $footerBarangayLabel);
+}
+$footerLocationLabel = $footerBarangayLabel;
+if ($brandCity !== '' && stripos($footerLocationLabel, $brandCity) === false) {
+  $footerLocationLabel = trim($footerLocationLabel . ', ' . $brandCity);
+}
+$footerSystemLabel = trim($footerLocationLabel . ' Household Information Management System');
 $registrationCsrfToken = auth_csrf_token();
 $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-scripts.js') ?: time());
 ?>
@@ -26,9 +60,9 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" class="brand-logo">
+      <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" class="brand-logo">
       <div>
-        <div class="brand-title">Barangay Cabarian</div>
+        <div class="brand-title"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></div>
       </div>
     </div>
 
@@ -89,8 +123,8 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         </button>
         <div>
           <div class="content-title">Household Registration</div>
-          <div class="content-subtitle">Barangay Cabarian Household Information Management System</div>
-          <div class="content-subtitle content-subtitle-mobile">Barangay Cabarian</div>
+          <div class="content-subtitle"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></div>
+          <div class="content-subtitle content-subtitle-mobile"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></div>
         </div>
       </div>
       <div class="content-meta">
@@ -155,7 +189,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         <div class="row g-3">
           <div class="col-md-4"><label class="form-label required">Contact Number</label><input type="tel" class="form-control" name="contact" required></div>
           <div class="col-md-4"><label class="form-label required">Complete Address</label><input type="text" class="form-control" name="address" required></div>
-          <div class="col-md-4"><label class="form-label">Zone/Purok</label><input type="text" class="form-control" name="zone"></div>
+          <div class="col-md-4"><label class="form-label required">Zone</label><input type="text" class="form-control" name="zone" required></div>
           <div class="col-md-4"><label class="form-label">Barangay</label><input type="text" class="form-control" name="barangay"></div>
           <div class="col-md-4"><label class="form-label">City/Municipality</label><input type="text" class="form-control" name="city"></div>
           <div class="col-md-4"><label class="form-label">Province</label><input type="text" class="form-control" name="province"></div>
@@ -242,10 +276,10 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
     <div class="card section-card mb-4">
       <div class="card-header section-header">H. Household Data</div>
       <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-3"><label class="form-label required">Number of Household Members</label><input type="number" class="form-control" name="num_members" required></div>
+        <div class="row g-3 household-data-primary-row">
+          <div class="col-md-3"><label class="form-label required">No. of Household Members</label><input type="number" class="form-control" name="num_members" required></div>
           <div class="col-md-3"><label class="form-label">Relationship to Head</label><input type="text" class="form-control" name="relation_to_head"></div>
-          <div class="col-md-3"><label class="form-label">Number of Children</label><input type="number" class="form-control" name="num_children"></div>
+          <div class="col-md-3"><label class="form-label">No. of Children</label><input type="number" class="form-control" name="num_children"></div>
           <div class="col-md-3"><label class="form-label">Marital Partner Name</label><input type="text" class="form-control" name="partner_name" placeholder="optional"></div>
         </div>
       </div>
@@ -257,7 +291,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
       <div class="card-body">
         <div class="row g-3">
           <div class="col-md-4"><label class="form-label">House Ownership</label><select class="form-select" name="ownership"><option>Owned</option><option>Rented</option></select></div>
-          <div class="col-md-4"><label class="form-label">House Type</label><select class="form-select" name="house_type"><option>Concrete</option><option>Wood</option><option>Mixed</option></select></div>
+          <div class="col-md-4"><label class="form-label">House Type</label><select class="form-select" name="house_type"><option value="" selected>Select or type</option><option value="Concrete">Concrete</option><option value="Wood">Wood</option><option value="Mixed">Mixed</option></select></div>
           <div class="col-md-4">
             <label class="form-label">Toilet Type</label>
             <input class="form-control" list="toilet_options" name="toilet" id="toilet" placeholder="Select or type">
@@ -629,8 +663,8 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 
     <footer class="footer page-footer py-3 text-center mt-4">
       <div class="footer-inner">
-        <p class="mb-1 fw-semibold">Barangay Cabarian Household Information Management System</p>
-        <p class="mb-0 small">&copy; <span id="year"></span> Barangay Cabarian, Ligao City</p>
+        <p class="mb-1 fw-semibold"><?= htmlspecialchars($footerSystemLabel, ENT_QUOTES, 'UTF-8') ?></p>
+        <p class="mb-0 small">&copy; <span id="year"></span> <?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></p>
       </div>
     </footer>
   </main>
@@ -642,14 +676,13 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Preview Registration</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="previewBody"><p class="text-muted text-center">No details provided.</p></div>
+      <div class="modal-body" id="previewBody">
+        <p class="text-muted text-center mb-0">No details provided.</p>
+      </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="previewEditBtn">
-          <i class="bi bi-pencil"></i> Edit
-        </button>
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -745,18 +778,38 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   </div>
 </div>
 
-<!-- Replace Existing Household Modal -->
-<div class="modal fade" id="replaceHouseholdModal" tabindex="-1" aria-hidden="true">
+<!-- Pending Sync Queue Modal -->
+<div class="modal fade" id="pendingSyncModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content modern-modal pending-sync-modal">
+      <div class="modal-header border-0 pb-2">
+        <h5 class="modal-title mb-0">Pending Sync Households <span class="pending-sync-title-count" id="pendingSyncTitleCount">(0)</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="text-muted mb-3">Review pending households and resolve sync issues.</p>
+        <div class="pending-sync-list" id="pendingSyncList"></div>
+        <p class="text-muted mb-0 d-none" id="pendingSyncEmpty">No pending households.</p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pending Action Confirm Modal -->
+<div class="modal fade" id="pendingActionModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content modern-modal text-center">
       <div class="modal-icon mb-3 text-warning">
         <i class="bi bi-exclamation-circle-fill fs-1"></i>
       </div>
-      <h5 class="modal-title mb-2">Replace Existing Household?</h5>
-      <p class="mb-3" id="replaceHouseholdMessage">A matching household record already exists.</p>
+      <h5 class="modal-title mb-2" id="pendingActionModalTitle">Confirm Action</h5>
+      <p class="mb-3" id="pendingActionModalMessage">Are you sure you want to continue?</p>
       <div class="d-flex justify-content-center gap-2 flex-wrap">
         <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary btn-modern" id="replaceHouseholdConfirm">Replace</button>
+        <button type="button" class="btn btn-primary btn-modern" id="pendingActionConfirm">Confirm</button>
       </div>
     </div>
   </div>

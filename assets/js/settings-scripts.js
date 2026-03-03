@@ -53,15 +53,9 @@ if (isAdminRole) {
   document.querySelectorAll('[data-role="admin-only"]').forEach((el) => el.remove());
 }
 
-const reportsLink = document.querySelector('.menu a[href="reports.php"]');
-if (reportsLink && isAdminRole) {
-  reportsLink.setAttribute('href', 'admin-reports.php');
-}
-
-const currentYear = new Date().getFullYear();
 const footerYear = document.getElementById('year');
 if (footerYear) {
-  footerYear.textContent = '2026';
+  footerYear.textContent = String(new Date().getFullYear());
 }
 
 const logoutBtn = document.querySelector('.menu a.text-danger');
@@ -137,30 +131,35 @@ const STAFF_ACCOUNT_LIMIT = 5;
 const USERS_API_ENDPOINT = 'users-api.php';
 const SETTINGS_AUDIT_API_ENDPOINT = 'audit-trail-api.php';
 const SETTINGS_AUDIT_FETCH_LIMIT = 200;
+const ACTIVE_USERS_REFRESH_INTERVAL_MS = 30000;
+const BARANGAY_PROFILE_SEAL_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const BARANGAY_PROFILE_SEAL_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+const BACKUP_RESTORE_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const BACKUP_RESTORE_PRIORITY_NOTICE = 'Run Backup first before restoring. Restoring will overwrite current data.';
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
 const settingsState = {
   currentUser: null,
   adminAccount: null,
   staffAccounts: [],
-  activeUsers: []
+  activeUsers: [],
+  barangayProfile: null,
+  backupStatus: null
 };
 
 const settingsAuditState = {
   loading: false,
   error: '',
   items: [],
-  summary: {
-    total_actions: 0,
-    created_count: 0,
-    updated_count: 0,
-    deleted_count: 0
-  },
-  availableYears: []
+  availableYears: [],
+  total: 0
 };
 
 let isSettingsLoading = false;
 let isSettingsMutating = false;
+let isActiveUsersRefreshing = false;
+let activeUsersRefreshTimer = null;
+let isBackupActionBusy = false;
 
 const adminAccountCreateFullName = document.getElementById('adminAccountCreateFullName');
 const adminAccountCreateUsername = document.getElementById('adminAccountCreateUsername');
@@ -192,6 +191,14 @@ const staffDeleteConfirmModal =
   staffDeleteConfirmModalEl && window.bootstrap && window.bootstrap.Modal
     ? new window.bootstrap.Modal(staffDeleteConfirmModalEl)
     : null;
+const backupRestoreConfirmModalEl = document.getElementById('backupRestoreConfirmModal');
+const backupRestoreConfirmText = document.getElementById('backupRestoreConfirmText');
+const backupRestoreConfirmBtn = document.getElementById('backupRestoreConfirmBtn');
+const backupRestoreConfirmModal =
+  backupRestoreConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(backupRestoreConfirmModalEl)
+    : null;
+let resolveBackupRestoreConfirm = null;
 let pendingDeleteStaffId = '';
 const staffViewModalEl = document.getElementById('staffViewModal');
 const staffViewName = document.getElementById('staffViewName');
@@ -244,15 +251,35 @@ const staffAccountNotice = document.getElementById('staffAccountNotice');
 const staffAccountsList = document.getElementById('staffAccountsList');
 const activeUsersList = document.getElementById('activeUsersList');
 const activeUsersBadge = document.getElementById('activeUsersBadge');
+const barangayProfilePanel = document.getElementById('barangay-profile');
+const barangayProfileNameInput = document.getElementById('barangayProfileName');
+const barangayProfileCodeInput = document.getElementById('barangayProfileCode');
+const barangayProfileCaptainNameInput = document.getElementById('barangayProfileCaptainName');
+const barangayProfileSecretaryNameInput = document.getElementById('barangayProfileSecretaryName');
+const barangayProfileSealBrowseBtn = document.getElementById('barangayProfileSealBrowseBtn');
+const barangayProfileSealDisplayName = document.getElementById('barangayProfileSealDisplayName');
+const barangayProfileSealInput = document.getElementById('barangayProfileSeal');
+const barangayProfileSaveBtn = document.getElementById('barangayProfileSaveBtn');
+const barangayProfileNotice = document.getElementById('barangayProfileNotice');
+const backupRestorePanel = document.getElementById('backup-restore');
+const backupHealthBadge = document.getElementById('backupHealthBadge');
+const backupScheduleSelect = document.getElementById('backupScheduleSelect');
+const backupStorageLocationSelect = document.getElementById('backupStorageLocationSelect');
+const backupLastBackupInput = document.getElementById('backupLastBackup');
+const backupSizeDisplayInput = document.getElementById('backupSizeDisplay');
+const backupRestoreFileInput = document.getElementById('backupRestoreFile');
+const backupRestoreNotice = document.getElementById('backupRestoreNotice');
+const backupRunBtn = document.getElementById('backupRunBtn');
+const backupDownloadBtn = document.getElementById('backupDownloadBtn');
+const backupRestoreBtn = document.getElementById('backupRestoreBtn');
 const settingsAuditSearchInput = document.getElementById('settingsAuditSearchInput');
-const settingsAuditActionFilter = document.getElementById('settingsAuditActionFilter');
+const settingsAuditActionPills = document.querySelectorAll('.audit-quick-pill[data-settings-audit-action]');
 const settingsAuditUserFilter = document.getElementById('settingsAuditUserFilter');
 const settingsAuditYearFilter = document.getElementById('settingsAuditYearFilter');
+const settingsAuditSortFilter = document.getElementById('settingsAuditSortFilter');
+const settingsAuditClearFiltersBtn = document.getElementById('settingsAuditClearFiltersBtn');
+const settingsAuditRecordCount = document.getElementById('settingsAuditRecordCount');
 const settingsAuditTableBody = document.getElementById('settingsAuditTableBody');
-const settingsAuditTotalActions = document.getElementById('settingsAuditTotalActions');
-const settingsAuditCreatedCount = document.getElementById('settingsAuditCreatedCount');
-const settingsAuditUpdatedCount = document.getElementById('settingsAuditUpdatedCount');
-const settingsAuditDeletedCount = document.getElementById('settingsAuditDeletedCount');
 
 const settingsAuditRoleLabelMap = {
   captain: 'Barangay Captain',
@@ -329,6 +356,8 @@ const normalizeActiveUser = (account) => {
   const username = String(account.username || '').trim();
   const role = String(account.role || '').trim().toLowerCase();
   if (!id || !fullName || !username || !role) return null;
+  const rawPresence = String(account.presence || '').trim().toLowerCase();
+  const presence = rawPresence === 'online' ? 'online' : 'offline';
   return {
     id: String(id),
     fullName,
@@ -336,7 +365,40 @@ const normalizeActiveUser = (account) => {
     role,
     roleLabel: String(account.roleLabel || role).trim(),
     module: String(account.module || '').trim(),
-    status: String(account.status || 'active').toLowerCase() === 'deactivated' ? 'deactivated' : 'active'
+    status: String(account.status || 'active').toLowerCase() === 'deactivated' ? 'deactivated' : 'active',
+    presence,
+    lastSeenAt: String(account.lastSeenAt || '').trim()
+  };
+};
+
+const normalizeBarangayProfile = (profile) => {
+  const row = profile && typeof profile === 'object' ? profile : {};
+  return {
+    regionName: String(row.region_name || row.regionName || '').trim(),
+    provinceName: String(row.province_name || row.provinceName || '').trim(),
+    cityName: String(row.city_name || row.cityName || '').trim(),
+    barangayName: String(row.barangay_name || row.barangayName || '').trim(),
+    barangayCode: String(row.barangay_code || row.barangayCode || '').trim(),
+    captainName: String(row.captain_name || row.captainName || '').trim(),
+    secretaryName: String(row.secretary_name || row.secretaryName || '').trim(),
+    officialSealPath: String(row.official_seal_path || row.officialSealPath || '').trim()
+  };
+};
+
+const normalizeBackupStatus = (status) => {
+  const row = status && typeof status === 'object' ? status : {};
+  const rawSize = Number(row.last_backup_size_bytes ?? row.lastBackupSizeBytes ?? 0);
+  const sizeBytes = Number.isFinite(rawSize) && rawSize > 0 ? Math.trunc(rawSize) : 0;
+  const fileName = String(row.last_backup_file_name || row.lastBackupFileName || '').trim();
+  const available = row.available === true || sizeBytes > 0 || fileName !== '';
+  return {
+    available,
+    schedule: String(row.schedule || 'Manual Only').trim() || 'Manual Only',
+    storageLocation: String(row.storage_location || row.storageLocation || 'Local Server').trim() || 'Local Server',
+    lastBackupAt: String(row.last_backup_at || row.lastBackupAt || '').trim(),
+    lastBackupSizeBytes: sizeBytes,
+    lastBackupSizeLabel: String(row.last_backup_size_label || row.lastBackupSizeLabel || '').trim(),
+    lastBackupFileName: fileName
   };
 };
 
@@ -344,6 +406,8 @@ const readCurrentUser = () => settingsState.currentUser;
 const readAdminAccount = () => settingsState.adminAccount;
 const readStaffAccounts = () => (Array.isArray(settingsState.staffAccounts) ? settingsState.staffAccounts.slice() : []);
 const readActiveUsers = () => (Array.isArray(settingsState.activeUsers) ? settingsState.activeUsers.slice() : []);
+const readBarangayProfile = () => settingsState.barangayProfile;
+const readBackupStatus = () => settingsState.backupStatus;
 
 const hasValidAdminAccount = (account) => !!(account && account.id && account.username && account.fullName);
 
@@ -353,6 +417,8 @@ const applySettingsPayload = (payload) => {
     settingsState.adminAccount = null;
     settingsState.staffAccounts = [];
     settingsState.activeUsers = [];
+    settingsState.barangayProfile = null;
+    settingsState.backupStatus = null;
     return;
   }
   settingsState.currentUser = normalizeCurrentUser(payload.current_user);
@@ -361,6 +427,8 @@ const applySettingsPayload = (payload) => {
   settingsState.staffAccounts = staffRows.map(normalizeStaffAccount).filter(Boolean);
   const activeRows = Array.isArray(payload.active_users) ? payload.active_users : [];
   settingsState.activeUsers = activeRows.map(normalizeActiveUser).filter(Boolean);
+  settingsState.barangayProfile = normalizeBarangayProfile(payload.barangay_profile);
+  settingsState.backupStatus = normalizeBackupStatus(payload.backup_status);
 };
 
 const usersApiFetch = async (method = 'GET', payload = null) => {
@@ -408,6 +476,82 @@ const usersApiFetch = async (method = 'GET', payload = null) => {
   return json;
 };
 
+const usersApiFetchMultipart = async (formData) => {
+  if (!(formData instanceof FormData)) {
+    throw new Error('Invalid upload payload.');
+  }
+  if (!csrfToken) {
+    throw new Error('Missing CSRF token. Reload the page and try again.');
+  }
+
+  const options = {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      'X-CSRF-Token': csrfToken
+    },
+    body: formData
+  };
+
+  let response;
+  try {
+    response = await fetch(USERS_API_ENDPOINT, options);
+  } catch (error) {
+    throw new Error('Cannot reach user management API right now.');
+  }
+
+  let json = null;
+  try {
+    json = await response.json();
+  } catch (error) {
+    json = null;
+  }
+
+  if (!response.ok || !json || json.success !== true) {
+    const message = json && typeof json.error === 'string' && json.error
+      ? json.error
+      : `Request failed (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return json;
+};
+
+const runSettingsMultipartAction = async (formData) => {
+  if (isSettingsMutating) {
+    throw new Error('Please wait for the previous action to finish.');
+  }
+  isSettingsMutating = true;
+  try {
+    const response = await usersApiFetchMultipart(formData);
+    applySettingsPayload(response.data);
+    return response;
+  } finally {
+    isSettingsMutating = false;
+  }
+};
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  if (!(file instanceof File)) {
+    reject(new Error('Invalid file.'));
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = typeof reader.result === 'string' ? reader.result : '';
+    if (!result) {
+      reject(new Error('Unable to read official seal image.'));
+      return;
+    }
+    resolve(result);
+  };
+  reader.onerror = () => reject(new Error('Unable to read official seal image.'));
+  reader.readAsDataURL(file);
+});
+
 const refreshSettingsState = async () => {
   if (isSettingsLoading) return;
   isSettingsLoading = true;
@@ -417,6 +561,42 @@ const refreshSettingsState = async () => {
   } finally {
     isSettingsLoading = false;
   }
+};
+
+const refreshActiveUsersState = async () => {
+  if (!activeUsersList || isSettingsMutating || isActiveUsersRefreshing) return;
+  isActiveUsersRefreshing = true;
+  try {
+    const response = await usersApiFetch('GET');
+    const data = response && typeof response === 'object' ? response.data : null;
+    const activeRows = data && typeof data === 'object' && Array.isArray(data.active_users)
+      ? data.active_users
+      : [];
+    settingsState.activeUsers = activeRows.map(normalizeActiveUser).filter(Boolean);
+    renderActiveUsers();
+  } catch (error) {
+    // Keep previous state when auto-refresh fails.
+  } finally {
+    isActiveUsersRefreshing = false;
+  }
+};
+
+const startActiveUsersAutoRefresh = () => {
+  if (!activeUsersList || activeUsersRefreshTimer !== null) return;
+  activeUsersRefreshTimer = window.setInterval(() => {
+    if (document.hidden) return;
+    void refreshActiveUsersState();
+  }, ACTIVE_USERS_REFRESH_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      void refreshActiveUsersState();
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    void refreshActiveUsersState();
+  });
 };
 
 const runSettingsAction = async (payload) => {
@@ -493,6 +673,21 @@ const setStaffAccountNotice = (message, tone = 'muted') => {
   staffAccountNotice.classList.add('text-muted');
 };
 
+const setBarangayProfileNotice = (message, tone = 'muted') => {
+  if (!barangayProfileNotice) return;
+  barangayProfileNotice.textContent = message;
+  barangayProfileNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  if (tone === 'success') {
+    barangayProfileNotice.classList.add('text-success');
+    return;
+  }
+  if (tone === 'danger') {
+    barangayProfileNotice.classList.add('text-danger');
+    return;
+  }
+  barangayProfileNotice.classList.add('text-muted');
+};
+
 const setStaffCreateDisabled = (disabled) => {
   if (staffCreateFullName) staffCreateFullName.disabled = disabled;
   if (staffCreateUsername) staffCreateUsername.disabled = disabled;
@@ -535,12 +730,223 @@ const escapeHtml = (value) => String(value || '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const basenameFromPath = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const normalized = raw.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  const fileName = String(segments[segments.length - 1] || '').trim();
+  if (!fileName) return '';
+  try {
+    return decodeURIComponent(fileName);
+  } catch (error) {
+    return fileName;
+  }
+};
+
 const maskPassword = (password) => {
   const length = Math.max(String(password || '').length, 8);
   return '*'.repeat(length);
 };
 
-const renderStaffPasswordVisibility = (password, visible = true) => {
+const formatActiveUserSeenAt = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 'No recent activity';
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return normalized;
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const setBackupRestoreNotice = (message, tone = 'muted') => {
+  if (!backupRestoreNotice) return;
+  backupRestoreNotice.textContent = message;
+  backupRestoreNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  if (tone === 'success') {
+    backupRestoreNotice.classList.add('text-success');
+    return;
+  }
+  if (tone === 'danger') {
+    backupRestoreNotice.classList.add('text-danger');
+    return;
+  }
+  backupRestoreNotice.classList.add('text-muted');
+};
+
+const formatBackupDateTime = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 'Not available';
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return normalized;
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const formatBackupSize = (value) => {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return 'N/A';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unitIndex = 0;
+  let normalized = bytes;
+  while (normalized >= 1024 && unitIndex < units.length - 1) {
+    normalized /= 1024;
+    unitIndex += 1;
+  }
+  const rounded = unitIndex === 0 ? String(Math.trunc(normalized)) : normalized.toFixed(2).replace(/\.?0+$/, '');
+  return `${rounded} ${units[unitIndex]}`;
+};
+
+const syncSelectByText = (selectElement, targetLabel) => {
+  if (!selectElement) return;
+  const target = normalizeText(targetLabel).toLowerCase();
+  if (!target) return;
+  const options = Array.from(selectElement.options);
+  const exact = options.find((option) => normalizeText(option.textContent).toLowerCase() === target);
+  if (exact) {
+    selectElement.value = exact.value;
+    return;
+  }
+  const partial = options.find((option) => {
+    const text = normalizeText(option.textContent).toLowerCase();
+    return text.includes(target) || target.includes(text);
+  });
+  if (partial) {
+    selectElement.value = partial.value;
+  }
+};
+
+const renderBackupRestoreState = () => {
+  if (!backupRestorePanel) return;
+
+  const backup = readBackupStatus() || normalizeBackupStatus(null);
+  syncSelectByText(backupScheduleSelect, backup.schedule);
+  syncSelectByText(backupStorageLocationSelect, backup.storageLocation);
+  if (backupScheduleSelect) backupScheduleSelect.disabled = true;
+  if (backupStorageLocationSelect) backupStorageLocationSelect.disabled = true;
+
+  if (backupLastBackupInput) {
+    const displayValue = backup.available ? formatBackupDateTime(backup.lastBackupAt) : 'Not available';
+    backupLastBackupInput.value = displayValue;
+    backupLastBackupInput.title = backup.lastBackupAt || '';
+  }
+
+  if (backupSizeDisplayInput) {
+    const displaySize = backup.lastBackupSizeLabel || formatBackupSize(backup.lastBackupSizeBytes);
+    backupSizeDisplayInput.value = backup.available ? displaySize : 'N/A';
+    backupSizeDisplayInput.title = backup.available ? displaySize : '';
+  }
+
+  if (backupHealthBadge) {
+    backupHealthBadge.classList.remove('bg-success-subtle', 'text-success', 'bg-warning-subtle', 'text-warning');
+    if (backup.available) {
+      backupHealthBadge.textContent = 'Healthy';
+      backupHealthBadge.classList.add('bg-success-subtle', 'text-success');
+    } else {
+      backupHealthBadge.textContent = 'No Backup';
+      backupHealthBadge.classList.add('bg-warning-subtle', 'text-warning');
+    }
+  }
+
+  const hasSelectedRestoreFile = !!backupRestoreFileInput?.files?.[0];
+  if (backupRunBtn) {
+    backupRunBtn.disabled = isBackupActionBusy || isSettingsMutating;
+  }
+  if (backupDownloadBtn) {
+    backupDownloadBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available;
+  }
+  if (backupRestoreBtn) {
+    backupRestoreBtn.disabled = isBackupActionBusy || isSettingsMutating || !hasSelectedRestoreFile || !backup.available;
+    backupRestoreBtn.title = !backup.available
+      ? 'Run Backup first to create a current recovery point.'
+      : '';
+  }
+};
+
+const setBackupActionBusy = (busy) => {
+  isBackupActionBusy = busy;
+  renderBackupRestoreState();
+};
+
+const resolveBackupRestoreConfirmRequest = (confirmed) => {
+  if (typeof resolveBackupRestoreConfirm !== 'function') return;
+  const settle = resolveBackupRestoreConfirm;
+  resolveBackupRestoreConfirm = null;
+  settle(confirmed);
+};
+
+const requestBackupRestoreConfirm = (fileName = '') => {
+  const safeFileName = normalizeText(fileName);
+  const message = safeFileName
+    ? `Restore from "${safeFileName}" backup file? This will overwrite current system data.`
+    : 'Restore from this backup file? This will overwrite current system data.';
+
+  if (backupRestoreConfirmText) {
+    backupRestoreConfirmText.textContent = message;
+  }
+
+  if (!backupRestoreConfirmModal) {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  resolveBackupRestoreConfirmRequest(false);
+  return new Promise((resolve) => {
+    resolveBackupRestoreConfirm = resolve;
+    backupRestoreConfirmModal.show();
+  });
+};
+
+const decodeBackupBase64ToBlob = (base64Value, mimeType = 'application/json') => {
+  const normalized = String(base64Value || '').trim();
+  if (!normalized) {
+    throw new Error('Downloaded backup content is empty.');
+  }
+
+  let binary = '';
+  try {
+    binary = window.atob(normalized);
+  } catch (error) {
+    throw new Error('Downloaded backup content is invalid.');
+  }
+
+  const length = binary.length;
+  const bytes = new Uint8Array(length);
+  for (let index = 0; index < length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new Blob([bytes], { type: String(mimeType || 'application/json') });
+};
+
+const triggerBackupFileDownload = (blob, fileName) => {
+  if (!(blob instanceof Blob)) {
+    throw new Error('Downloaded backup file is invalid.');
+  }
+
+  const safeName = normalizeText(fileName) || `hims-backup-${Date.now()}.json`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeName;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+};
+
+const renderStaffPasswordVisibility = (password, visible = false) => {
   const plainPassword = String(password || '');
   const hasPassword = plainPassword.length > 0;
 
@@ -585,7 +991,7 @@ const renderStaffViewModalAccount = (account) => {
   if (staffViewUsername) staffViewUsername.textContent = account.username || '-';
   if (staffViewContact) staffViewContact.textContent = account.contactNumber || 'Not provided';
 
-  renderStaffPasswordVisibility(account.passwordVisible || '', true);
+  renderStaffPasswordVisibility(account.passwordVisible || '', false);
 
   if (staffViewStatusBadge) {
     staffViewStatusBadge.textContent = isDeactivated ? 'Deactivated' : 'Active';
@@ -605,12 +1011,42 @@ const renderStaffViewModalAccount = (account) => {
   }
 };
 
+const renderBarangayProfileState = () => {
+  if (!barangayProfilePanel) return;
+  const profile = readBarangayProfile() || normalizeBarangayProfile(null);
+
+  if (barangayProfileNameInput) {
+    barangayProfileNameInput.value = profile.barangayName || '';
+  }
+  if (barangayProfileCodeInput) {
+    barangayProfileCodeInput.value = profile.barangayCode || '';
+  }
+  if (barangayProfileCaptainNameInput) {
+    barangayProfileCaptainNameInput.value = profile.captainName || '';
+  }
+  if (barangayProfileSecretaryNameInput) {
+    barangayProfileSecretaryNameInput.value = profile.secretaryName || '';
+  }
+  if (barangayProfileSealDisplayName) {
+    const selectedName = String(barangayProfileSealInput?.files?.[0]?.name || '').trim();
+    const savedName = basenameFromPath(profile.officialSealPath || '');
+    const displayName = selectedName || savedName;
+    barangayProfileSealDisplayName.value = displayName || 'No file chosen';
+    barangayProfileSealDisplayName.title = displayName || '';
+  }
+  if (barangayProfileSaveBtn) {
+    barangayProfileSaveBtn.disabled = false;
+  }
+};
+
 const rerenderSettingsPanels = () => {
   renderCaptainCredentialsState();
   renderAdminAccountState();
   renderAdminCredentialsState();
   renderStaffAccounts();
   renderActiveUsers();
+  renderBarangayProfileState();
+  renderBackupRestoreState();
   syncStaffViewModal();
 };
 
@@ -763,9 +1199,10 @@ const renderStaffAccounts = () => {
 
 const renderActiveUsers = () => {
   if (!activeUsersList) return;
-  const users = readActiveUsers().filter((row) => row.status === 'active');
+  const users = readActiveUsers();
+  const onlineCount = users.filter((row) => row.presence === 'online').length;
   if (activeUsersBadge) {
-    activeUsersBadge.textContent = `${users.length} Active`;
+    activeUsersBadge.textContent = `${onlineCount} Online`;
   }
 
   if (!users.length) {
@@ -786,6 +1223,14 @@ const renderActiveUsers = () => {
     const role = escapeHtml(account.roleLabel || account.role);
     const moduleName = escapeHtml(account.module || 'General Module');
     const username = escapeHtml(account.username);
+    const isOnline = account.presence === 'online';
+    const badgeClass = isOnline
+      ? 'bg-success-subtle text-success'
+      : 'bg-secondary-subtle text-secondary';
+    const badgeLabel = isOnline ? 'Online' : 'Offline';
+    const presenceText = isOnline
+      ? 'Currently active'
+      : `Last seen: ${formatActiveUserSeenAt(account.lastSeenAt)}`;
     return `
       <div class="settings-list-item">
         <div class="item-info">
@@ -793,8 +1238,9 @@ const renderActiveUsers = () => {
           <div class="small">Role: ${role}</div>
           <div class="small">Module: ${moduleName}</div>
           <div class="small text-muted">Username: ${username}</div>
+          <div class="small text-muted">${escapeHtml(presenceText)}</div>
         </div>
-        <span class="badge bg-success-subtle text-success">Online</span>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
     `;
   }).join('');
@@ -814,20 +1260,47 @@ const formatSettingsAuditDateTime = (value) => {
   });
 };
 
-const setSettingsAuditSummary = (summary) => {
-  const safeSummary = summary && typeof summary === 'object' ? summary : {};
-  if (settingsAuditTotalActions) {
-    settingsAuditTotalActions.textContent = String(Number(safeSummary.total_actions || 0));
+const formatSettingsAuditIpAddress = (value) => {
+  const ip = normalizeText(value);
+  if (!ip) return '-';
+  if (ip === '::1') return '127.0.0.1 (localhost)';
+  if (ip === '::ffff:127.0.0.1') return '127.0.0.1';
+  return ip;
+};
+
+const setActiveSettingsAuditPill = (buttons, attributeName, nextValue) => {
+  const targetValue = normalizeText(nextValue).toLowerCase() || 'all';
+  let hasMatch = false;
+  buttons.forEach((button) => {
+    const buttonValue = normalizeText(button?.dataset?.[attributeName]).toLowerCase();
+    const isActive = buttonValue === targetValue;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    if (isActive) hasMatch = true;
+  });
+  if (hasMatch) return targetValue;
+  const fallbackButton = buttons[0];
+  if (!fallbackButton) return 'all';
+  fallbackButton.classList.add('is-active');
+  fallbackButton.setAttribute('aria-pressed', 'true');
+  return normalizeText(fallbackButton.dataset?.[attributeName]).toLowerCase() || 'all';
+};
+
+const getActiveSettingsAuditPillValue = (buttons, attributeName, fallback = 'all') => {
+  for (const button of buttons) {
+    if (button.classList.contains('is-active')) {
+      return normalizeText(button?.dataset?.[attributeName]).toLowerCase() || fallback;
+    }
   }
-  if (settingsAuditCreatedCount) {
-    settingsAuditCreatedCount.textContent = String(Number(safeSummary.created_count || 0));
-  }
-  if (settingsAuditUpdatedCount) {
-    settingsAuditUpdatedCount.textContent = String(Number(safeSummary.updated_count || 0));
-  }
-  if (settingsAuditDeletedCount) {
-    settingsAuditDeletedCount.textContent = String(Number(safeSummary.deleted_count || 0));
-  }
+  return fallback;
+};
+
+const setSettingsAuditRecordCount = (count) => {
+  if (!settingsAuditRecordCount) return;
+  const numericCount = Number(count);
+  const safeCount = Number.isFinite(numericCount) && numericCount >= 0 ? Math.trunc(numericCount) : 0;
+  const label = safeCount === 1 ? 'record found' : 'records found';
+  settingsAuditRecordCount.textContent = `${safeCount} ${label}`;
 };
 
 const ensureSettingsAuditYearOptions = (years = []) => {
@@ -857,6 +1330,7 @@ const ensureSettingsAuditYearOptions = (years = []) => {
 
 const renderSettingsAuditLoadingState = () => {
   if (!settingsAuditTableBody) return;
+  setSettingsAuditRecordCount(0);
   settingsAuditTableBody.innerHTML = `
     <tr id="settingsAuditLoadingRow">
       <td colspan="6" class="text-center text-muted">Loading activity logs...</td>
@@ -878,6 +1352,7 @@ const renderSettingsAuditErrorState = (message) => {
       <td colspan="6" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
+  setSettingsAuditRecordCount(0);
 };
 
 const buildSettingsAuditActionBadge = (actionType, actionKey) => {
@@ -890,6 +1365,43 @@ const buildSettingsAuditActionBadge = (actionType, actionKey) => {
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Action';
   return `<span class="badge bg-secondary-subtle text-secondary">${escapeHtml(fallbackLabel)}</span>`;
+};
+
+const buildSettingsAuditResultBadge = (actionType, actionKey, details) => {
+  const type = normalizeText(actionType).toLowerCase();
+  const key = normalizeText(actionKey).toLowerCase();
+  const detailText = normalizeText(details).toLowerCase();
+
+  const isFailed = key.includes('failed') || detailText.includes('failed');
+  const isSuccess = key.includes('success') || detailText.includes('successful');
+
+  if (isFailed || type === 'security') {
+    return '<span class="badge bg-danger-subtle text-danger">Failed</span>';
+  }
+  if (isSuccess || ['access', 'created', 'updated', 'deleted'].includes(type)) {
+    return '<span class="badge bg-success-subtle text-success">Success</span>';
+  }
+  return '<span class="badge bg-secondary-subtle text-secondary">N/A</span>';
+};
+
+const getSettingsAuditTimestampValue = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 0;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getSortedSettingsAuditItems = (items) => {
+  const rows = Array.isArray(items) ? items.slice() : [];
+  const sortValue = normalizeText(settingsAuditSortFilter?.value).toLowerCase();
+
+  if (sortValue === 'oldest') {
+    rows.sort((a, b) => getSettingsAuditTimestampValue(a?.created_at) - getSettingsAuditTimestampValue(b?.created_at));
+    return rows;
+  }
+
+  rows.sort((a, b) => getSettingsAuditTimestampValue(b?.created_at) - getSettingsAuditTimestampValue(a?.created_at));
+  return rows;
 };
 
 const renderSettingsAuditTable = () => {
@@ -905,33 +1417,40 @@ const renderSettingsAuditTable = () => {
     return;
   }
 
-  const rowsHtml = settingsAuditState.items.map((item) => {
+  const sortedItems = getSortedSettingsAuditItems(settingsAuditState.items);
+  const apiTotal = Number(settingsAuditState.total);
+  const hasApiTotal = Number.isFinite(apiTotal) && apiTotal >= 0;
+  setSettingsAuditRecordCount(hasApiTotal ? Math.trunc(apiTotal) : sortedItems.length);
+  const rowsHtml = sortedItems.map((item) => {
     const createdAt = formatSettingsAuditDateTime(item.created_at);
     const actor = item && typeof item.actor === 'object' ? item.actor : {};
     const role = normalizeText(actor.role).toLowerCase();
-    const roleLabel = settingsAuditRoleLabelMap[role] || normalizeText(actor.role_label) || '-';
+    const roleLabel = settingsAuditRoleLabelMap[role] || normalizeText(actor.role_label);
     const username = normalizeText(actor.username);
-    const userLabel = username ? `${roleLabel} (${username})` : roleLabel;
+    const isUnknownRole = roleLabel.toLowerCase() === 'unknown';
+    const userLabel = username
+      ? (roleLabel && !isUnknownRole ? `${roleLabel} (${username})` : username)
+      : (roleLabel || '-');
     const actionBadge = buildSettingsAuditActionBadge(item.action_type, item.action_key);
-    const recordId = normalizeText(item.record_id) || '-';
-    const moduleName = normalizeText(item.module_name) || '-';
+    const resultBadge = buildSettingsAuditResultBadge(item.action_type, item.action_key, item.details);
     const details = normalizeText(item.details) || '-';
+    const ipAddress = formatSettingsAuditIpAddress(item.ip_address);
 
     return `
       <tr>
         <td>${escapeHtml(createdAt)}</td>
         <td>${escapeHtml(userLabel)}</td>
         <td>${actionBadge}</td>
-        <td>${escapeHtml(recordId)}</td>
-        <td>${escapeHtml(moduleName)}</td>
+        <td>${resultBadge}</td>
         <td>${escapeHtml(details)}</td>
+        <td class="audit-ip-cell"><span class="audit-ip-text" title="${escapeHtml(ipAddress)}">${escapeHtml(ipAddress)}</span></td>
       </tr>
     `;
   }).join('');
 
   settingsAuditTableBody.innerHTML = `
     ${rowsHtml}
-    <tr id="settingsAuditEmptyRow" class="${settingsAuditState.items.length === 0 ? '' : 'd-none'}">
+    <tr id="settingsAuditEmptyRow" class="${sortedItems.length === 0 ? '' : 'd-none'}">
       <td colspan="6" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
@@ -946,7 +1465,7 @@ const fetchSettingsAuditLogs = async () => {
   const searchValue = normalizeText(settingsAuditSearchInput?.value);
   if (searchValue) params.set('q', searchValue);
 
-  const actionType = normalizeText(settingsAuditActionFilter?.value).toLowerCase();
+  const actionType = getActiveSettingsAuditPillValue(settingsAuditActionPills, 'settingsAuditAction', 'all');
   if (actionType && actionType !== 'all') params.set('action_type', actionType);
 
   const userRole = normalizeText(settingsAuditUserFilter?.value).toLowerCase();
@@ -967,10 +1486,23 @@ const fetchSettingsAuditLogs = async () => {
   }
 
   let payload = null;
+  let rawText = '';
   try {
-    payload = await response.json();
+    rawText = await response.text();
+    payload = rawText ? JSON.parse(rawText) : null;
   } catch (error) {
     payload = null;
+  }
+  if (!payload && rawText) {
+    const firstBrace = rawText.indexOf('{');
+    const lastBrace = rawText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        payload = JSON.parse(rawText.slice(firstBrace, lastBrace + 1));
+      } catch (error) {
+        payload = null;
+      }
+    }
   }
 
   if (!response.ok || !payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
@@ -992,30 +1524,18 @@ const loadSettingsAuditLogs = async () => {
   try {
     const data = await fetchSettingsAuditLogs();
     settingsAuditState.items = Array.isArray(data.items) ? data.items : [];
-    settingsAuditState.summary = data.summary && typeof data.summary === 'object'
-      ? data.summary
-      : {
-          total_actions: 0,
-          created_count: 0,
-          updated_count: 0,
-          deleted_count: 0
-        };
+    const total = Number(data?.total);
+    settingsAuditState.total = Number.isFinite(total) && total >= 0 ? Math.trunc(total) : settingsAuditState.items.length;
     settingsAuditState.availableYears = Array.isArray(data?.filters?.years)
       ? data.filters.years.map((year) => Number(year)).filter((year) => Number.isInteger(year) && year > 0)
       : [];
     ensureSettingsAuditYearOptions(settingsAuditState.availableYears);
   } catch (error) {
     settingsAuditState.items = [];
-    settingsAuditState.summary = {
-      total_actions: 0,
-      created_count: 0,
-      updated_count: 0,
-      deleted_count: 0
-    };
+    settingsAuditState.total = 0;
     settingsAuditState.error = error instanceof Error ? error.message : 'Unable to load audit logs.';
   } finally {
     settingsAuditState.loading = false;
-    setSettingsAuditSummary(settingsAuditState.summary);
     renderSettingsAuditTable();
   }
 };
@@ -1033,7 +1553,14 @@ const triggerSettingsAuditLoadWithDebounce = () => {
 const initializeSettingsAuditTrail = () => {
   if (!settingsAuditTableBody) return;
   ensureSettingsAuditYearOptions([]);
-  setSettingsAuditSummary(settingsAuditState.summary);
+  setActiveSettingsAuditPill(settingsAuditActionPills, 'settingsAuditAction', 'all');
+  if (settingsAuditUserFilter) {
+    settingsAuditUserFilter.value = 'all';
+  }
+  if (settingsAuditSortFilter) {
+    settingsAuditSortFilter.value = 'latest';
+  }
+  setSettingsAuditRecordCount(0);
   renderSettingsAuditLoadingState();
   void loadSettingsAuditLogs();
 };
@@ -1533,6 +2060,219 @@ adminCredentialsStartBtn?.addEventListener('click', (event) => {
   setAdminCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
 });
 
+barangayProfileSaveBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+
+  const barangayName = String(barangayProfileNameInput?.value || '').trim();
+  const barangayCode = String(barangayProfileCodeInput?.value || '').trim();
+  const captainName = String(barangayProfileCaptainNameInput?.value || '').trim();
+  const secretaryName = String(barangayProfileSecretaryNameInput?.value || '').trim();
+  const selectedSealFile = barangayProfileSealInput?.files?.[0] || null;
+
+  const currentProfile = readBarangayProfile() || normalizeBarangayProfile(null);
+  const hasChanges =
+    barangayName !== currentProfile.barangayName ||
+    barangayCode !== currentProfile.barangayCode ||
+    captainName !== currentProfile.captainName ||
+    secretaryName !== currentProfile.secretaryName;
+  const hasSealChange = !!selectedSealFile;
+
+  if (!hasChanges && !hasSealChange) {
+    setBarangayProfileNotice('No changes to save.', 'muted');
+    return;
+  }
+
+  if (hasSealChange && selectedSealFile) {
+    const fileType = String(selectedSealFile.type || '').toLowerCase();
+    if (!fileType || !BARANGAY_PROFILE_SEAL_ALLOWED_TYPES.includes(fileType)) {
+      setBarangayProfileNotice('Official seal must be a PNG, JPG, or WEBP image.', 'danger');
+      return;
+    }
+    if (selectedSealFile.size > BARANGAY_PROFILE_SEAL_MAX_SIZE_BYTES) {
+      setBarangayProfileNotice('Official seal image must be 2MB or less.', 'danger');
+      return;
+    }
+  }
+
+  try {
+    let response;
+    if (hasSealChange && selectedSealFile) {
+      try {
+        const formData = new FormData();
+        formData.set('action', 'save_barangay_profile');
+        formData.set('barangay_name', barangayName);
+        formData.set('barangay_code', barangayCode);
+        formData.set('captain_name', captainName);
+        formData.set('secretary_name', secretaryName);
+        formData.set('official_seal_file', selectedSealFile);
+        response = await runSettingsMultipartAction(formData);
+      } catch (uploadError) {
+        const sealDataUrl = await readFileAsDataUrl(selectedSealFile);
+        response = await runSettingsAction({
+          action: 'save_barangay_profile',
+          barangay_name: barangayName,
+          barangay_code: barangayCode,
+          captain_name: captainName,
+          secretary_name: secretaryName,
+          official_seal_data: sealDataUrl
+        });
+      }
+    } else {
+      const payload = {
+        action: 'save_barangay_profile',
+        barangay_name: barangayName,
+        barangay_code: barangayCode,
+        captain_name: captainName,
+        secretary_name: secretaryName
+      };
+      response = await runSettingsAction(payload);
+    }
+    if (barangayProfileSealInput) {
+      barangayProfileSealInput.value = '';
+    }
+    rerenderSettingsPanels();
+    setBarangayProfileNotice(response.message || 'Barangay profile saved successfully.', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to save barangay profile right now.';
+    setBarangayProfileNotice(message, 'danger');
+  }
+});
+
+barangayProfileSealInput?.addEventListener('change', () => {
+  renderBarangayProfileState();
+});
+
+barangayProfileSealBrowseBtn?.addEventListener('click', (event) => {
+  event.preventDefault();
+  barangayProfileSealInput?.click();
+});
+
+backupRestoreFileInput?.addEventListener('change', () => {
+  const selectedFile = backupRestoreFileInput.files?.[0] || null;
+  if (!selectedFile) {
+    setBackupRestoreNotice(BACKUP_RESTORE_PRIORITY_NOTICE, 'muted');
+    renderBackupRestoreState();
+    return;
+  }
+
+  if (selectedFile.size > BACKUP_RESTORE_MAX_FILE_SIZE_BYTES) {
+    backupRestoreFileInput.value = '';
+    setBackupRestoreNotice('Backup file must be 25MB or less.', 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+
+  const backup = readBackupStatus() || normalizeBackupStatus(null);
+  if (!backup.available) {
+    setBackupRestoreNotice('Run Backup first before restore. Restore will stay disabled until a backup exists.', 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+
+  setBackupRestoreNotice(`Ready to restore from: ${selectedFile.name}`, 'muted');
+  renderBackupRestoreState();
+});
+
+backupRunBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!backupRestorePanel || isBackupActionBusy) return;
+
+  setBackupActionBusy(true);
+  setBackupRestoreNotice('Creating backup file...', 'muted');
+  try {
+    const response = await runSettingsAction({ action: 'run_backup' });
+    rerenderSettingsPanels();
+    const backup = response && typeof response === 'object' && response.backup && typeof response.backup === 'object'
+      ? response.backup
+      : null;
+    const backupName = String(backup?.file_name || '').trim();
+    const message = response?.message || (backupName ? `Backup created: ${backupName}` : 'Backup completed successfully.');
+    setBackupRestoreNotice(message, 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to run backup right now.';
+    setBackupRestoreNotice(message, 'danger');
+  } finally {
+    setBackupActionBusy(false);
+  }
+});
+
+backupDownloadBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!backupRestorePanel || isBackupActionBusy) return;
+
+  setBackupActionBusy(true);
+  setBackupRestoreNotice('Preparing backup download...', 'muted');
+  try {
+    const response = await runSettingsAction({ action: 'download_backup' });
+    const download = response && typeof response === 'object' && response.download && typeof response.download === 'object'
+      ? response.download
+      : null;
+    if (!download) {
+      throw new Error('Backup download payload is missing.');
+    }
+
+    const blob = decodeBackupBase64ToBlob(download.content_base64, download.mime_type);
+    triggerBackupFileDownload(blob, download.file_name);
+    rerenderSettingsPanels();
+    setBackupRestoreNotice(response?.message || 'Backup download started.', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to download backup right now.';
+    setBackupRestoreNotice(message, 'danger');
+  } finally {
+    setBackupActionBusy(false);
+  }
+});
+
+backupRestoreBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!backupRestorePanel || isBackupActionBusy) return;
+
+  const backup = readBackupStatus() || normalizeBackupStatus(null);
+  if (!backup.available) {
+    setBackupRestoreNotice('Run Backup first before restoring current data.', 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+
+  const selectedFile = backupRestoreFileInput?.files?.[0] || null;
+  if (!selectedFile) {
+    setBackupRestoreNotice('Select a backup file first before restoring.', 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+  if (selectedFile.size > BACKUP_RESTORE_MAX_FILE_SIZE_BYTES) {
+    setBackupRestoreNotice('Backup file must be 25MB or less.', 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+
+  const confirmed = await requestBackupRestoreConfirm(selectedFile.name);
+  if (!confirmed) {
+    setBackupRestoreNotice('Restore was cancelled.', 'muted');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.set('action', 'restore_backup');
+  formData.set('backup_file', selectedFile);
+
+  setBackupActionBusy(true);
+  setBackupRestoreNotice('Restoring backup. Please wait...', 'muted');
+  try {
+    const response = await runSettingsMultipartAction(formData);
+    if (backupRestoreFileInput) {
+      backupRestoreFileInput.value = '';
+    }
+    rerenderSettingsPanels();
+    setBackupRestoreNotice(response?.message || 'Backup restore completed successfully.', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to restore backup right now.';
+    setBackupRestoreNotice(message, 'danger');
+  } finally {
+    setBackupActionBusy(false);
+  }
+});
+
 staffCreateBtn?.addEventListener('click', async (event) => {
   event.preventDefault();
 
@@ -1629,6 +2369,15 @@ staffViewDeleteBtn?.addEventListener('click', () => {
   requestStaffDeleteById(activeStaffViewId);
 });
 
+backupRestoreConfirmBtn?.addEventListener('click', () => {
+  resolveBackupRestoreConfirmRequest(true);
+  backupRestoreConfirmModal?.hide();
+});
+
+backupRestoreConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
+  resolveBackupRestoreConfirmRequest(false);
+});
+
 staffDeleteConfirmBtn?.addEventListener('click', async () => {
   if (!pendingDeleteStaffId) {
     staffDeleteConfirmModal?.hide();
@@ -1645,10 +2394,40 @@ staffViewModalEl?.addEventListener('hidden.bs.modal', () => {
   activeStaffViewId = '';
 });
 
+const resetSettingsAuditFilters = () => {
+  if (settingsAuditSearchInput) {
+    settingsAuditSearchInput.value = '';
+  }
+  if (settingsAuditUserFilter) {
+    settingsAuditUserFilter.value = 'all';
+  }
+  if (settingsAuditYearFilter) {
+    settingsAuditYearFilter.value = 'all';
+  }
+  if (settingsAuditSortFilter) {
+    settingsAuditSortFilter.value = 'latest';
+  }
+  setActiveSettingsAuditPill(settingsAuditActionPills, 'settingsAuditAction', 'all');
+};
+
 settingsAuditSearchInput?.addEventListener('input', triggerSettingsAuditLoadWithDebounce);
-settingsAuditActionFilter?.addEventListener('change', () => { void loadSettingsAuditLogs(); });
+settingsAuditActionPills.forEach((button) => {
+  button.addEventListener('click', () => {
+    const nextValue = normalizeText(button?.dataset?.settingsAuditAction).toLowerCase() || 'all';
+    const previousValue = getActiveSettingsAuditPillValue(settingsAuditActionPills, 'settingsAuditAction', 'all');
+    setActiveSettingsAuditPill(settingsAuditActionPills, 'settingsAuditAction', nextValue);
+    if (nextValue !== previousValue) {
+      void loadSettingsAuditLogs();
+    }
+  });
+});
 settingsAuditUserFilter?.addEventListener('change', () => { void loadSettingsAuditLogs(); });
 settingsAuditYearFilter?.addEventListener('change', () => { void loadSettingsAuditLogs(); });
+settingsAuditSortFilter?.addEventListener('change', renderSettingsAuditTable);
+settingsAuditClearFiltersBtn?.addEventListener('click', () => {
+  resetSettingsAuditFilters();
+  void loadSettingsAuditLogs();
+});
 
 const initializeSettingsState = async () => {
   if (adminAccountPanel) {
@@ -1665,6 +2444,16 @@ const initializeSettingsState = async () => {
   if (staffAccountsList) {
     setStaffAccountNotice('Loading staff accounts...', 'muted');
     setStaffCreateDisabled(true);
+  }
+  if (barangayProfilePanel) {
+    if (barangayProfileSaveBtn) {
+      barangayProfileSaveBtn.disabled = true;
+    }
+    setBarangayProfileNotice('Loading barangay profile...', 'muted');
+  }
+  if (backupRestorePanel) {
+    setBackupActionBusy(false);
+    setBackupRestoreNotice('Loading backup status...', 'muted');
   }
   if (activeUsersList) {
     activeUsersList.innerHTML = `
@@ -1686,6 +2475,8 @@ const initializeSettingsState = async () => {
     if (captainCredentialsPanel) setCaptainCredentialsNotice(message, 'danger');
     if (adminCredentialsPanel) setAdminCredentialsNotice(message, 'danger');
     if (staffAccountsList) setStaffAccountNotice(message, 'danger');
+    if (barangayProfilePanel) setBarangayProfileNotice(message, 'danger');
+    if (backupRestorePanel) setBackupRestoreNotice(message, 'danger');
     if (activeUsersList) {
       activeUsersList.innerHTML = `
         <div class="settings-list-item">
@@ -1701,7 +2492,14 @@ const initializeSettingsState = async () => {
   }
 
   rerenderSettingsPanels();
+  if (barangayProfilePanel) {
+    setBarangayProfileNotice('These details will appear on official documents and reports.', 'muted');
+  }
+  if (backupRestorePanel) {
+    setBackupRestoreNotice(BACKUP_RESTORE_PRIORITY_NOTICE, 'muted');
+  }
 };
 
 void initializeSettingsState();
 initializeSettingsAuditTrail();
+startActiveUsersAutoRefresh();

@@ -4,7 +4,45 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandCoreCandidate = preg_replace('/^\s*barangay\b[\s,]*/i', '', $brandLabel);
+$brandCore = trim((string) ($brandCoreCandidate ?? $brandLabel));
+if ($brandCore === '') {
+  $brandCore = trim($brandLabel);
+}
+$brandFooterLabel = $brandCore !== '' ? 'Barangay ' . $brandCore : 'Barangay';
+if ($brandCity !== '' && stripos($brandFooterLabel, $brandCity) === false) {
+  $brandFooterLabel = trim($brandFooterLabel . ', ' . $brandCity);
+}
+$brandSidebarLabel = $brandCore;
+if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandSidebarLabel . ' ' . $brandCity);
+}
+if ($brandSidebarLabel === '') {
+  $brandSidebarLabel = $brandFooterLabel;
+}
+$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
 $settingsCsrfToken = auth_csrf_token();
+$siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -18,7 +56,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site-style.css">
+<link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
@@ -30,8 +68,8 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary">Barangay Cabarian</span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
       </div>
       <div class="menu">
         <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -332,9 +370,9 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Active Users</h5>
-                <p class="small text-muted mb-0">Currently signed-in users and their assigned modules.</p>
+                <p class="small text-muted mb-0">User account presence and currently used modules.</p>
               </div>
-              <span class="badge bg-success-subtle text-success" id="activeUsersBadge">0 Active</span>
+              <span class="badge bg-success-subtle text-success" id="activeUsersBadge">0 Online</span>
             </div>
             <div class="settings-list" id="activeUsersList">
               <div class="settings-list-item">
@@ -358,39 +396,33 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-form-grid">
               <div>
                 <label class="form-label small">Barangay Name</label>
-                <input type="text" class="form-control" value="Barangay Cabarian">
+                <input type="text" class="form-control" id="barangayProfileName" placeholder="Barangay Name" autocomplete="off">
               </div>
               <div>
                 <label class="form-label small">Barangay Code</label>
-                <input type="text" class="form-control" value="BRC-082">
-              </div>
-              <div>
-                <label class="form-label small">Email Address</label>
-                <input type="email" class="form-control" value="barangay.cabarian@ligao.gov.ph">
-              </div>
-              <div>
-                <label class="form-label small">Contact Number</label>
-                <input type="text" class="form-control" value="(052) 123-4567">
-              </div>
-              <div class="settings-form-full">
-                <label class="form-label small">Barangay Hall Address</label>
-                <input type="text" class="form-control" value="Purok 2, Barangay Cabarian, Ligao City">
+                <input type="text" class="form-control" id="barangayProfileCode" placeholder="BRC-082" autocomplete="off">
               </div>
               <div>
                 <label class="form-label small">Captain Name</label>
-                <input type="text" class="form-control" value="Hon. Ricardo V. Ladera">
+                <input type="text" class="form-control" id="barangayProfileCaptainName" placeholder="Hon. Juan Dela Cruz" autocomplete="off">
               </div>
               <div>
                 <label class="form-label small">Secretary Name</label>
-                <input type="text" class="form-control" value="Ms. Angelica M. Ramos">
+                <input type="text" class="form-control" id="barangayProfileSecretaryName" placeholder="Ms. Maria Santos" autocomplete="off">
               </div>
               <div class="settings-form-full">
                 <label class="form-label small">Official Seal</label>
-                <input type="file" class="form-control">
+                <div class="input-group">
+                  <button type="button" class="btn btn-outline-secondary" id="barangayProfileSealBrowseBtn">
+                    <i class="bi bi-upload"></i> Choose File
+                  </button>
+                  <input type="text" class="form-control" id="barangayProfileSealDisplayName" value="No file chosen" readonly>
+                </div>
+                <input type="file" class="d-none" id="barangayProfileSeal" accept="image/png,image/jpeg,image/webp">
               </div>
               <div class="settings-form-full d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div class="small text-muted">These details will appear on official documents and reports.</div>
-                <button class="btn btn-cta">
+                <div class="small text-muted" id="barangayProfileNotice">These details will appear on official documents and reports.</div>
+                <button type="button" class="btn btn-cta" id="barangayProfileSaveBtn">
                   <i class="bi bi-check2-circle"></i> Save Profile
                 </button>
               </div>
@@ -400,51 +432,34 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
           <section class="settings-section settings-panel" style="--delay:0.3s" id="audit-trail" data-role="captain-only">
             <div class="module audit-module">
               <div class="module-header">
-                <div>
+                <div class="audit-title-wrap">
                   <h5 class="mb-1 fw-bold">Activity Logs</h5>
                   <p class="mb-0 text-muted small">System actions and approvals recorded for accountability</p>
                 </div>
-                <div class="module-actions">
-                  <div class="input-group input-group-sm module-search">
-                    <input type="text" class="form-control" id="settingsAuditSearchInput" placeholder="Search action, user, or record">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                  </div>
-                  <select class="form-select form-select-sm" id="settingsAuditActionFilter">
-                    <option value="all">All Actions</option>
-                    <option value="created">Created</option>
-                    <option value="updated">Updated</option>
-                    <option value="deleted">Deleted</option>
-                    <option value="security">Security</option>
-                    <option value="access">Access</option>
-                  </select>
-                  <select class="form-select form-select-sm" id="settingsAuditUserFilter">
-                    <option value="all">All Users</option>
-                    <option value="captain">Captain</option>
-                    <option value="admin">Admin</option>
-                    <option value="staff">Staff</option>
-                  </select>
-                  <select class="form-select form-select-sm" id="settingsAuditYearFilter">
+                <div class="audit-header-actions">
+                  <select class="form-select form-select-sm audit-pill-filter audit-year-filter" id="settingsAuditYearFilter">
                     <option value="all">All Years</option>
                   </select>
                 </div>
               </div>
-
-              <div class="module-grid">
-                <div class="module-card">
-                  <div class="module-label">Total Actions</div>
-                  <div class="module-value" id="settingsAuditTotalActions">0</div>
+              <div class="audit-toolbar" role="search" aria-label="Activity log filters">
+                <div class="audit-search-pill">
+                  <input type="text" class="form-control" id="settingsAuditSearchInput" placeholder="Search action, user, or record">
+                  <span class="audit-search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
                 </div>
-                <div class="module-card">
-                  <div class="module-label">Created</div>
-                  <div class="module-value" id="settingsAuditCreatedCount">0</div>
-                </div>
-                <div class="module-card">
-                  <div class="module-label">Updates</div>
-                  <div class="module-value" id="settingsAuditUpdatedCount">0</div>
-                </div>
-                <div class="module-card">
-                  <div class="module-label">Deleted</div>
-                  <div class="module-value" id="settingsAuditDeletedCount">0</div>
+                <div class="audit-quick-row">
+                  <div class="audit-quick-group">
+                    <span class="audit-quick-label">Quick Filter</span>
+                    <div class="audit-quick-pills" role="group" aria-label="Settings action filters">
+                      <button type="button" class="audit-quick-pill is-active" data-settings-audit-action="all" aria-pressed="true">All</button>
+                      <button type="button" class="audit-quick-pill" data-settings-audit-action="created" aria-pressed="false">Created</button>
+                      <button type="button" class="audit-quick-pill" data-settings-audit-action="updated" aria-pressed="false">Updated</button>
+                      <button type="button" class="audit-quick-pill" data-settings-audit-action="deleted" aria-pressed="false">Deleted</button>
+                      <button type="button" class="audit-quick-pill" data-settings-audit-action="security" aria-pressed="false">Security</button>
+                      <button type="button" class="audit-quick-pill" data-settings-audit-action="access" aria-pressed="false">Access</button>
+                    </div>
+                  </div>
+                  <div class="audit-record-inline text-muted small" id="settingsAuditRecordCount" aria-live="polite">0 records found</div>
                 </div>
               </div>
 
@@ -455,9 +470,9 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                       <th>Date &amp; Time</th>
                       <th>User</th>
                       <th>Action</th>
-                      <th>Record</th>
-                      <th>Module</th>
+                      <th>Result</th>
                       <th>Details</th>
+                      <th>IP Address</th>
                     </tr>
                   </thead>
                   <tbody id="settingsAuditTableBody">
@@ -479,7 +494,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                 <h5 class="mb-1">Backup & Restore</h5>
                 <p class="small text-muted mb-0">Protect and recover barangay system data.</p>
               </div>
-              <span class="badge bg-success-subtle text-success">Healthy</span>
+              <span class="badge bg-success-subtle text-success" id="backupHealthBadge">Healthy</span>
             </div>
             <div class="settings-callout">
               <i class="bi bi-info-circle"></i>
@@ -491,7 +506,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-form-grid">
               <div>
                 <label class="form-label small">Backup Schedule</label>
-                <select class="form-select">
+                <select class="form-select" id="backupScheduleSelect">
                   <option>Daily at 9:00 PM</option>
                   <option>Weekly (Every Friday)</option>
                   <option>Manual Only</option>
@@ -499,7 +514,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <div>
                 <label class="form-label small">Storage Location</label>
-                <select class="form-select">
+                <select class="form-select" id="backupStorageLocationSelect">
                   <option>Local Server</option>
                   <option>External Drive</option>
                   <option>Cloud Storage</option>
@@ -507,26 +522,26 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <div>
                 <label class="form-label small">Last Backup</label>
-                <input type="text" class="form-control" value="Feb 08, 2026 - 9:30 PM" readonly>
+                <input type="text" class="form-control" id="backupLastBackup" value="Not available" readonly>
               </div>
               <div>
                 <label class="form-label small">Backup Size</label>
-                <input type="text" class="form-control" value="412 MB" readonly>
+                <input type="text" class="form-control" id="backupSizeDisplay" value="N/A" readonly>
               </div>
               <div class="settings-form-full">
                 <label class="form-label small">Restore From File</label>
-                <input type="file" class="form-control">
+                <input type="file" class="form-control" id="backupRestoreFile" accept=".json,application/json,text/json">
               </div>
-              <div class="settings-form-full d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div class="small text-muted">Restoring will overwrite current data.</div>
-                <div class="d-flex gap-2 flex-wrap">
-                  <button class="btn btn-outline-primary">
-                    <i class="bi bi-cloud-arrow-up"></i> Run Backup
-                  </button>
-                  <button class="btn btn-outline-primary">
+                <div class="settings-form-full">
+                  <div class="small text-muted mb-2" id="backupRestoreNotice">Run Backup first before restoring. Restoring will overwrite current data.</div>
+                  <div class="d-flex gap-2 flex-wrap justify-content-end backup-restore-actions">
+                    <button type="button" class="btn btn-primary" id="backupRunBtn">
+                      <i class="bi bi-cloud-arrow-up"></i> Run Backup First
+                    </button>
+                  <button type="button" class="btn btn-outline-primary" id="backupDownloadBtn">
                     <i class="bi bi-download"></i> Download Backup
                   </button>
-                  <button class="btn btn-danger">
+                  <button type="button" class="btn btn-danger" id="backupRestoreBtn">
                     <i class="bi bi-arrow-repeat"></i> Restore Now
                   </button>
                 </div>
@@ -541,7 +556,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODERN LOGOUT MODAL -->
@@ -637,6 +652,23 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="staffDeleteConfirmBtn">Delete Account</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKUP RESTORE CONFIRM MODAL -->
+  <div class="modal fade" id="backupRestoreConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning">
+          <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Confirm Restore</h5>
+        <p class="mb-3" id="backupRestoreConfirmText">Restore from this backup file? This will overwrite current system data.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="backupRestoreConfirmBtn">Restore</button>
         </div>
       </div>
     </div>
