@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 
-auth_require_api(['captain', 'admin', 'secretary']);
+if (PHP_SAPI !== 'cli') {
+    auth_require_api(['captain', 'admin', 'secretary']);
+}
+const REPORT_NO_DATA_MESSAGE = 'No reported cases for the selected reporting year.';
+const REPORT_DATA_SOURCE = 'Household Information Management System (HIMS) analytics database';
 
 function respondWithError(int $statusCode, string $message): void
 {
@@ -86,12 +90,108 @@ function envValue(array $keys, string $default = ''): string
     return $default;
 }
 
-function qid(string $identifier): string
+/**
+ * @return array<int, string>
+ */
+function envList(array $keys): array
 {
-    if (!preg_match('/^[A-Za-z0-9_]+$/', $identifier)) {
-        throw new InvalidArgumentException('Invalid identifier: ' . $identifier);
+    $raw = envValue($keys, '');
+    if ($raw === '') {
+        return [];
     }
-    return '`' . $identifier . '`';
+
+    $parts = preg_split('/[\r\n,;]+/', $raw);
+    if (!is_array($parts)) {
+        return [];
+    }
+
+    $values = [];
+    foreach ($parts as $part) {
+        $item = trim((string) $part);
+        if ($item !== '') {
+            $values[] = $item;
+        }
+    }
+
+    return array_values(array_unique($values));
+}
+
+/**
+ * @return array<int, string>
+ */
+function excelCliPhpCandidates(): array
+{
+    $custom = envValue(['EXCEL_EXPORT_PHP_BINARY', 'REPORT_EXPORT_PHP_BINARY'], '');
+    $configured = envList(['EXCEL_EXPORT_PHP_BINARIES', 'REPORT_EXPORT_PHP_BINARIES']);
+    $items = array_merge([$custom, PHP_BINARY], $configured);
+    $candidates = [];
+    foreach ($items as $item) {
+        $path = trim((string) $item);
+        if ($path !== '') {
+            $candidates[] = $path;
+        }
+    }
+    return array_values(array_unique($candidates));
+}
+
+function findExcelCliPhpBinary(): ?string
+{
+    foreach (excelCliPhpCandidates() as $candidate) {
+        if (is_file($candidate) && is_readable($candidate)) {
+            return $candidate;
+        }
+    }
+    return null;
+}
+
+function exportSpreadsheetUsingExternalPhp(
+    array $report,
+    array $profile,
+    string $phpBinary,
+    ?string &$errorMessage = null
+): ?string {
+    $tmpDir = sys_get_temp_dir();
+    $inputFile = tempnam($tmpDir, 'hims_xlsx_in_');
+    $outputBase = tempnam($tmpDir, 'hims_xlsx_out_');
+    if (!is_string($inputFile) || !is_string($outputBase)) {
+        $errorMessage = 'Unable to allocate temporary files for Excel export.';
+        return null;
+    }
+
+    if (is_file($outputBase)) {
+        @unlink($outputBase);
+    }
+    $outputFile = $outputBase . '.xlsx';
+
+    $payloadJson = json_encode(
+        ['report' => $report, 'profile' => $profile],
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+    if (!is_string($payloadJson) || @file_put_contents($inputFile, $payloadJson) === false) {
+        @unlink($inputFile);
+        $errorMessage = 'Unable to prepare temporary Excel payload.';
+        return null;
+    }
+
+    $command = escapeshellarg($phpBinary)
+        . ' ' . escapeshellarg(__FILE__)
+        . ' --excel-cli ' . escapeshellarg($inputFile)
+        . ' ' . escapeshellarg($outputFile)
+        . ' 2>&1';
+
+    $outputLines = [];
+    $exitCode = 1;
+    @exec($command, $outputLines, $exitCode);
+    @unlink($inputFile);
+
+    if ($exitCode !== 0 || !is_file($outputFile) || (int) @filesize($outputFile) <= 0) {
+        @unlink($outputFile);
+        $errorMessage = trim(implode("\n", $outputLines)) ?: 'External Excel export process failed.';
+        return null;
+    }
+
+    $errorMessage = null;
+    return $outputFile;
 }
 
 function dbConnection(): ?PDO
@@ -125,245 +225,523 @@ function dbConnection(): ?PDO
     return null;
 }
 
-function firstExistingTable(PDO $pdo, array $candidates): ?string
-{
-    $stmt = $pdo->prepare(
-        'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :name LIMIT 1'
-    );
-    foreach ($candidates as $name) {
-        $stmt->execute(['name' => $name]);
-        $found = $stmt->fetchColumn();
-        if (is_string($found) && $found !== '') {
-            return $found;
-        }
-    }
-    return null;
-}
-
-function tableColumns(PDO $pdo, string $table): array
-{
-    $stmt = $pdo->prepare(
-        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table'
-    );
-    $stmt->execute(['table' => $table]);
-    $cols = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $col) {
-        if (is_string($col) && $col !== '') {
-            $cols[] = $col;
-        }
-    }
-    return $cols;
-}
-
-function pickColumn(array $columns, array $candidates): ?string
-{
-    $lookup = [];
-    foreach ($columns as $c) {
-        $lookup[strtolower($c)] = $c;
-    }
-    foreach ($candidates as $candidate) {
-        $k = strtolower($candidate);
-        if (isset($lookup[$k])) {
-            return $lookup[$k];
-        }
-    }
-    return null;
-}
-
-function parseYearValue($value): ?int
-{
-    $txt = text($value, 60);
-    if ($txt === '') {
-        return null;
-    }
-    if (preg_match('/\b(19|20)\d{2}\b/', $txt, $m) === 1) {
-        return (int) $m[0];
-    }
-    $ts = strtotime($txt);
-    if ($ts === false) {
-        return null;
-    }
-    return (int) date('Y', $ts);
-}
-
-function fetchRowsByYear(PDO $pdo, string $table, array $columns, ?string $yearColumn, int $year): array
-{
-    $selected = [];
-    foreach ($columns as $c) {
-        if (is_string($c) && $c !== '') {
-            $selected[$c] = true;
-        }
-    }
-    if ($yearColumn) {
-        $selected[$yearColumn] = true;
-    }
-    if (!$selected) {
-        return [];
-    }
-    $names = array_keys($selected);
-    $quoted = [];
-    foreach ($names as $n) {
-        $quoted[] = qid($n);
-    }
-    $sql = 'SELECT ' . implode(', ', $quoted) . ' FROM ' . qid($table);
-    if ($yearColumn) {
-        try {
-            $stmt = $pdo->prepare($sql . ' WHERE YEAR(' . qid($yearColumn) . ') = :year');
-            $stmt->execute(['year' => $year]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        } catch (Throwable $e) {
-            // fallback to app-side year filtering
-        }
-    }
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    if (!$yearColumn) {
-        return $rows;
-    }
-    $filtered = [];
-    foreach ($rows as $row) {
-        $y = parseYearValue($row[$yearColumn] ?? null);
-        if ($y === $year) {
-            $filtered[] = $row;
-        }
-    }
-    return $filtered;
-}
-
-function isYes($value): bool
-{
-    $v = strtolower(text($value, 40));
-    return in_array($v, ['1', 'yes', 'y', 'true', 't', 'oo', 'meron', 'present', 'active'], true);
-}
-
-function normalizedSex($value): string
-{
-    $v = strtolower(text($value, 60));
-    if ($v === 'f' || strpos($v, 'female') !== false) {
-        return 'Female';
-    }
-    if ($v === 'm' || strpos($v, 'male') !== false) {
-        return 'Male';
-    }
-    return '';
-}
-
-function normalizedEmployment($value): string
-{
-    $v = strtolower(text($value, 80));
-    if (strpos($v, 'self') !== false) {
-        return 'Self-Employed';
-    }
-    if (strpos($v, 'unemploy') !== false) {
-        return 'Unemployed';
-    }
-    if (strpos($v, 'employ') !== false) {
-        return 'Employed';
-    }
-    return '';
-}
-
-function normalizedEducation($value): string
-{
-    $v = strtolower(text($value, 120));
-    if ($v === '' || $v === '-') {
-        return '';
-    }
-    if ((strpos($v, 'no') !== false && strpos($v, 'school') !== false) || $v === 'none') {
-        return 'No Schooling';
-    }
-    if (strpos($v, 'elementary') !== false || strpos($v, 'grade school') !== false) {
-        return 'Elementary';
-    }
-    if (strpos($v, 'high school') !== false || strpos($v, 'secondary') !== false) {
-        return 'High School';
-    }
-    if (strpos($v, 'college') !== false || strpos($v, 'university') !== false || strpos($v, 'tertiary') !== false) {
-        return 'College';
-    }
-    if (strpos($v, 'vocational') !== false || strpos($v, 'tesda') !== false || strpos($v, 'technical') !== false) {
-        return 'Vocational';
-    }
-    return '';
-}
-
-function parseAge($ageValue, $birthValue): ?int
-{
-    if ($ageValue !== null && $ageValue !== '') {
-        $n = (int) preg_replace('/[^0-9]/', '', (string) $ageValue);
-        if ($n >= 0 && $n <= 130) {
-            return $n;
-        }
-    }
-    $b = text($birthValue, 80);
-    if ($b === '') {
-        return null;
-    }
-    $ts = strtotime($b);
-    if ($ts === false) {
-        return null;
-    }
-    $birthYear = (int) date('Y', $ts);
-    $age = (int) date('Y') - $birthYear;
-    return ($age >= 0 && $age <= 130) ? $age : null;
-}
-
 function nfmt($value, int $decimals = 0): string
 {
     return number_format((float) $value, $decimals);
 }
 
-function groupedCounts(array $rows, ?string $column): array
-{
-    $out = [];
-    if (!$column) {
-        return $out;
-    }
-    foreach ($rows as $row) {
-        $label = text($row[$column] ?? '', 200);
-        if ($label === '') {
-            $label = 'Unspecified';
-        }
-        if (!isset($out[$label])) {
-            $out[$label] = 0;
-        }
-        $out[$label]++;
-    }
-    arsort($out, SORT_NUMERIC);
-    return $out;
-}
-
-function tableRowsFromCounts(array $counts): array
-{
-    $rows = [];
-    foreach ($counts as $label => $total) {
-        $rows[] = [text($label, 200), nfmt($total)];
-    }
-    if (!$rows) {
-        $rows[] = ['No data available', '0'];
-    }
-    return $rows;
-}
-
-function annualHeaders(): array
+function reportProfileDefaults(): array
 {
     return [
-        'Republic of the Philippines',
-        'Region V (Bicol Region)',
-        'Province of Albay',
-        'City of Ligao',
-        'Barangay Cabarian',
-        'Office of the Punong Barangay',
+        'region_name' => '',
+        'province_name' => '',
+        'city_name' => '',
+        'barangay_name' => '',
+        'barangay_code' => '',
+        'captain_name' => '',
+        'secretary_name' => '',
+        'official_seal_path' => '',
     ];
 }
 
-function annualSignatories(): array
+function reportProfileColumnExists(PDO $pdo, string $tableName, string $columnName): bool
 {
-    return [
-        'prepared' => ['label' => 'Prepared by:', 'name' => 'JUAN DELA CRUZ', 'title' => 'Barangay Secretary'],
-        'approved' => ['label' => 'Approved by:', 'name' => 'HON. MARIA SANTOS', 'title' => 'Punong Barangay'],
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM `information_schema`.`COLUMNS`
+         WHERE `TABLE_SCHEMA` = DATABASE()
+           AND `TABLE_NAME` = :table_name
+           AND `COLUMN_NAME` = :column_name
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'table_name' => $tableName,
+        'column_name' => $columnName,
+    ]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function reportProfileTable(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS `barangay_profile` (
+            `id` TINYINT UNSIGNED NOT NULL,
+            `region_name` VARCHAR(120) NULL,
+            `province_name` VARCHAR(120) NULL,
+            `city_name` VARCHAR(120) NULL,
+            `barangay_name` VARCHAR(160) NULL,
+            `barangay_code` VARCHAR(80) NULL,
+            `captain_name` VARCHAR(160) NULL,
+            `secretary_name` VARCHAR(160) NULL,
+            `official_seal_path` VARCHAR(255) NULL,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $requiredColumns = [
+        'region_name' => 'VARCHAR(120) NULL',
+        'province_name' => 'VARCHAR(120) NULL',
+        'city_name' => 'VARCHAR(120) NULL',
+        'barangay_name' => 'VARCHAR(160) NULL',
+        'barangay_code' => 'VARCHAR(80) NULL',
+        'captain_name' => 'VARCHAR(160) NULL',
+        'secretary_name' => 'VARCHAR(160) NULL',
+        'official_seal_path' => 'VARCHAR(255) NULL',
+        'updated_at' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
     ];
+    foreach ($requiredColumns as $columnName => $definition) {
+        if (reportProfileColumnExists($pdo, 'barangay_profile', $columnName)) {
+            continue;
+        }
+        $pdo->exec('ALTER TABLE `barangay_profile` ADD COLUMN `' . $columnName . '` ' . $definition);
+    }
+
+    foreach (['email', 'contact_number', 'hall_address'] as $legacyColumn) {
+        if (!reportProfileColumnExists($pdo, 'barangay_profile', $legacyColumn)) {
+            continue;
+        }
+        $pdo->exec('ALTER TABLE `barangay_profile` DROP COLUMN `' . $legacyColumn . '`');
+    }
+}
+
+function reportProfileFromUsers(PDO $pdo): array
+{
+    $names = [
+        'captain_name' => '',
+        'secretary_name' => '',
+    ];
+
+    try {
+        $captainStmt = $pdo->prepare(
+            'SELECT `full_name`
+             FROM `users`
+             WHERE `role` = :role
+             ORDER BY `id` ASC
+             LIMIT 1'
+        );
+        $captainStmt->execute(['role' => 'captain']);
+        $captainName = $captainStmt->fetchColumn();
+        if (is_string($captainName) && trim($captainName) !== '') {
+            $names['captain_name'] = trim($captainName);
+        }
+
+        $secretaryStmt = $pdo->query(
+            'SELECT `full_name`
+             FROM `users`
+             WHERE `role` IN ("secretary", "admin")
+             ORDER BY FIELD(`role`, "secretary", "admin"), `id` ASC
+             LIMIT 1'
+        );
+        $secretaryName = $secretaryStmt instanceof PDOStatement ? $secretaryStmt->fetchColumn() : '';
+        if (is_string($secretaryName) && trim($secretaryName) !== '') {
+            $names['secretary_name'] = trim($secretaryName);
+        }
+    } catch (Throwable $e) {
+        // User table may be unavailable in partial deployments.
+    }
+
+    return $names;
+}
+
+/**
+ * @return array<string, string>
+ */
+function reportProfileData(?PDO $pdo): array
+{
+    $profile = reportProfileDefaults();
+    $userNames = [
+        'captain_name' => '',
+        'secretary_name' => '',
+    ];
+
+    if ($pdo instanceof PDO) {
+        try {
+            reportProfileTable($pdo);
+            $stmt = $pdo->prepare(
+                'SELECT
+                    `region_name`,
+                    `province_name`,
+                    `city_name`,
+                    `barangay_name`,
+                    `barangay_code`,
+                    `captain_name`,
+                    `secretary_name`,
+                    `official_seal_path`
+                 FROM `barangay_profile`
+                 WHERE `id` = 1
+                 LIMIT 1'
+            );
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($row)) {
+                foreach ($profile as $key => $value) {
+                    $profile[$key] = text($row[$key] ?? '', 255);
+                }
+            }
+        } catch (Throwable $e) {
+            // Profile table is optional; fall back to user account data.
+        }
+
+        $userNames = reportProfileFromUsers($pdo);
+    }
+
+    if ($profile['captain_name'] === '') {
+        $profile['captain_name'] = $userNames['captain_name'] ?? '';
+    }
+    if ($profile['secretary_name'] === '') {
+        $profile['secretary_name'] = $userNames['secretary_name'] ?? '';
+    }
+
+    return $profile;
+}
+
+function reportImageMimeFromExtension(string $path): string
+{
+    $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+    return match ($extension) {
+        'png' => 'image/png',
+        'jpg', 'jpeg' => 'image/jpeg',
+        'webp' => 'image/webp',
+        default => '',
+    };
+}
+
+/**
+ * @param array<string, string> $profile
+ */
+function reportOfficialSealAbsolutePath(array $profile): string
+{
+    $relativePath = text($profile['official_seal_path'] ?? '', 255);
+    if ($relativePath === '') {
+        return '';
+    }
+
+    $normalized = ltrim(trim(str_replace('\\', '/', $relativePath)), '/');
+    $prefix = 'assets/img/official-seals/';
+    if (strpos($normalized, $prefix) !== 0) {
+        return '';
+    }
+
+    $fileName = basename($normalized);
+    if ($fileName === '' || $fileName === '.' || $fileName === '..') {
+        return '';
+    }
+
+    $absolutePath = __DIR__ . '/assets/img/official-seals/' . $fileName;
+    if (!is_file($absolutePath)) {
+        return '';
+    }
+
+    return $absolutePath;
+}
+
+function reportOfficialSealDataUri(string $absoluteSealPath): string
+{
+    if ($absoluteSealPath === '' || !is_file($absoluteSealPath)) {
+        return '';
+    }
+
+    $mime = reportImageMimeFromExtension($absoluteSealPath);
+    if ($mime === '') {
+        return '';
+    }
+
+    $binary = @file_get_contents($absoluteSealPath);
+    if (!is_string($binary) || $binary === '') {
+        return '';
+    }
+
+    return 'data:' . $mime . ';base64,' . base64_encode($binary);
+}
+
+/**
+ * @return array{path:string,is_temp:bool}
+ */
+function prepareFpdfWatermarkImage(string $absoluteSealPath): array
+{
+    $fallback = ['path' => '', 'is_temp' => false];
+    if ($absoluteSealPath === '' || !is_file($absoluteSealPath)) {
+        return $fallback;
+    }
+
+    $mime = reportImageMimeFromExtension($absoluteSealPath);
+    $extension = strtolower((string) pathinfo($absoluteSealPath, PATHINFO_EXTENSION));
+    if (
+        !function_exists('imagecreatetruecolor')
+        || !function_exists('imagecopyresampled')
+        || !function_exists('imagepng')
+    ) {
+        if (in_array($extension, ['png', 'jpg', 'jpeg'], true)) {
+            return ['path' => $absoluteSealPath, 'is_temp' => false];
+        }
+        return $fallback;
+    }
+
+    $createFn = match ($mime) {
+        'image/png' => 'imagecreatefrompng',
+        'image/jpeg' => 'imagecreatefromjpeg',
+        'image/webp' => 'imagecreatefromwebp',
+        default => '',
+    };
+
+    if ($createFn === '' || !function_exists($createFn)) {
+        if (in_array($extension, ['png', 'jpg', 'jpeg'], true)) {
+            return ['path' => $absoluteSealPath, 'is_temp' => false];
+        }
+        return $fallback;
+    }
+
+    $source = @$createFn($absoluteSealPath);
+    if (!is_resource($source) && !($source instanceof GdImage)) {
+        if (in_array($extension, ['png', 'jpg', 'jpeg'], true)) {
+            return ['path' => $absoluteSealPath, 'is_temp' => false];
+        }
+        return $fallback;
+    }
+
+    $sourceWidth = imagesx($source);
+    $sourceHeight = imagesy($source);
+    if ($sourceWidth <= 0 || $sourceHeight <= 0) {
+        imagedestroy($source);
+        return $fallback;
+    }
+
+    $maxDimension = 1200.0;
+    $scale = min(1.0, $maxDimension / max($sourceWidth, $sourceHeight));
+    $targetWidth = max(1, (int) round($sourceWidth * $scale));
+    $targetHeight = max(1, (int) round($sourceHeight * $scale));
+
+    $canvas = imagecreatetruecolor($targetWidth, $targetHeight);
+    if (!is_resource($canvas) && !($canvas instanceof GdImage)) {
+        imagedestroy($source);
+        return $fallback;
+    }
+
+    imagealphablending($canvas, true);
+    $white = imagecolorallocate($canvas, 255, 255, 255);
+    imagefilledrectangle($canvas, 0, 0, $targetWidth, $targetHeight, $white);
+    imagecopyresampled(
+        $canvas,
+        $source,
+        0,
+        0,
+        0,
+        0,
+        $targetWidth,
+        $targetHeight,
+        $sourceWidth,
+        $sourceHeight
+    );
+
+    $tempBase = tempnam(sys_get_temp_dir(), 'hims_pdf_wm_');
+    if (!is_string($tempBase) || $tempBase === '') {
+        imagedestroy($canvas);
+        imagedestroy($source);
+        return $fallback;
+    }
+    if (is_file($tempBase)) {
+        @unlink($tempBase);
+    }
+    $tempPath = $tempBase . '.png';
+
+    $saved = @imagepng($canvas, $tempPath, 8);
+    imagedestroy($canvas);
+    imagedestroy($source);
+
+    if ($saved !== true || !is_file($tempPath)) {
+        @unlink($tempPath);
+        return $fallback;
+    }
+
+    return ['path' => $tempPath, 'is_temp' => true];
+}
+
+function drawFpdfWatermark(FPDF $pdf, string $watermarkImagePath): void
+{
+    if ($watermarkImagePath === '' || !is_file($watermarkImagePath)) {
+        return;
+    }
+
+    $maxWidth = 155.0;
+    $maxHeight = 155.0;
+    $drawWidth = $maxWidth;
+    $drawHeight = $maxHeight;
+
+    $imageInfo = @getimagesize($watermarkImagePath);
+    if (is_array($imageInfo)) {
+        $sourceWidth = (float) ($imageInfo[0] ?? 0);
+        $sourceHeight = (float) ($imageInfo[1] ?? 0);
+        if ($sourceWidth > 0.0 && $sourceHeight > 0.0) {
+            $scale = min($maxWidth / $sourceWidth, $maxHeight / $sourceHeight);
+            $drawWidth = max(1.0, $sourceWidth * $scale);
+            $drawHeight = max(1.0, $sourceHeight * $scale);
+        }
+    }
+
+    $watermarkX = ($pdf->GetPageWidth() - $drawWidth) / 2.0;
+    $watermarkY = ($pdf->GetPageHeight() - $drawHeight) / 2.0;
+    if (method_exists($pdf, 'SetAlpha')) {
+        $pdf->SetAlpha(0.10);
+    }
+    $pdf->Image($watermarkImagePath, $watermarkX, $watermarkY, $drawWidth, $drawHeight);
+    if (method_exists($pdf, 'SetAlpha')) {
+        $pdf->SetAlpha(1.0);
+    }
+}
+
+/**
+ * @param array{captain:string,secretary:string,date_generated:string} $footerData
+ */
+function drawFpdfSignatureFooter(
+    FPDF $pdf,
+    array $footerData,
+    string $watermarkImagePath,
+    float $scale,
+    float $bottomPadding
+): void {
+    $nameHeight = max(3.6, 5.0 * $scale);
+    $titleHeight = max(3.1, 4.3 * $scale);
+    $dateHeight = max(3.4, 4.7 * $scale);
+    $betweenRows = max(0.6, 1.2 * $scale);
+    $beforeDateGap = max(6.0, 10.0 * $scale);
+    $beforeFooterGap = max(2.0, 3.5 * $scale);
+    $footerHeight = $beforeFooterGap + $nameHeight + $betweenRows + $titleHeight + $beforeDateGap + $dateHeight;
+
+    if ($pdf->GetY() + $footerHeight > $pdf->GetPageHeight() - $bottomPadding) {
+        $pdf->AddPage();
+        drawFpdfWatermark($pdf, $watermarkImagePath);
+    }
+
+    $targetY = max(
+        $pdf->GetY() + $beforeFooterGap,
+        $pdf->GetPageHeight() - $footerHeight - $bottomPadding
+    );
+    $pdf->SetY($targetY);
+
+    $pageWidth = $pdf->GetPageWidth();
+    $outerPadding = 20.0;
+    $columnWidth = 72.0;
+    $leftX = $outerPadding;
+    $rightX = $pageWidth - $outerPadding - $columnWidth;
+
+    $pdf->SetFont('Times', 'B', max(7.2, 10.0 * $scale));
+    $pdf->SetXY($leftX, $targetY);
+    $pdf->Cell($columnWidth, $nameHeight, toPdfText(text($footerData['captain'] ?? '', 160)), 0, 0, 'C');
+    $pdf->SetXY($rightX, $targetY);
+    $pdf->Cell($columnWidth, $nameHeight, toPdfText(text($footerData['secretary'] ?? '', 160)), 0, 0, 'C');
+
+    $titleY = $targetY + $nameHeight + $betweenRows;
+    $pdf->SetFont('Times', '', max(6.8, 9.0 * $scale));
+    $pdf->SetXY($leftX, $titleY);
+    $pdf->Cell($columnWidth, $titleHeight, toPdfText('Brgy Captain'), 0, 0, 'C');
+    $pdf->SetXY($rightX, $titleY);
+    $pdf->Cell($columnWidth, $titleHeight, toPdfText('Secretary'), 0, 0, 'C');
+
+    $dateY = $titleY + $titleHeight + $beforeDateGap;
+    $pdf->SetY($dateY);
+    $pdf->SetFont('Times', '', max(6.8, 9.2 * $scale));
+    $pdf->Cell(0, $dateHeight, toPdfText(text($footerData['date_generated'] ?? '', 180)), 0, 1, 'C');
+}
+
+/**
+ * @param array<string, string> $profile
+ * @return array<string, array<string, string>>
+ */
+function annualSignatories(array $profile): array
+{
+    $preparedName = text($profile['secretary_name'] ?? '', 160);
+    $approvedName = text($profile['captain_name'] ?? '', 160);
+
+    if ($preparedName === '') {
+        $preparedName = envValue(['BARANGAY_SECRETARY_NAME'], '');
+    }
+    if ($approvedName === '') {
+        $approvedName = envValue(['BARANGAY_CAPTAIN_NAME'], '');
+    }
+    if ($preparedName === '') {
+        $preparedName = 'Not specified';
+    }
+    if ($approvedName === '') {
+        $approvedName = 'Not specified';
+    }
+
+    return [
+        'prepared' => ['label' => 'Prepared by:', 'name' => $preparedName, 'title' => 'Barangay Secretary'],
+        'approved' => ['label' => 'Approved by:', 'name' => $approvedName, 'title' => 'Punong Barangay'],
+    ];
+}
+
+/**
+ * @param array<string, string> $profile
+ * @param array<string, mixed> $report
+ * @return array{captain:string,secretary:string,date_generated:string}
+ */
+function reportFooterData(array $profile, array $report): array
+{
+    $captain = text($profile['captain_name'] ?? '', 160);
+    $secretary = text($profile['secretary_name'] ?? '', 160);
+    if ($captain === '' || $secretary === '') {
+        $signatories = annualSignatories($profile);
+        if ($captain === '') {
+            $captain = text(($signatories['approved']['name'] ?? ''), 160);
+        }
+        if ($secretary === '') {
+            $secretary = text(($signatories['prepared']['name'] ?? ''), 160);
+        }
+    }
+    if ($captain === '') {
+        $captain = 'Not specified';
+    }
+    if ($secretary === '') {
+        $secretary = 'Not specified';
+    }
+
+    $dateGenerated = '';
+    $metaBlock = is_array($report['meta_block'] ?? null) ? $report['meta_block'] : [];
+    foreach ($metaBlock as $entry) {
+        $label = strtolower(text($entry['label'] ?? '', 80));
+        if ($label !== 'date generated') {
+            continue;
+        }
+        $dateGenerated = text($entry['value'] ?? '', 160);
+        if ($dateGenerated !== '') {
+            break;
+        }
+    }
+    if ($dateGenerated === '') {
+        $dateGenerated = date('F j, Y g:i A');
+    }
+
+    return [
+        'captain' => $captain,
+        'secretary' => $secretary,
+        'date_generated' => $dateGenerated,
+    ];
+}
+
+/**
+ * @param array<string, string> $profile
+ */
+function reportFileName(array $profile, int $year, string $format): string
+{
+    $name = text($profile['barangay_name'] ?? '', 160);
+    if ($name === '') {
+        $name = envValue(['BARANGAY_NAME'], 'Barangay');
+    }
+    $slug = preg_replace('/[^A-Za-z0-9]+/', '_', $name);
+    if ($slug === null || trim($slug, '_') === '') {
+        $slug = 'Barangay';
+    } else {
+        $slug = trim($slug, '_');
+    }
+
+    $extension = strtolower(text($format, 8));
+    if ($extension !== 'pdf' && $extension !== 'xlsx') {
+        $extension = 'pdf';
+    }
+
+    return $slug . '_Annual_Report_' . $year . '.' . $extension;
 }
 
 function toInt($value, int $default = 0): int
@@ -439,21 +817,386 @@ function mapCountsFromPayload($map): array
     return $result;
 }
 
-function buildAnnualReportDataFromAnalytics(array $analytics, int $year): ?array
+function mapCountValue(array $source, array $keys): int
+{
+    if (!$source) {
+        return 0;
+    }
+    $lookup = [];
+    foreach ($source as $label => $value) {
+        $lookup[strtolower(text($label, 200))] = toInt($value, 0);
+    }
+    foreach ($keys as $key) {
+        $normalized = strtolower(text($key, 200));
+        if ($normalized !== '' && array_key_exists($normalized, $lookup)) {
+            return (int) $lookup[$normalized];
+        }
+    }
+    return 0;
+}
+
+function buildOfficeReportData(int $year, array $profile, array $metrics): array
+{
+    $employment = is_array($metrics['employment'] ?? null) ? $metrics['employment'] : [];
+    $education = is_array($metrics['education'] ?? null) ? $metrics['education'] : [];
+    $marital = is_array($metrics['marital'] ?? null) ? $metrics['marital'] : [];
+    $toilet = is_array($metrics['toilet'] ?? null) ? $metrics['toilet'] : [];
+    $water = is_array($metrics['water'] ?? null) ? $metrics['water'] : [];
+    $electricity = is_array($metrics['electricity'] ?? null) ? $metrics['electricity'] : [];
+    $ownership = is_array($metrics['ownership'] ?? null) ? $metrics['ownership'] : [];
+    $deathsByCause = is_array($metrics['deaths_by_cause'] ?? null) ? $metrics['deaths_by_cause'] : [];
+    $ageBrackets = is_array($metrics['age_brackets'] ?? null) ? $metrics['age_brackets'] : [];
+    if (!$ageBrackets) {
+        $ageBrackets = is_array($metrics['ages'] ?? null) ? $metrics['ages'] : [];
+    }
+    $otherIndicators = is_array($metrics['other_indicators'] ?? null) ? $metrics['other_indicators'] : [];
+
+    $province = text($profile['province_name'] ?? '', 120);
+    if ($province === '') {
+        $province = envValue(['BARANGAY_PROVINCE', 'PROVINCE_NAME'], '');
+    }
+    $city = text($profile['city_name'] ?? '', 120);
+    if ($city === '') {
+        $city = envValue(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], '');
+    }
+    $barangay = text($profile['barangay_name'] ?? '', 160);
+    if ($barangay === '') {
+        $barangay = envValue(['BARANGAY_NAME'], 'Barangay');
+    }
+
+    $population = max(0, toInt($metrics['population'] ?? 0));
+    $male = max(0, toInt($metrics['male'] ?? 0));
+    $female = max(0, toInt($metrics['female'] ?? 0));
+    $households = max(0, toInt($metrics['households'] ?? 0));
+    $avgHousehold = max(0.0, toFloat($metrics['avg_household'] ?? 0.0));
+
+    $noDataRow = static function (): array {
+        return [REPORT_NO_DATA_MESSAGE, '-'];
+    };
+
+    $topEntry = static function (array $counts): ?array {
+        $clean = [];
+        foreach ($counts as $label => $value) {
+            $name = text($label, 160);
+            if ($name === '') {
+                continue;
+            }
+            $clean[$name] = max(0, toInt($value, 0));
+        }
+        if (!$clean) {
+            return null;
+        }
+        arsort($clean, SORT_NUMERIC);
+        foreach ($clean as $label => $count) {
+            if ($count > 0) {
+                return ['label' => $label, 'count' => $count];
+            }
+        }
+        return null;
+    };
+
+    $fixedRows = static function (array $counts, int $denominator) use ($noDataRow): array {
+        $rows = [];
+        $hasData = false;
+        foreach ($counts as $label => $value) {
+            $count = max(0, toInt($value, 0));
+            if ($count > 0) {
+                $hasData = true;
+            }
+            $rows[] = [
+                text($label, 180),
+                nfmt($count),
+            ];
+        }
+        return $hasData ? $rows : [$noDataRow()];
+    };
+
+    $dynamicRows = static function (array $counts, int $denominator) use ($noDataRow): array {
+        $clean = [];
+        foreach ($counts as $label => $value) {
+            $name = text($label, 180);
+            if ($name === '') {
+                continue;
+            }
+            $clean[$name] = max(0, toInt($value, 0));
+        }
+        if (!$clean) {
+            return [$noDataRow()];
+        }
+        arsort($clean, SORT_NUMERIC);
+        $rows = [];
+        $hasData = false;
+        foreach ($clean as $label => $count) {
+            if ($count > 0) {
+                $hasData = true;
+            }
+            $rows[] = [
+                $label,
+                nfmt($count),
+            ];
+        }
+        return $hasData ? $rows : [$noDataRow()];
+    };
+
+    $distributionTotal = static function (array $counts, int $fallback): int {
+        if ($fallback > 0) {
+            return $fallback;
+        }
+        $sum = 0;
+        foreach ($counts as $value) {
+            $sum += max(0, toInt($value, 0));
+        }
+        return max(0, $sum);
+    };
+
+    $ageCounts = [
+        '0-5' => mapCountValue($ageBrackets, ['0-5']),
+        '6-10' => mapCountValue($ageBrackets, ['6-10']),
+        '11-15' => mapCountValue($ageBrackets, ['11-15']),
+        '16-20' => mapCountValue($ageBrackets, ['16-20']),
+        '21-30' => mapCountValue($ageBrackets, ['21-30']),
+        '31-40' => mapCountValue($ageBrackets, ['31-40']),
+        '41-50' => mapCountValue($ageBrackets, ['41-50']),
+        '51-60' => mapCountValue($ageBrackets, ['51-60']),
+        '61-70' => mapCountValue($ageBrackets, ['61-70']),
+        '71+' => mapCountValue($ageBrackets, ['71+']),
+    ];
+
+    $employmentCounts = [
+        'Employed' => mapCountValue($employment, ['Employed', 'employed']),
+        'Unemployed' => mapCountValue($employment, ['Unemployed', 'unemployed']),
+        'Self-Employed' => mapCountValue($employment, ['Self-Employed', 'self employed', 'self-employed']),
+    ];
+
+    $educationCounts = [
+        'No Schooling' => mapCountValue($education, ['No Schooling', 'no schooling']),
+        'Elementary' => mapCountValue($education, ['Elementary', 'elementary']),
+        'High School' => mapCountValue($education, ['High School', 'high school']),
+        'College' => mapCountValue($education, ['College', 'college']),
+        'Vocational' => mapCountValue($education, ['Vocational', 'vocational']),
+    ];
+
+    $civilStatusCounts = [
+        'Single' => mapCountValue($marital, ['Single', 'single']),
+        'Married' => mapCountValue($marital, ['Married', 'married']),
+        'Widowed' => mapCountValue($marital, ['Widowed', 'widowed', 'widow', 'widower']),
+        'Separated' => mapCountValue($marital, ['Separated', 'separated']),
+        'Other' => mapCountValue($marital, ['Other', 'other']),
+    ];
+
+    $socialIndicatorCounts = [
+        'Persons with Disability (PWD)' => mapCountValue($otherIndicators, ['PWD', 'pwd']),
+        'Senior Citizens' => mapCountValue($otherIndicators, ['Senior Citizens', 'senior citizens', 'senior_citizens']),
+        'Solo Parents' => mapCountValue($otherIndicators, ['Solo Parents', 'solo parents', 'solo_parents']),
+    ];
+
+    $healthCounts = [
+        'Pregnant Women' => max(0, toInt($metrics['pregnant_women'] ?? 0)),
+        'Malnourished Children' => max(0, toInt($metrics['malnourished_children'] ?? 0)),
+        'Persons with Illness' => max(0, toInt($metrics['persons_with_illness'] ?? 0)),
+    ];
+
+    $ageLeader = $topEntry($ageCounts);
+    $educationLeader = $topEntry($educationCounts);
+    $employmentLeader = $topEntry($employmentCounts);
+
+    $executiveRows = [
+        ['Total Population', nfmt($population)],
+        ['Total Households', nfmt($households)],
+        ['Male Population', nfmt($male)],
+        ['Female Population', nfmt($female)],
+        ['Average Household Size', nfmt($avgHousehold, 2)],
+    ];
+
+    $highlightRows = [];
+    if (is_array($ageLeader)) {
+        $highlightRows[] = [
+            'Largest Age Group (' . text($ageLeader['label'] ?? '', 120) . ')',
+            nfmt(toInt($ageLeader['count'] ?? 0)),
+        ];
+    }
+    if (is_array($educationLeader)) {
+        $highlightRows[] = [
+            'Most Common Educational Attainment (' . text($educationLeader['label'] ?? '', 120) . ')',
+            nfmt(toInt($educationLeader['count'] ?? 0)),
+        ];
+    }
+    if (is_array($employmentLeader)) {
+        $highlightRows[] = [
+            'Most Common Employment Status (' . text($employmentLeader['label'] ?? '', 120) . ')',
+            nfmt(toInt($employmentLeader['count'] ?? 0)),
+        ];
+    }
+    if (!$highlightRows) {
+        $highlightRows[] = $noDataRow();
+    }
+
+    $signatories = annualSignatories($profile);
+    $prepared = is_array($signatories['prepared'] ?? null) ? $signatories['prepared'] : [];
+    $reviewed = is_array($signatories['approved'] ?? null) ? $signatories['approved'] : [];
+    $preparedBy = text(($prepared['name'] ?? 'Not specified') . ' - ' . ($prepared['title'] ?? 'Barangay Secretary'), 220);
+    $reviewedBy = text(($reviewed['name'] ?? 'Not specified') . ' - ' . ($reviewed['title'] ?? 'Punong Barangay'), 220);
+
+    $standardColumns = ['Indicator', 'Count'];
+
+    return [
+        'year' => $year,
+        'title' => 'OFFICE OF THE PUNONG BARANGAY',
+        'header_lines' => [
+            'Republic of the Philippines',
+            'Province of ' . $province,
+            'Municipality of ' . $city,
+            'BARANGAY ' . strtoupper($barangay),
+        ],
+        'sections' => [
+            [
+                'title' => 'A. Executive Summary',
+                'tables' => [
+                    [
+                        'title' => 'Key Metrics',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $executiveRows,
+                    ],
+                    [
+                        'title' => 'Highlights',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $highlightRows,
+                    ],
+                ],
+            ],
+            [
+                'title' => 'B. Population and Household Profile',
+                'tables' => [
+                    [
+                        'title' => null,
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => [
+                            ['Total Population', nfmt($population)],
+                            ['Male Population', nfmt($male)],
+                            ['Female Population', nfmt($female)],
+                            ['Total Households', nfmt($households)],
+                            ['Average Household Size', nfmt($avgHousehold, 2)],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'title' => 'C. Age Group Distribution',
+                'tables' => [[
+                    'title' => null,
+                    'columns' => $standardColumns,
+                    'show_header' => true,
+                    'rows' => $fixedRows($ageCounts, $population),
+                ]],
+            ],
+            [
+                'title' => 'D. Socioeconomic Profile',
+                'tables' => [
+                    [
+                        'title' => 'Employment Status',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $fixedRows($employmentCounts, $population),
+                    ],
+                    [
+                        'title' => 'Educational Attainment',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $fixedRows($educationCounts, $population),
+                    ],
+                    [
+                        'title' => 'Civil Status',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $fixedRows($civilStatusCounts, $population),
+                    ],
+                    [
+                        'title' => 'Social Indicators',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $fixedRows($socialIndicatorCounts, $population),
+                    ],
+                ],
+            ],
+            [
+                'title' => 'E. Housing and Utilities',
+                'tables' => [
+                    [
+                        'title' => 'Toilet Type',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $dynamicRows($toilet, $distributionTotal($toilet, $households)),
+                    ],
+                    [
+                        'title' => 'Water Source',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $dynamicRows($water, $distributionTotal($water, $households)),
+                    ],
+                    [
+                        'title' => 'Electricity Source',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $dynamicRows($electricity, $distributionTotal($electricity, $households)),
+                    ],
+                    [
+                        'title' => 'Housing Ownership',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $dynamicRows($ownership, $distributionTotal($ownership, $households)),
+                    ],
+                ],
+            ],
+            [
+                'title' => 'F. Health Risk Indicators',
+                'tables' => [
+                    [
+                        'title' => 'Health Indicators',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $fixedRows($healthCounts, $population),
+                    ],
+                    [
+                        'title' => 'Deaths by Cause',
+                        'columns' => $standardColumns,
+                        'show_header' => true,
+                        'rows' => $dynamicRows($deathsByCause, $distributionTotal($deathsByCause, 0)),
+                    ],
+                ],
+            ],
+        ],
+        'meta_block' => [
+            ['label' => 'Prepared by', 'value' => $preparedBy],
+            ['label' => 'Reviewed by', 'value' => $reviewedBy],
+            ['label' => 'Date Generated', 'value' => date('F j, Y g:i A')],
+            ['label' => 'Data Source', 'value' => REPORT_DATA_SOURCE],
+        ],
+    ];
+}
+
+/**
+ * @param array<string, string> $profile
+ */
+function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $profile): ?array
 {
     $populationSummary = is_array($analytics['population_summary'] ?? null) ? $analytics['population_summary'] : [];
+    $ageBrackets = is_array($analytics['age_brackets'] ?? null) ? $analytics['age_brackets'] : [];
     $ageDistribution = is_array($analytics['age_group_distribution'] ?? null) ? $analytics['age_group_distribution'] : [];
     $socioEconomic = is_array($analytics['socio_economic'] ?? null) ? $analytics['socio_economic'] : [];
     $housingUtilities = is_array($analytics['housing_utilities'] ?? null) ? $analytics['housing_utilities'] : [];
     $healthRisk = is_array($analytics['health_risk'] ?? null) ? $analytics['health_risk'] : [];
 
-    $hasAnalytics = !empty($populationSummary) || !empty($ageDistribution) || !empty($socioEconomic) || !empty($housingUtilities) || !empty($healthRisk);
+    $hasAnalytics = !empty($populationSummary) || !empty($ageBrackets) || !empty($ageDistribution) || !empty($socioEconomic) || !empty($housingUtilities) || !empty($healthRisk);
     if (!$hasAnalytics) {
         return null;
     }
 
-    $employment = is_array($socioEconomic['employment_status'] ?? null) ? $socioEconomic['employment_status'] : [];
-    $education = is_array($socioEconomic['educational_attainment'] ?? null) ? $socioEconomic['educational_attainment'] : [];
+    $employment = mapCountsFromPayload($socioEconomic['employment_status'] ?? null);
+    $education = mapCountsFromPayload($socioEconomic['educational_attainment'] ?? null);
+    $civilStatus = mapCountsFromPayload($analytics['civil_status_distribution'] ?? null);
     $otherIndicators = is_array($socioEconomic['other_indicators'] ?? null) ? $socioEconomic['other_indicators'] : [];
 
     $toilet = mapCountsFromPayload($housingUtilities['toilet_type'] ?? null);
@@ -469,411 +1212,48 @@ function buildAnnualReportDataFromAnalytics(array $analytics, int $year): ?array
     $households = payloadCount($populationSummary, ['households', 'total_households'], 0);
     $avgHousehold = payloadFloat($populationSummary, ['average_household_size', 'avg_household_size'], 0.0);
 
-    return [
-        'year' => $year,
-        'title' => 'BARANGAY ANNUAL HOUSEHOLD REPORT',
-        'header_lines' => annualHeaders(),
-        'generated_by' => 'Barangay Household Information Management System',
-        'generated_date' => date('F d, Y'),
-        'sections' => [
-            [
-                'title' => 'SECTION A. Population Summary',
-                'tables' => [[
-                    'title' => null,
-                    'columns' => ['Indicator', 'Total'],
-                    'rows' => [
-                        ['Total Population', nfmt($population)],
-                        ['Male', nfmt($male)],
-                        ['Female', nfmt($female)],
-                        ['Households', nfmt($households)],
-                        ['Average Household Size', nfmt($avgHousehold, 2)],
-                    ],
-                ]],
-            ],
-            [
-                'title' => 'SECTION B. Age Group Distribution',
-                'tables' => [[
-                    'title' => null,
-                    'columns' => ['Age Group', 'Total'],
-                    'rows' => [
-                        ['0-5', nfmt(payloadCount($ageDistribution, ['0-5', 'age_0_5'], 0))],
-                        ['6-12', nfmt(payloadCount($ageDistribution, ['6-12', 'age_6_12'], 0))],
-                        ['13-17', nfmt(payloadCount($ageDistribution, ['13-17', 'age_13_17'], 0))],
-                        ['18-59', nfmt(payloadCount($ageDistribution, ['18-59', 'age_18_59'], 0))],
-                        ['60+', nfmt(payloadCount($ageDistribution, ['60+', 'age_60_plus'], 0))],
-                    ],
-                ]],
-            ],
-            [
-                'title' => 'SECTION C. Socio-Economic Indicators',
-                'tables' => [
-                    ['title' => 'Employment Status Table', 'columns' => ['Status', 'Total'], 'rows' => [
-                        ['Employed', nfmt(payloadCount($employment, ['Employed', 'employed'], 0))],
-                        ['Unemployed', nfmt(payloadCount($employment, ['Unemployed', 'unemployed'], 0))],
-                        ['Self-Employed', nfmt(payloadCount($employment, ['Self-Employed', 'self_employed', 'self-employed'], 0))],
-                    ]],
-                    ['title' => 'Educational Attainment Table', 'columns' => ['Level', 'Total'], 'rows' => [
-                        ['No Schooling', nfmt(payloadCount($education, ['No Schooling', 'no_schooling'], 0))],
-                        ['Elementary', nfmt(payloadCount($education, ['Elementary', 'elementary'], 0))],
-                        ['High School', nfmt(payloadCount($education, ['High School', 'high_school'], 0))],
-                        ['College', nfmt(payloadCount($education, ['College', 'college'], 0))],
-                        ['Vocational', nfmt(payloadCount($education, ['Vocational', 'vocational'], 0))],
-                    ]],
-                    ['title' => 'Other Indicators Table', 'columns' => ['Indicator', 'Total'], 'rows' => [
-                        ['PWD', nfmt(payloadCount($otherIndicators, ['PWD', 'pwd'], 0))],
-                        ['Senior Citizens', nfmt(payloadCount($otherIndicators, ['Senior Citizens', 'senior_citizens'], 0))],
-                        ['Solo Parents', nfmt(payloadCount($otherIndicators, ['Solo Parents', 'solo_parents'], 0))],
-                    ]],
-                ],
-            ],
-            [
-                'title' => 'SECTION D. Housing & Utilities',
-                'tables' => [
-                    ['title' => 'Toilet Type', 'columns' => ['Toilet Type', 'Total'], 'rows' => tableRowsFromCounts($toilet)],
-                    ['title' => 'Water Source', 'columns' => ['Water Source', 'Total'], 'rows' => tableRowsFromCounts($water)],
-                    ['title' => 'Electricity Source', 'columns' => ['Electricity Source', 'Total'], 'rows' => tableRowsFromCounts($electricity)],
-                    ['title' => 'Housing Ownership', 'columns' => ['Housing Ownership', 'Total'], 'rows' => tableRowsFromCounts($ownership)],
-                ],
-            ],
-            [
-                'title' => 'SECTION E. Health & Risk Indicators',
-                'tables' => [
-                    ['title' => 'Pregnant Women', 'columns' => ['Indicator', 'Total'], 'rows' => [['Pregnant Women', nfmt(payloadCount($healthRisk, ['pregnant_women', 'pregnantWomen'], 0))]]],
-                    ['title' => 'Malnourished Children', 'columns' => ['Indicator', 'Total'], 'rows' => [['Malnourished Children', nfmt(payloadCount($healthRisk, ['malnourished_children', 'malnourishedChildren'], 0))]]],
-                    ['title' => 'Persons with Illness', 'columns' => ['Indicator', 'Total'], 'rows' => [['Persons with Illness', nfmt(payloadCount($healthRisk, ['persons_with_illness', 'personsWithIllness'], 0))]]],
-                    ['title' => 'Deaths by Cause', 'columns' => ['Cause', 'Total'], 'rows' => $deathsByCause ? tableRowsFromCounts($deathsByCause) : [['No recorded deaths', '0']],
-                ]],
-            ],
+    return buildOfficeReportData($year, $profile, [
+        'population' => $population,
+        'male' => $male,
+        'female' => $female,
+        'households' => $households,
+        'avg_household' => $avgHousehold,
+        'age_brackets' => [
+            '0-5' => payloadCount($ageBrackets, ['0-5', 'age_0_5'], 0),
+            '6-10' => payloadCount($ageBrackets, ['6-10', 'age_6_10'], 0),
+            '11-15' => payloadCount($ageBrackets, ['11-15', 'age_11_15'], 0),
+            '16-20' => payloadCount($ageBrackets, ['16-20', 'age_16_20'], 0),
+            '21-30' => payloadCount($ageBrackets, ['21-30', 'age_21_30'], 0),
+            '31-40' => payloadCount($ageBrackets, ['31-40', 'age_31_40'], 0),
+            '41-50' => payloadCount($ageBrackets, ['41-50', 'age_41_50'], 0),
+            '51-60' => payloadCount($ageBrackets, ['51-60', 'age_51_60'], 0),
+            '61-70' => payloadCount($ageBrackets, ['61-70', 'age_61_70'], 0),
+            '71+' => payloadCount($ageBrackets, ['71+', 'age_71_plus'], 0),
         ],
-        'signatories' => annualSignatories(),
-    ];
-}
-
-function buildAnnualReportData(int $year): array
-{
-    $population = 0;
-    $male = 0;
-    $female = 0;
-    $households = 0;
-    $avgHousehold = 0.0;
-
-    $ages = ['0-5' => 0, '6-12' => 0, '13-17' => 0, '18-59' => 0, '60+' => 0];
-    $employment = ['Employed' => 0, 'Unemployed' => 0, 'Self-Employed' => 0];
-    $education = ['No Schooling' => 0, 'Elementary' => 0, 'High School' => 0, 'College' => 0, 'Vocational' => 0];
-    $other = ['PWD' => 0, 'Senior Citizens' => 0, 'Solo Parents' => 0];
-
-    $toiletCounts = [];
-    $waterCounts = [];
-    $electricityCounts = [];
-    $ownershipCounts = [];
-
-    $pregnantWomen = 0;
-    $malnourishedChildren = 0;
-    $personsWithIllness = 0;
-    $deathsByCause = [];
-
-    $residentRows = [];
-    $householdRows = [];
-    $deathRows = [];
-    $residentMap = [];
-    $householdMap = [];
-    $deathMap = [];
-
-    $pdo = dbConnection();
-    if ($pdo instanceof PDO) {
-        $residentTable = firstExistingTable($pdo, ['residents', 'resident_records', 'household_members', 'members', 'registrations']);
-        if ($residentTable) {
-            $cols = tableColumns($pdo, $residentTable);
-            $residentMap = [
-                'sex' => pickColumn($cols, ['sex', 'gender']),
-                'age' => pickColumn($cols, ['age']),
-                'birth' => pickColumn($cols, ['birthday', 'birthdate', 'date_of_birth', 'dob']),
-                'employment' => pickColumn($cols, ['employment_status', 'employment', 'work_status']),
-                'education' => pickColumn($cols, ['education', 'educational_attainment', 'education_level']),
-                'pwd' => pickColumn($cols, ['pwd', 'is_pwd', 'has_pwd']),
-                'senior' => pickColumn($cols, ['senior', 'is_senior', 'senior_citizen', 'is_senior_citizen']),
-                'solo' => pickColumn($cols, ['solo_parent', 'is_solo_parent', 'solo']),
-                'pregnant' => pickColumn($cols, ['health_maternal_pregnant', 'pregnant', 'is_pregnant']),
-                'malnutrition' => pickColumn($cols, ['health_child_malnutrition', 'child_malnutrition', 'malnutrition']),
-                'illness' => pickColumn($cols, ['health_current_illness', 'current_illness', 'has_illness']),
-                'death_cause' => pickColumn($cols, ['death_cause', 'cause_of_death']),
-                'deceased' => pickColumn($cols, ['deceased', 'is_deceased', 'status', 'alive_status']),
-                'household_id' => pickColumn($cols, ['household_id', 'hh_id', 'household']),
-                'toilet' => pickColumn($cols, ['toilet', 'toilet_type']),
-                'water' => pickColumn($cols, ['water', 'water_source']),
-                'electricity' => pickColumn($cols, ['electricity', 'electricity_source']),
-                'ownership' => pickColumn($cols, ['ownership', 'house_ownership', 'housing_ownership']),
-                'date' => pickColumn($cols, ['created_at', 'registered_at', 'registration_date', 'date_registered', 'updated_at', 'recorded_at']),
-            ];
-            $residentRows = fetchRowsByYear($pdo, $residentTable, array_values(array_filter($residentMap)), $residentMap['date'], $year);
-        }
-
-        $householdTable = firstExistingTable($pdo, ['households', 'household_records', 'household', 'registrations']);
-        if ($householdTable) {
-            $cols = tableColumns($pdo, $householdTable);
-            $householdMap = [
-                'household_id' => pickColumn($cols, ['household_id', 'hh_id', 'id']),
-                'ownership' => pickColumn($cols, ['ownership', 'house_ownership', 'housing_ownership']),
-                'toilet' => pickColumn($cols, ['toilet', 'toilet_type']),
-                'water' => pickColumn($cols, ['water', 'water_source']),
-                'electricity' => pickColumn($cols, ['electricity', 'electricity_source']),
-                'pregnant' => pickColumn($cols, ['health_maternal_pregnant', 'pregnant', 'is_pregnant']),
-                'malnutrition' => pickColumn($cols, ['health_child_malnutrition', 'child_malnutrition', 'malnutrition']),
-                'illness' => pickColumn($cols, ['health_current_illness', 'current_illness', 'has_illness']),
-                'date' => pickColumn($cols, ['created_at', 'registered_at', 'registration_date', 'date_registered', 'updated_at', 'recorded_at']),
-            ];
-            $householdRows = fetchRowsByYear($pdo, $householdTable, array_values(array_filter($householdMap)), $householdMap['date'], $year);
-        }
-
-        $deathTable = firstExistingTable($pdo, ['deaths', 'death_records', 'mortality_records', 'mortality']);
-        if ($deathTable) {
-            $cols = tableColumns($pdo, $deathTable);
-            $deathMap = [
-                'cause' => pickColumn($cols, ['cause_of_death', 'death_cause', 'cause']),
-                'date' => pickColumn($cols, ['created_at', 'date_of_death', 'recorded_at', 'registered_at', 'updated_at']),
-            ];
-            $deathRows = fetchRowsByYear($pdo, $deathTable, array_values(array_filter($deathMap)), $deathMap['date'], $year);
-        }
-    }
-
-    $population = count($residentRows);
-    $residentHouseholds = [];
-    foreach ($residentRows as $row) {
-        $sex = normalizedSex($residentMap['sex'] ? ($row[$residentMap['sex']] ?? '') : '');
-        if ($sex === 'Male') {
-            $male++;
-        } elseif ($sex === 'Female') {
-            $female++;
-        }
-
-        $age = parseAge($residentMap['age'] ? ($row[$residentMap['age']] ?? null) : null, $residentMap['birth'] ? ($row[$residentMap['birth']] ?? null) : null);
-        if ($age !== null) {
-            if ($age <= 5) {
-                $ages['0-5']++;
-            } elseif ($age <= 12) {
-                $ages['6-12']++;
-            } elseif ($age <= 17) {
-                $ages['13-17']++;
-            } elseif ($age <= 59) {
-                $ages['18-59']++;
-            } else {
-                $ages['60+']++;
-            }
-        }
-
-        $e = normalizedEmployment($residentMap['employment'] ? ($row[$residentMap['employment']] ?? '') : '');
-        if ($e !== '') {
-            $employment[$e]++;
-        }
-        $edu = normalizedEducation($residentMap['education'] ? ($row[$residentMap['education']] ?? '') : '');
-        if ($edu !== '') {
-            $education[$edu]++;
-        }
-
-        if ($residentMap['pwd'] && isYes($row[$residentMap['pwd']] ?? '')) {
-            $other['PWD']++;
-        }
-        if ($residentMap['senior'] && isYes($row[$residentMap['senior']] ?? '')) {
-            $other['Senior Citizens']++;
-        }
-        if ($residentMap['solo'] && isYes($row[$residentMap['solo']] ?? '')) {
-            $other['Solo Parents']++;
-        }
-
-        if ($residentMap['pregnant'] && isYes($row[$residentMap['pregnant']] ?? '')) {
-            if ($sex === 'Female' || !$residentMap['sex']) {
-                $pregnantWomen++;
-            }
-        }
-        if ($residentMap['malnutrition'] && isYes($row[$residentMap['malnutrition']] ?? '')) {
-            $malnourishedChildren++;
-        }
-        if ($residentMap['illness'] && isYes($row[$residentMap['illness']] ?? '')) {
-            $personsWithIllness++;
-        }
-
-        if ($residentMap['household_id']) {
-            $hh = text($row[$residentMap['household_id']] ?? '', 120);
-            if ($hh !== '') {
-                $residentHouseholds[$hh] = true;
-            }
-        }
-    }
-
-    if ($householdRows) {
-        if ($householdMap['household_id']) {
-            $hhSet = [];
-            foreach ($householdRows as $row) {
-                $hh = text($row[$householdMap['household_id']] ?? '', 120);
-                if ($hh !== '') {
-                    $hhSet[$hh] = true;
-                }
-            }
-            $households = $hhSet ? count($hhSet) : count($householdRows);
-        } else {
-            $households = count($householdRows);
-        }
-    } else {
-        $households = count($residentHouseholds);
-    }
-    $avgHousehold = $households > 0 ? $population / $households : 0.0;
-
-    $toiletCounts = groupedCounts($householdRows, $householdMap['toilet'] ?? null);
-    $waterCounts = groupedCounts($householdRows, $householdMap['water'] ?? null);
-    $electricityCounts = groupedCounts($householdRows, $householdMap['electricity'] ?? null);
-    $ownershipCounts = groupedCounts($householdRows, $householdMap['ownership'] ?? null);
-
-    if (!$toiletCounts) {
-        $toiletCounts = groupedCounts($residentRows, $residentMap['toilet'] ?? null);
-    }
-    if (!$waterCounts) {
-        $waterCounts = groupedCounts($residentRows, $residentMap['water'] ?? null);
-    }
-    if (!$electricityCounts) {
-        $electricityCounts = groupedCounts($residentRows, $residentMap['electricity'] ?? null);
-    }
-    if (!$ownershipCounts) {
-        $ownershipCounts = groupedCounts($residentRows, $residentMap['ownership'] ?? null);
-    }
-
-    if ($malnourishedChildren === 0 && !empty($householdMap['malnutrition'])) {
-        foreach ($householdRows as $row) {
-            if (isYes($row[$householdMap['malnutrition']] ?? '')) {
-                $malnourishedChildren++;
-            }
-        }
-    }
-    if ($personsWithIllness === 0 && !empty($householdMap['illness'])) {
-        foreach ($householdRows as $row) {
-            if (isYes($row[$householdMap['illness']] ?? '')) {
-                $personsWithIllness++;
-            }
-        }
-    }
-    if ($pregnantWomen === 0 && !empty($householdMap['pregnant'])) {
-        foreach ($householdRows as $row) {
-            if (isYes($row[$householdMap['pregnant']] ?? '')) {
-                $pregnantWomen++;
-            }
-        }
-    }
-
-    if ($deathRows && !empty($deathMap['cause'])) {
-        foreach ($deathRows as $row) {
-            $cause = text($row[$deathMap['cause']] ?? '', 200);
-            if ($cause === '') {
-                $cause = 'Unspecified';
-            }
-            if (!isset($deathsByCause[$cause])) {
-                $deathsByCause[$cause] = 0;
-            }
-            $deathsByCause[$cause]++;
-        }
-    } elseif (!empty($residentMap['death_cause'])) {
-        foreach ($residentRows as $row) {
-            $cause = text($row[$residentMap['death_cause']] ?? '', 200);
-            if ($cause === '') {
-                continue;
-            }
-            $isDeceased = true;
-            if (!empty($residentMap['deceased'])) {
-                $status = strtolower(text($row[$residentMap['deceased']] ?? '', 60));
-                if ($status !== '' && strpos($status, 'deceas') === false && strpos($status, 'dead') === false && !isYes($status)) {
-                    $isDeceased = false;
-                }
-            }
-            if (!$isDeceased) {
-                continue;
-            }
-            if (!isset($deathsByCause[$cause])) {
-                $deathsByCause[$cause] = 0;
-            }
-            $deathsByCause[$cause]++;
-        }
-    }
-
-    if ($female === 0 && $population > 0 && $male > 0) {
-        $female = max(0, $population - $male);
-    }
-
-    return [
-        'year' => $year,
-        'title' => 'BARANGAY ANNUAL HOUSEHOLD REPORT',
-        'header_lines' => annualHeaders(),
-        'generated_by' => 'Barangay Household Information Management System',
-        'generated_date' => date('F d, Y'),
-        'sections' => [
-            [
-                'title' => 'SECTION A. Population Summary',
-                'tables' => [[
-                    'title' => null,
-                    'columns' => ['Indicator', 'Total'],
-                    'rows' => [
-                        ['Total Population', nfmt($population)],
-                        ['Male', nfmt($male)],
-                        ['Female', nfmt($female)],
-                        ['Households', nfmt($households)],
-                        ['Average Household Size', nfmt($avgHousehold, 2)],
-                    ],
-                ]],
-            ],
-            [
-                'title' => 'SECTION B. Age Group Distribution',
-                'tables' => [[
-                    'title' => null,
-                    'columns' => ['Age Group', 'Total'],
-                    'rows' => [
-                        ['0-5', nfmt($ages['0-5'])],
-                        ['6-12', nfmt($ages['6-12'])],
-                        ['13-17', nfmt($ages['13-17'])],
-                        ['18-59', nfmt($ages['18-59'])],
-                        ['60+', nfmt($ages['60+'])],
-                    ],
-                ]],
-            ],
-            [
-                'title' => 'SECTION C. Socio-Economic Indicators',
-                'tables' => [
-                    ['title' => 'Employment Status Table', 'columns' => ['Status', 'Total'], 'rows' => [
-                        ['Employed', nfmt($employment['Employed'])],
-                        ['Unemployed', nfmt($employment['Unemployed'])],
-                        ['Self-Employed', nfmt($employment['Self-Employed'])],
-                    ]],
-                    ['title' => 'Educational Attainment Table', 'columns' => ['Level', 'Total'], 'rows' => [
-                        ['No Schooling', nfmt($education['No Schooling'])],
-                        ['Elementary', nfmt($education['Elementary'])],
-                        ['High School', nfmt($education['High School'])],
-                        ['College', nfmt($education['College'])],
-                        ['Vocational', nfmt($education['Vocational'])],
-                    ]],
-                    ['title' => 'Other Indicators Table', 'columns' => ['Indicator', 'Total'], 'rows' => [
-                        ['PWD', nfmt($other['PWD'])],
-                        ['Senior Citizens', nfmt($other['Senior Citizens'])],
-                        ['Solo Parents', nfmt($other['Solo Parents'])],
-                    ]],
-                ],
-            ],
-            [
-                'title' => 'SECTION D. Housing & Utilities',
-                'tables' => [
-                    ['title' => 'Toilet Type', 'columns' => ['Toilet Type', 'Total'], 'rows' => tableRowsFromCounts($toiletCounts)],
-                    ['title' => 'Water Source', 'columns' => ['Water Source', 'Total'], 'rows' => tableRowsFromCounts($waterCounts)],
-                    ['title' => 'Electricity Source', 'columns' => ['Electricity Source', 'Total'], 'rows' => tableRowsFromCounts($electricityCounts)],
-                    ['title' => 'Housing Ownership', 'columns' => ['Housing Ownership', 'Total'], 'rows' => tableRowsFromCounts($ownershipCounts)],
-                ],
-            ],
-            [
-                'title' => 'SECTION E. Health & Risk Indicators',
-                'tables' => [
-                    ['title' => 'Pregnant Women', 'columns' => ['Indicator', 'Total'], 'rows' => [['Pregnant Women', nfmt($pregnantWomen)]]],
-                    ['title' => 'Malnourished Children', 'columns' => ['Indicator', 'Total'], 'rows' => [['Malnourished Children', nfmt($malnourishedChildren)]]],
-                    ['title' => 'Persons with Illness', 'columns' => ['Indicator', 'Total'], 'rows' => [['Persons with Illness', nfmt($personsWithIllness)]]],
-                    ['title' => 'Deaths by Cause', 'columns' => ['Cause', 'Total'], 'rows' => $deathsByCause ? tableRowsFromCounts($deathsByCause) : [['No recorded deaths', '0']]],
-                ],
-            ],
+        'ages' => [
+            '0-5' => payloadCount($ageDistribution, ['0-5', 'age_0_5'], 0),
+            '6-12' => payloadCount($ageDistribution, ['6-12', 'age_6_12'], 0),
+            '13-17' => payloadCount($ageDistribution, ['13-17', 'age_13_17'], 0),
+            '18-59' => payloadCount($ageDistribution, ['18-59', 'age_18_59'], 0),
+            '60+' => payloadCount($ageDistribution, ['60+', 'age_60_plus'], 0),
         ],
-        'signatories' => annualSignatories(),
-    ];
+        'employment' => $employment,
+        'education' => $education,
+        'marital' => $civilStatus,
+        'other_indicators' => [
+            'PWD' => payloadCount($otherIndicators, ['PWD', 'pwd'], 0),
+            'Senior Citizens' => payloadCount($otherIndicators, ['Senior Citizens', 'senior_citizens'], 0),
+            'Solo Parents' => payloadCount($otherIndicators, ['Solo Parents', 'solo_parents'], 0),
+        ],
+        'toilet' => $toilet,
+        'water' => $water,
+        'electricity' => $electricity,
+        'ownership' => $ownership,
+        'pregnant_women' => payloadCount($healthRisk, ['pregnant_women', 'pregnantWomen'], 0),
+        'malnourished_children' => payloadCount($healthRisk, ['malnourished_children', 'malnourishedChildren'], 0),
+        'persons_with_illness' => payloadCount($healthRisk, ['persons_with_illness', 'personsWithIllness'], 0),
+        'deaths_by_cause' => $deathsByCause,
+    ]);
 }
 
 function pdfLineCount(FPDF $pdf, float $width, string $text): int
@@ -906,35 +1286,95 @@ function pdfLineCount(FPDF $pdf, float $width, string $text): int
     return max(1, $lines);
 }
 
-function ensurePdfSpace(FPDF $pdf, float $height): void
+function ensurePdfSpace(
+    FPDF $pdf,
+    float $height,
+    string $watermarkImagePath = '',
+    float $bottomPadding = 8.0
+): void
 {
-    if ($pdf->GetY() + $height > $pdf->GetPageHeight() - 15) {
+    if ($pdf->GetY() + $height > $pdf->GetPageHeight() - $bottomPadding) {
         $pdf->AddPage();
+        drawFpdfWatermark($pdf, $watermarkImagePath);
     }
 }
 
-function drawFpdfRow(FPDF $pdf, float $w1, float $w2, string $left, string $right, bool $header = false): void
+/**
+ * @param array<int, float> $widths
+ * @param array<int, string> $cells
+ */
+function drawFpdfRow(
+    FPDF $pdf,
+    array $widths,
+    array $cells,
+    bool $header = false,
+    string $watermarkImagePath = '',
+    float $lineHeight = 4.3,
+    float $minRowHeight = 6.5,
+    float $bottomPadding = 8.0,
+    ?float $startX = null
+): void
 {
-    $lineHeight = 5.5;
-    $rowHeight = max($lineHeight * max(pdfLineCount($pdf, $w1 - 3, $left), pdfLineCount($pdf, $w2 - 3, $right)), 8);
-    ensurePdfSpace($pdf, $rowHeight + 1);
+    $lineCounts = [];
+    foreach ($widths as $index => $width) {
+        $value = text($cells[$index] ?? '-', 280);
+        $lineCounts[] = pdfLineCount($pdf, max(1.0, $width - 3), $value);
+    }
+    $rowHeight = max($lineHeight * max($lineCounts ?: [1]), $minRowHeight);
+    ensurePdfSpace($pdf, $rowHeight + 1, $watermarkImagePath, $bottomPadding);
+    if ($startX !== null) {
+        $pdf->SetX($startX);
+    }
     $x = $pdf->GetX();
     $y = $pdf->GetY();
-    if ($header) {
-        $pdf->SetFillColor(238, 243, 248);
-        $pdf->Rect($x, $y, $w1, $rowHeight, 'F');
-        $pdf->Rect($x + $w1, $y, $w2, $rowHeight, 'F');
+
+    $cursorX = $x;
+    foreach ($widths as $width) {
+        $pdf->Rect($cursorX, $y, $width, $rowHeight);
+        $cursorX += $width;
     }
-    $pdf->Rect($x, $y, $w1, $rowHeight);
-    $pdf->Rect($x + $w1, $y, $w2, $rowHeight);
-    $pdf->SetXY($x + 1.5, $y + 1.3);
-    $pdf->MultiCell($w1 - 3, $lineHeight, toPdfText($left), 0, 'L');
-    $pdf->SetXY($x + $w1 + 1.5, $y + 1.3);
-    $pdf->MultiCell($w2 - 3, $lineHeight, toPdfText($right), 0, 'C');
+
+    $cursorX = $x;
+    foreach ($widths as $index => $width) {
+        $pdf->SetXY($cursorX + 1.5, $y + 1.3);
+        $align = $index === 0 ? 'L' : 'C';
+        $pdf->MultiCell($width - 3, $lineHeight, toPdfText(text($cells[$index] ?? '-', 280)), 0, $align);
+        $cursorX += $width;
+    }
     $pdf->SetXY($x, $y + $rowHeight);
 }
 
-function renderReportWithFpdf(array $report): string
+/**
+ * @return array<int, float>
+ */
+function reportTableColumnWidths(int $columnCount, float $usableWidth = 184.0): array
+{
+    $usableWidth = max(120.0, $usableWidth);
+    if ($columnCount <= 1) {
+        return [$usableWidth];
+    }
+    if ($columnCount === 2) {
+        $countWidth = round($usableWidth * (66.0 / 184.0), 2);
+        return [$usableWidth - $countWidth, $countWidth];
+    }
+    if ($columnCount === 3) {
+        $metricWidth = round($usableWidth * (38.0 / 184.0), 2);
+        return [$usableWidth - ($metricWidth * 2.0), $metricWidth, $metricWidth];
+    }
+
+    $firstColumn = $usableWidth * (96.0 / 184.0);
+    $remainingColumns = max(1, $columnCount - 1);
+    $remainingWidth = max(40.0, $usableWidth - $firstColumn);
+    $perColumn = $remainingWidth / $remainingColumns;
+
+    $widths = [$firstColumn];
+    for ($i = 0; $i < $remainingColumns; $i++) {
+        $widths[] = $perColumn;
+    }
+    return $widths;
+}
+
+function renderReportWithFpdf(array $report, string $officialSealPath = '', array $profile = []): string
 {
     if (!class_exists('FPDF')) {
         $fpdfFile = __DIR__ . '/vendor/setasign/fpdf/fpdf.php';
@@ -945,147 +1385,357 @@ function renderReportWithFpdf(array $report): string
     if (!class_exists('FPDF')) {
         respondWithError(500, 'No PDF engine available. Install Dompdf or FPDF.');
     }
+    if (!class_exists('ReportFpdf', false)) {
+        class ReportFpdf extends FPDF
+        {
+            /** @var array<int, array<string, mixed>> */
+            protected $extgstates = [];
 
-    $pdf = new FPDF('P', 'mm', 'A4');
-    $pdf->SetMargins(14, 12, 14);
-    $pdf->SetAutoPageBreak(true, 15);
-    $pdf->AddPage();
-
-    foreach ($report['header_lines'] as $line) {
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->Cell(0, 5, toPdfText($line), 0, 1, 'C');
-    }
-
-    $pdf->Ln(2);
-    $pdf->SetFont('Arial', 'B', 12);
-    $pdf->Cell(0, 6, toPdfText($report['title']), 0, 1, 'C');
-    $pdf->SetFont('Arial', 'B', 11);
-    $pdf->Cell(0, 6, toPdfText('Calendar Year: ' . $report['year']), 0, 1, 'C');
-    $pdf->SetFont('Arial', '', 10);
-    $pdf->Cell(0, 5, toPdfText('Generated by: ' . $report['generated_by']), 0, 1, 'C');
-    $pdf->Cell(0, 5, toPdfText('Date Generated: ' . $report['generated_date']), 0, 1, 'C');
-    $pdf->Ln(3);
-
-    $w1 = 118;
-    $w2 = 62;
-    foreach ($report['sections'] as $section) {
-        ensurePdfSpace($pdf, 10);
-        $pdf->SetFont('Arial', 'B', 10.5);
-        $pdf->Cell(0, 7, toPdfText($section['title']), 0, 1, 'L');
-        foreach ($section['tables'] as $table) {
-            if (!empty($table['title'])) {
-                ensurePdfSpace($pdf, 7);
-                $pdf->SetFont('Arial', 'B', 10);
-                $pdf->Cell(0, 6, toPdfText($table['title']), 0, 1, 'L');
+            public function SetAlpha(float $alpha, string $blendMode = 'Normal'): void
+            {
+                $alpha = max(0.0, min(1.0, $alpha));
+                $stateId = $this->addExtGState([
+                    'ca' => $alpha,
+                    'CA' => $alpha,
+                    'BM' => '/' . $blendMode,
+                ]);
+                $this->setExtGState($stateId);
             }
-            $pdf->SetFont('Arial', 'B', 9.8);
-            drawFpdfRow($pdf, $w1, $w2, (string) $table['columns'][0], (string) $table['columns'][1], true);
-            $pdf->SetFont('Arial', '', 9.8);
-            foreach ($table['rows'] as $row) {
-                drawFpdfRow($pdf, $w1, $w2, text($row[0] ?? '-', 240), text($row[1] ?? '-', 240), false);
+
+            /**
+             * @param array<string, mixed> $params
+             */
+            protected function addExtGState(array $params): int
+            {
+                $stateId = count($this->extgstates) + 1;
+                $this->extgstates[$stateId] = ['params' => $params];
+                return $stateId;
             }
-            $pdf->Ln(2.2);
+
+            protected function setExtGState(int $stateId): void
+            {
+                $this->_out(sprintf('/GS%d gs', $stateId));
+            }
+
+            protected function _putextgstates(): void
+            {
+                foreach ($this->extgstates as $stateId => $state) {
+                    $this->_newobj();
+                    $this->extgstates[$stateId]['n'] = $this->n;
+                    $this->_put('<</Type /ExtGState');
+                    $this->_put(sprintf('/ca %.3F', (float) ($state['params']['ca'] ?? 1.0)));
+                    $this->_put(sprintf('/CA %.3F', (float) ($state['params']['CA'] ?? 1.0)));
+                    $this->_put('/BM ' . (string) ($state['params']['BM'] ?? '/Normal'));
+                    $this->_put('>>');
+                    $this->_put('endobj');
+                }
+            }
+
+            protected function _putresourcedict(): void
+            {
+                parent::_putresourcedict();
+                if (!$this->extgstates) {
+                    return;
+                }
+
+                $this->_put('/ExtGState <<');
+                foreach ($this->extgstates as $stateId => $state) {
+                    $this->_put('/GS' . $stateId . ' ' . (int) ($state['n'] ?? 0) . ' 0 R');
+                }
+                $this->_put('>>');
+            }
+
+            protected function _putresources(): void
+            {
+                if ($this->extgstates) {
+                    $this->_putextgstates();
+                }
+                parent::_putresources();
+            }
+
+            public function PageCount(): int
+            {
+                return (int) $this->page;
+            }
         }
     }
 
-    $sig = $report['signatories'];
-    ensurePdfSpace($pdf, 26);
-    $pdf->Ln(5);
-    $leftX = 20;
-    $rightX = 115;
-    $y = $pdf->GetY();
-    $pdf->SetFont('Arial', '', 10);
-    $pdf->SetXY($leftX, $y);
-    $pdf->Cell(68, 6, toPdfText($sig['prepared']['label']), 0, 0, 'L');
-    $pdf->SetXY($rightX, $y);
-    $pdf->Cell(68, 6, toPdfText($sig['approved']['label']), 0, 1, 'L');
-    $pdf->SetFont('Arial', 'B', 10);
-    $pdf->SetX($leftX);
-    $pdf->Cell(68, 13, toPdfText($sig['prepared']['name']), 0, 0, 'L');
-    $pdf->SetX($rightX);
-    $pdf->Cell(68, 13, toPdfText($sig['approved']['name']), 0, 1, 'L');
-    $pdf->SetFont('Arial', '', 10);
-    $pdf->SetX($leftX);
-    $pdf->Cell(68, 6, toPdfText($sig['prepared']['title']), 0, 0, 'L');
-    $pdf->SetX($rightX);
-    $pdf->Cell(68, 6, toPdfText($sig['approved']['title']), 0, 1, 'L');
+    $watermarkAsset = prepareFpdfWatermarkImage($officialSealPath);
+    $watermarkPath = $watermarkAsset['path'] ?? '';
+    $watermarkIsTemp = !empty($watermarkAsset['is_temp']);
+    $footerData = reportFooterData($profile, $report);
 
-    $binary = $pdf->Output('S');
+    $scales = [1.0, 0.94, 0.88, 0.82, 0.76, 0.70, 0.64, 0.58, 0.52];
+    $binary = '';
+    $bestBinary = '';
+    $bestPageCount = PHP_INT_MAX;
+    $renderError = '';
+
+    foreach ($scales as $scale) {
+        $marginLeft = max(7.0, 14.0 * $scale);
+        $marginTop = max(6.0, 10.0 * $scale);
+        $marginRight = max(7.0, 14.0 * $scale);
+        $bottomMargin = max(6.0, 10.0 * $scale);
+        $bottomPadding = max(4.2, 8.0 * $scale);
+        $logoSize = max(14.0, 21.0 * $scale);
+        $logoY = max(5.2, 8.5 * $scale);
+        $headerY = max(7.0, 11.0 * $scale);
+        $headerLineHeight = max(2.8, 4.6 * $scale);
+        $headerFontSize = max(7.2, 10.0 * $scale);
+        $afterHeaderGap = max(0.6, 1.4 * $scale);
+        $titleFontSize = max(9.0, 12.5 * $scale);
+        $titleHeight = max(4.0, 6.0 * $scale);
+        $afterTitleGap = max(0.8, 2.5 * $scale);
+        $sectionHeadingCheck = max(3.8, 7.0 * $scale);
+        $sectionFontSize = max(7.3, 10.0 * $scale);
+        $sectionHeight = max(3.1, 5.0 * $scale);
+        $tableTitleCheck = max(3.2, 6.0 * $scale);
+        $tableTitleFont = max(7.0, 9.5 * $scale);
+        $tableTitleHeight = max(2.9, 4.5 * $scale);
+        $tableHeaderFont = max(6.9, 9.3 * $scale);
+        $tableBodyFont = max(6.8, 9.2 * $scale);
+        $rowLineHeight = max(2.6, 4.3 * $scale);
+        $rowMinHeight = max(3.9, 6.5 * $scale);
+        $rowGapAfterTable = max(0.4, 1.3 * $scale);
+        $underlineLeft = max(20.0, 35.0 * $scale);
+        $underlineRight = min(192.0, 181.0 + ((1.0 - $scale) * 7.0));
+
+        try {
+            $pdf = new ReportFpdf('P', 'mm', 'Letter');
+            $pdf->SetMargins($marginLeft, $marginTop, $marginRight);
+            $pdf->SetAutoPageBreak(true, $bottomMargin);
+            $pdf->AddPage();
+            drawFpdfWatermark($pdf, $watermarkPath);
+
+            $leftLogo = __DIR__ . '/assets/img/barangay-cabarian-logo.png';
+            $rightLogo = __DIR__ . '/assets/img/ligao-city-logo.png';
+            // Keep side spacing while scaling logo size.
+            $leftLogoX = 22.0;
+            $rightLogoX = $pdf->GetPageWidth() - 22.0 - $logoSize;
+            if (is_file($leftLogo)) {
+                $pdf->Image($leftLogo, $leftLogoX, $logoY, $logoSize, $logoSize);
+            }
+            if (is_file($rightLogo)) {
+                $pdf->Image($rightLogo, $rightLogoX, $logoY, $logoSize, $logoSize);
+            }
+
+            $pdf->SetY($headerY);
+            foreach ($report['header_lines'] as $line) {
+                $pdf->SetFont('Times', '', $headerFontSize);
+                $pdf->Cell(0, $headerLineHeight, toPdfText($line), 0, 1, 'C');
+            }
+
+            // Keep report tables inside the same visual gutter as the side logos.
+            $tableLeftX = 22.0;
+            $tableRightX = 192.0;
+            $tableWidth = max(120.0, $tableRightX - $tableLeftX);
+
+            $pdf->Ln($afterHeaderGap);
+            $pdf->SetFont('Times', 'B', $titleFontSize);
+            $pdf->Cell(0, $titleHeight, toPdfText($report['title']), 0, 1, 'C');
+            $lineY = $pdf->GetY();
+            $pdf->Line($underlineLeft, $lineY, $underlineRight, $lineY);
+            $pdf->Ln($afterTitleGap);
+
+            foreach ($report['sections'] as $section) {
+                ensurePdfSpace($pdf, $sectionHeadingCheck, $watermarkPath, $bottomPadding);
+                $pdf->SetFont('Times', 'B', $sectionFontSize);
+                $pdf->SetX($tableLeftX);
+                $pdf->Cell($tableWidth, $sectionHeight, toPdfText($section['title']), 0, 1, 'L');
+                foreach ($section['tables'] as $table) {
+                    if (!empty($table['title'])) {
+                        ensurePdfSpace($pdf, $tableTitleCheck, $watermarkPath, $bottomPadding);
+                        $pdf->SetFont('Times', 'B', $tableTitleFont);
+                        $pdf->SetX($tableLeftX);
+                        $pdf->Cell($tableWidth, $tableTitleHeight, toPdfText($table['title']), 0, 1, 'L');
+                    }
+                    $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
+                    if (!$columns) {
+                        $columns = ['Indicator', 'Count'];
+                    }
+                    $widths = reportTableColumnWidths(count($columns), $tableWidth);
+                    $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+                    if ($showHeader) {
+                        $pdf->SetFont('Times', 'B', $tableHeaderFont);
+                        $headerCells = [];
+                        foreach ($columns as $column) {
+                            $headerCells[] = text($column, 120);
+                        }
+                        drawFpdfRow(
+                            $pdf,
+                            $widths,
+                            $headerCells,
+                            true,
+                            $watermarkPath,
+                            $rowLineHeight,
+                            $rowMinHeight,
+                            $bottomPadding,
+                            $tableLeftX
+                        );
+                    }
+                    $pdf->SetFont('Times', '', $tableBodyFont);
+                    foreach ($table['rows'] as $row) {
+                        $rowCells = [];
+                        foreach ($columns as $index => $column) {
+                            $rowCells[] = text($row[$index] ?? '-', 280);
+                        }
+                        drawFpdfRow(
+                            $pdf,
+                            $widths,
+                            $rowCells,
+                            false,
+                            $watermarkPath,
+                            $rowLineHeight,
+                            $rowMinHeight,
+                            $bottomPadding,
+                            $tableLeftX
+                        );
+                    }
+                    $pdf->Ln($rowGapAfterTable);
+                }
+            }
+
+            drawFpdfSignatureFooter($pdf, $footerData, $watermarkPath, $scale, $bottomPadding);
+
+            $candidateBinary = $pdf->Output('S');
+            if (!is_string($candidateBinary) || $candidateBinary === '') {
+                continue;
+            }
+
+            $pageCount = $pdf->PageCount();
+            if ($pageCount < $bestPageCount) {
+                $bestPageCount = $pageCount;
+                $bestBinary = $candidateBinary;
+            }
+            if ($pageCount <= 2) {
+                $binary = $candidateBinary;
+                break;
+            }
+        } catch (Throwable $exception) {
+            $renderError = $exception->getMessage();
+        }
+    }
+
+    if ($binary === '') {
+        $binary = $bestBinary;
+    }
+    if ($watermarkIsTemp && $watermarkPath !== '' && is_file($watermarkPath)) {
+        @unlink($watermarkPath);
+    }
     if (!is_string($binary) || $binary === '') {
+        if ($renderError !== '') {
+            respondWithError(500, 'Failed to generate PDF output. ' . $renderError);
+        }
         respondWithError(500, 'Failed to generate PDF output.');
     }
     return $binary;
 }
 
-function buildPdfHtml(array $report): string
+function buildPdfHtml(array $report, array $profile, string $sealDataUri = ''): string
 {
+    $footerData = reportFooterData($profile, $report);
     $html = '<!doctype html><html><head><meta charset="utf-8"><style>';
-    $html .= 'body{font-family:DejaVu Sans,sans-serif;font-size:11px;color:#1f2a3a;margin:34px;}';
-    $html .= '.center{text-align:center;}.line{margin:0;line-height:1.45;}';
-    $html .= '.title{font-size:15px;font-weight:700;margin:10px 0 4px;}';
-    $html .= '.year{font-size:12.5px;font-weight:700;margin:0 0 10px;}';
-    $html .= '.section{margin-top:14px;}.section-title{font-size:12.5px;font-weight:700;margin:0 0 6px;}';
-    $html .= '.table-title{font-size:11px;font-weight:700;margin:7px 0 4px;}';
-    $html .= 'table{width:100%;border-collapse:collapse;margin-bottom:8px;}';
-    $html .= 'th,td{border:1px solid #2b3c52;padding:6px 7px;}';
-    $html .= 'th{background:#eef3f8;font-weight:700;text-align:left;}';
-    $html .= 'th:last-child,td:last-child{text-align:center;width:22%;}';
-    $html .= '.sig-wrap{margin-top:22px;width:100%;}.sig{display:inline-block;width:48%;vertical-align:top;}';
-    $html .= '.sig-right{float:right;text-align:left;}.sig-label{margin:0 0 20px;}.sig-name{margin:0;font-weight:700;}.sig-title{margin:2px 0 0;}';
+    $html .= '@page{size:letter;margin:0.45in;}';
+    $html .= 'body{font-family:"Times New Roman",serif;font-size:10.5px;color:#101010;margin:0;}';
+    $html .= '.watermark{position:fixed;left:0.75in;top:2.0in;width:7.0in;opacity:0.10;}';
+    $html .= '.watermark img{display:block;width:100%;height:auto;}';
+    $html .= '.center{text-align:center;}.line{margin:0;line-height:1.22;}';
+    $html .= '.title{font-size:16px;font-weight:700;margin:2px 0 1px;border-bottom:1px solid #000;padding-bottom:2px;}';
+    $html .= '.section{margin-top:6px;page-break-inside:avoid;}.section-title{font-size:12px;font-weight:700;margin:0 0 2px;}';
+    $html .= '.table-title{font-size:10.5px;font-weight:700;margin:5px 0 2px;}';
+    $html .= 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 4px;}';
+    $html .= 'th,td{border:1px solid #1e1e1e;padding:3px 5px;vertical-align:top;}';
+    $html .= 'th{font-weight:700;text-align:left;}';
+    $html .= 'th.metric,td.metric{text-align:center;}';
+    $html .= 'td{line-height:1.2;}';
+    $html .= '.report-footer{margin-top:10px;page-break-inside:avoid;}';
+    $html .= '.sig-row{overflow:hidden;}';
+    $html .= '.sig-col{float:left;width:42%;text-align:center;}';
+    $html .= '.sig-col.right{float:right;}';
+    $html .= '.sig-name{margin:0;font-size:11px;font-weight:700;}';
+    $html .= '.sig-title{margin:2px 0 0;font-size:10px;}';
+    $html .= '.sig-date{margin:15px 0 0;text-align:center;font-size:10px;}';
     $html .= '</style></head><body>';
+    if ($sealDataUri !== '') {
+        $html .= '<div class="watermark"><img src="' . esc($sealDataUri) . '" alt=""></div>';
+    }
     foreach ($report['header_lines'] as $line) {
         $html .= '<p class="line center">' . esc($line) . '</p>';
     }
     $html .= '<p class="title center">' . esc($report['title']) . '</p>';
-    $html .= '<p class="year center">Calendar Year: ' . esc((string) $report['year']) . '</p>';
-    $html .= '<p class="line center">Generated by: ' . esc($report['generated_by']) . '</p>';
-    $html .= '<p class="line center">Date Generated: ' . esc($report['generated_date']) . '</p>';
     foreach ($report['sections'] as $section) {
         $html .= '<div class="section"><p class="section-title">' . esc($section['title']) . '</p>';
         foreach ($section['tables'] as $table) {
             if (!empty($table['title'])) {
                 $html .= '<p class="table-title">' . esc($table['title']) . '</p>';
             }
-            $html .= '<table><thead><tr><th>' . esc($table['columns'][0]) . '</th><th>' . esc($table['columns'][1]) . '</th></tr></thead><tbody>';
+            $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
+            if (!$columns) {
+                $columns = ['Indicator', 'Count'];
+            }
+            $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+            $html .= '<table>';
+            if ($showHeader) {
+                $html .= '<thead><tr>';
+                foreach ($columns as $index => $columnName) {
+                    $class = $index === 0 ? '' : ' class="metric"';
+                    $html .= '<th' . $class . '>' . esc($columnName) . '</th>';
+                }
+                $html .= '</tr></thead>';
+            }
+            $html .= '<tbody>';
             foreach ($table['rows'] as $row) {
-                $html .= '<tr><td>' . esc(text($row[0] ?? '-', 240)) . '</td><td>' . esc(text($row[1] ?? '-', 240)) . '</td></tr>';
+                $html .= '<tr>';
+                foreach ($columns as $index => $columnName) {
+                    $class = $index === 0 ? '' : ' class="metric"';
+                    $value = text($row[$index] ?? '-', 280);
+                    $html .= '<td' . $class . '>' . esc($value) . '</td>';
+                }
+                $html .= '</tr>';
             }
             $html .= '</tbody></table>';
         }
         $html .= '</div>';
     }
-    $sig = $report['signatories'];
-    $html .= '<div class="sig-wrap"><div class="sig">';
-    $html .= '<p class="sig-label">' . esc($sig['prepared']['label']) . '</p>';
-    $html .= '<p class="sig-name">' . esc($sig['prepared']['name']) . '</p>';
-    $html .= '<p class="sig-title">' . esc($sig['prepared']['title']) . '</p>';
-    $html .= '</div><div class="sig sig-right">';
-    $html .= '<p class="sig-label">' . esc($sig['approved']['label']) . '</p>';
-    $html .= '<p class="sig-name">' . esc($sig['approved']['name']) . '</p>';
-    $html .= '<p class="sig-title">' . esc($sig['approved']['title']) . '</p>';
-    $html .= '</div></div></body></html>';
+
+    $html .= '<div class="report-footer">';
+    $html .= '<div class="sig-row">';
+    $html .= '<div class="sig-col"><p class="sig-name">' . esc($footerData['captain']) . '</p><p class="sig-title">Brgy Captain</p></div>';
+    $html .= '<div class="sig-col right"><p class="sig-name">' . esc($footerData['secretary']) . '</p><p class="sig-title">Secretary</p></div>';
+    $html .= '</div>';
+    $html .= '<p class="sig-date">' . esc($footerData['date_generated']) . '</p>';
+    $html .= '</div>';
+
+    $html .= '</body></html>';
     return $html;
 }
 
-function outputPdf(array $report): void
+/**
+ * @param array<string, string> $profile
+ */
+function outputPdf(array $report, array $profile): void
 {
     $binary = '';
-    if (class_exists('Dompdf\\Dompdf')) {
-        $opt = new Dompdf\Options();
+    $sealAbsolutePath = reportOfficialSealAbsolutePath($profile);
+    $sealDataUri = reportOfficialSealDataUri($sealAbsolutePath);
+    $dompdfClass = 'Dompdf\\Dompdf';
+    $dompdfOptionsClass = 'Dompdf\\Options';
+    if (class_exists($dompdfClass) && class_exists($dompdfOptionsClass)) {
+        $opt = new $dompdfOptionsClass();
         $opt->set('isRemoteEnabled', false);
         $opt->set('isHtml5ParserEnabled', true);
-        $dompdf = new Dompdf\Dompdf($opt);
-        $dompdf->loadHtml(buildPdfHtml($report), 'UTF-8');
-        $dompdf->setPaper('A4', 'portrait');
+        $dompdf = new $dompdfClass($opt);
+        $dompdf->loadHtml(buildPdfHtml($report, $profile, $sealDataUri), 'UTF-8');
+        $dompdf->setPaper('letter', 'portrait');
         $dompdf->render();
         $binary = $dompdf->output();
     } else {
-        $binary = renderReportWithFpdf($report);
+        $binary = renderReportWithFpdf($report, $sealAbsolutePath, $profile);
     }
     if (!is_string($binary) || $binary === '') {
         respondWithError(500, 'Failed to generate PDF output.');
     }
-    $filename = 'Barangay_Cabarian_Annual_Report_' . $report['year'] . '.pdf';
+    $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'pdf');
     clearOutputBuffers();
     header('Content-Type: application/pdf');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -1094,39 +1744,79 @@ function outputPdf(array $report): void
     exit;
 }
 
+function sheetColumnLetter(int $columnIndex): string
+{
+    $index = max(1, $columnIndex);
+    $label = '';
+    while ($index > 0) {
+        $index--;
+        $label = chr(65 + ($index % 26)) . $label;
+        $index = (int) floor($index / 26);
+    }
+    return $label;
+}
+
 function renderSheetTable($sheet, int &$row, array $table, string $alignmentClass, string $borderClass): void
 {
+    $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
+    if (!$columns) {
+        $columns = ['Indicator', 'Count'];
+    }
+    $columnCount = max(1, count($columns));
+    $startColumn = 1;
+    $endColumn = $startColumn + $columnCount - 1;
+    $startLetter = sheetColumnLetter($startColumn);
+    $endLetter = sheetColumnLetter($endColumn);
+
     if (!empty($table['title'])) {
-        $sheet->setCellValue("A{$row}", $table['title']);
-        $sheet->mergeCells("A{$row}:B{$row}");
-        $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true)->setSize(10.5);
-        $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
+        $sheet->setCellValue("{$startLetter}{$row}", $table['title']);
+        $sheet->mergeCells("{$startLetter}{$row}:{$endLetter}{$row}");
+        $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getFont()->setBold(true)->setSize(10);
+        $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
         $row++;
     }
 
     $tableStart = $row;
-    $sheet->setCellValue("A{$row}", $table['columns'][0]);
-    $sheet->setCellValue("B{$row}", $table['columns'][1]);
-    $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true);
-    $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER)->setVertical($alignmentClass::VERTICAL_CENTER);
-    $sheet->getStyle("A{$row}:B{$row}")->getFill()->setFillType(PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEFF3F8');
-    $row++;
+    $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+    if ($showHeader) {
+        foreach ($columns as $index => $columnLabel) {
+            $columnLetter = sheetColumnLetter($startColumn + $index);
+            $sheet->setCellValue("{$columnLetter}{$row}", text($columnLabel, 120));
+        }
+        $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getFont()->setBold(true);
+        $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER)->setVertical($alignmentClass::VERTICAL_CENTER);
+        $row++;
+    }
 
-    foreach ($table['rows'] as $entry) {
-        $sheet->setCellValue("A{$row}", text($entry[0] ?? '-', 240));
-        $sheet->setCellValue("B{$row}", text($entry[1] ?? '-', 240));
-        $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
-        $sheet->getStyle("B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+    foreach ($rows as $entry) {
+        foreach ($columns as $index => $columnLabel) {
+            $columnLetter = sheetColumnLetter($startColumn + $index);
+            $sheet->setCellValue("{$columnLetter}{$row}", text($entry[$index] ?? '-', 260));
+        }
+        $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
+        $sheet->getStyle("{$startLetter}{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
+        for ($colIndex = 1; $colIndex < $columnCount; $colIndex++) {
+            $metricLetter = sheetColumnLetter($startColumn + $colIndex);
+            $sheet->getStyle("{$metricLetter}{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+        }
         $row++;
     }
 
     $tableEnd = $row - 1;
-    $sheet->getStyle("A{$tableStart}:B{$tableEnd}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_THIN);
+    $sheet->getStyle("{$startLetter}{$tableStart}:{$endLetter}{$tableEnd}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_THIN);
     $row++;
 }
 
-function outputSpreadsheet(array $report): void
-{
+/**
+ * @param array<string, string> $profile
+ */
+function outputSpreadsheet(
+    array $report,
+    array $profile,
+    string $targetPath = 'php://output',
+    bool $sendDownloadHeaders = true
+): void {
     if (!class_exists('PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
         respondWithError(500, 'PhpSpreadsheet is not available. Run composer install first.');
     }
@@ -1134,86 +1824,169 @@ function outputSpreadsheet(array $report): void
     $spreadsheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle('Annual Report');
+    $sheet->getDefaultRowDimension()->setRowHeight(16);
 
     $alignmentClass = 'PhpOffice\\PhpSpreadsheet\\Style\\Alignment';
     $borderClass = 'PhpOffice\\PhpSpreadsheet\\Style\\Border';
+    $drawingClass = 'PhpOffice\\PhpSpreadsheet\\Worksheet\\Drawing';
+    $pageSetupClass = 'PhpOffice\\PhpSpreadsheet\\Worksheet\\PageSetup';
 
     $row = 1;
+    if (class_exists($drawingClass)) {
+        $leftLogo = __DIR__ . '/assets/img/barangay-cabarian-logo.png';
+        $rightLogo = __DIR__ . '/assets/img/ligao-city-logo.png';
+        if (is_file($leftLogo)) {
+            $logoLeft = new $drawingClass();
+            $logoLeft->setName('Barangay Logo');
+            $logoLeft->setDescription('Barangay Logo');
+            $logoLeft->setPath($leftLogo);
+            $logoLeft->setHeight(55);
+            $logoLeft->setCoordinates('A1');
+            $logoLeft->setWorksheet($sheet);
+        }
+        if (is_file($rightLogo)) {
+            $logoRight = new $drawingClass();
+            $logoRight->setName('City Logo');
+            $logoRight->setDescription('City Logo');
+            $logoRight->setPath($rightLogo);
+            $logoRight->setHeight(55);
+            $logoRight->setCoordinates('C1');
+            $logoRight->setOffsetX(16);
+            $logoRight->setWorksheet($sheet);
+        }
+    }
+
     foreach ($report['header_lines'] as $line) {
         $sheet->setCellValue("A{$row}", $line);
-        $sheet->mergeCells("A{$row}:B{$row}");
-        $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-        $sheet->getStyle("A{$row}:B{$row}")->getFont()->setSize(10);
+        $sheet->mergeCells("A{$row}:C{$row}");
+        $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+        $sheet->getStyle("A{$row}:C{$row}")->getFont()->setSize(11)->setName('Times New Roman');
         $row++;
     }
 
-    $row++;
+    $row += 1;
     $sheet->setCellValue("A{$row}", $report['title']);
-    $sheet->mergeCells("A{$row}:B{$row}");
-    $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true)->setSize(13);
-    $row++;
-    $sheet->setCellValue("A{$row}", 'Calendar Year: ' . $report['year']);
-    $sheet->mergeCells("A{$row}:B{$row}");
-    $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true)->setSize(11);
-    $row += 2;
-
-    $sheet->setCellValue("A{$row}", 'Generated by: ' . $report['generated_by']);
-    $sheet->mergeCells("A{$row}:B{$row}");
-    $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $row++;
-    $sheet->setCellValue("A{$row}", 'Date Generated: ' . $report['generated_date']);
-    $sheet->mergeCells("A{$row}:B{$row}");
-    $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $row += 2;
+    $sheet->mergeCells("A{$row}:C{$row}");
+    $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(14)->setName('Times New Roman');
+    $sheet->getStyle("A{$row}:C{$row}")->getBorders()->getBottom()->setBorderStyle($borderClass::BORDER_MEDIUM);
+    $row += 1;
 
     foreach ($report['sections'] as $section) {
         $sheet->setCellValue("A{$row}", $section['title']);
-        $sheet->mergeCells("A{$row}:B{$row}");
-        $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true)->setSize(11);
-        $sheet->getStyle("A{$row}:B{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
+        $sheet->mergeCells("A{$row}:C{$row}");
+        $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(12)->setName('Times New Roman');
+        $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
         $row++;
         foreach ($section['tables'] as $table) {
             renderSheetTable($sheet, $row, $table, $alignmentClass, $borderClass);
         }
     }
 
-    $sig = $report['signatories'];
-    $row++;
-    $sheet->setCellValue("A{$row}", $sig['prepared']['label']);
-    $sheet->setCellValue("B{$row}", $sig['approved']['label']);
-    $row++;
-    $sheet->setCellValue("A{$row}", $sig['prepared']['name']);
-    $sheet->setCellValue("B{$row}", $sig['approved']['name']);
-    $sheet->getStyle("A{$row}:B{$row}")->getFont()->setBold(true);
-    $row++;
-    $sheet->setCellValue("A{$row}", $sig['prepared']['title']);
-    $sheet->setCellValue("B{$row}", $sig['approved']['title']);
+    $metaBlock = is_array($report['meta_block'] ?? null) ? $report['meta_block'] : [];
+    if ($metaBlock) {
+        $sheet->setCellValue("A{$row}", 'Report Certification and Metadata');
+        $sheet->mergeCells("A{$row}:C{$row}");
+        $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(11)->setName('Times New Roman');
+        $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_LEFT);
+        $row++;
 
-    $sheet->getColumnDimension('A')->setAutoSize(true);
-    $sheet->getColumnDimension('B')->setAutoSize(true);
+        foreach ($metaBlock as $entry) {
+            $label = text($entry['label'] ?? '', 120);
+            $value = text($entry['value'] ?? '', 260);
+            if ($label === '' && $value === '') {
+                continue;
+            }
+
+            $sheet->setCellValue("A{$row}", $label . ':');
+            $sheet->setCellValue("B{$row}", $value);
+            $sheet->mergeCells("B{$row}:C{$row}");
+            $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
+            $sheet->getStyle("A{$row}:C{$row}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_THIN);
+            $row++;
+        }
+        $row++;
+    }
+
+    $sheet->getStyle('A1:C' . max(1, $row))->getFont()->setName('Times New Roman')->setSize(10.5);
+    $sheet->getColumnDimension('A')->setWidth(62);
+    $sheet->getColumnDimension('B')->setWidth(19);
+    $sheet->getColumnDimension('C')->setWidth(19);
+    $sheet->getPageMargins()->setTop(0.35)->setBottom(0.35)->setLeft(0.3)->setRight(0.3);
+    $sheet->getPageSetup()->setOrientation($pageSetupClass::ORIENTATION_PORTRAIT);
+    $sheet->getPageSetup()->setPaperSize($pageSetupClass::PAPERSIZE_LETTER);
+    $sheet->getPageSetup()->setFitToPage(true);
+    $sheet->getPageSetup()->setFitToWidth(1);
+    $sheet->getPageSetup()->setFitToHeight(1);
+    $sheet->getPageSetup()->setPrintArea('A1:C' . max(1, $row));
 
     $writer = new PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-    $filename = 'Barangay_Cabarian_Annual_Report_' . $report['year'] . '.xlsx';
-    clearOutputBuffers();
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: max-age=0');
-    $writer->save('php://output');
+    $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'xlsx');
+    if ($sendDownloadHeaders) {
+        clearOutputBuffers();
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+    }
+    $writer->save($targetPath);
     $spreadsheet->disconnectWorksheets();
     unset($spreadsheet);
-    exit;
+    if ($sendDownloadHeaders) {
+        exit;
+    }
+}
+
+if (PHP_SAPI === 'cli') {
+    $argvList = $_SERVER['argv'] ?? [];
+    $mode = isset($argvList[1]) ? (string) $argvList[1] : '';
+    if ($mode === '--excel-cli') {
+        $inputFile = isset($argvList[2]) ? (string) $argvList[2] : '';
+        $outputFile = isset($argvList[3]) ? (string) $argvList[3] : '';
+        if ($inputFile === '' || !is_file($inputFile) || $outputFile === '') {
+            fwrite(STDERR, "Invalid CLI Excel export arguments.\n");
+            exit(2);
+        }
+
+        $raw = @file_get_contents($inputFile);
+        if (!is_string($raw) || trim($raw) === '') {
+            fwrite(STDERR, "Unable to read CLI Excel export payload.\n");
+            exit(3);
+        }
+
+        $cliPayload = json_decode($raw, true);
+        if (!is_array($cliPayload)) {
+            fwrite(STDERR, "Invalid CLI Excel export payload.\n");
+            exit(4);
+        }
+
+        $reportData = is_array($cliPayload['report'] ?? null) ? $cliPayload['report'] : null;
+        $profileData = is_array($cliPayload['profile'] ?? null) ? $cliPayload['profile'] : null;
+        if (!is_array($reportData) || !is_array($profileData)) {
+            fwrite(STDERR, "Incomplete CLI Excel export payload.\n");
+            exit(5);
+        }
+
+        $autoload = __DIR__ . '/vendor/autoload.php';
+        if (!is_file($autoload)) {
+            fwrite(STDERR, "Excel dependencies are missing.\n");
+            exit(6);
+        }
+        require_once $autoload;
+
+        try {
+            outputSpreadsheet($reportData, $profileData, $outputFile, false);
+        } catch (Throwable $exception) {
+            fwrite(STDERR, 'Excel CLI export failed: ' . $exception->getMessage() . "\n");
+            exit(7);
+        }
+        exit(0);
+    }
 }
 
 $requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $origin = text($_SERVER['HTTP_ORIGIN'] ?? '', 300);
-$allowedOrigins = [
-    'http://127.0.0.1:5500',
-    'http://localhost:5500',
-    'http://127.0.0.1:4173',
-    'http://localhost:4173',
-];
+$allowedOrigins = envList(['REPORT_EXPORT_ALLOWED_ORIGINS', 'EXPORT_ALLOWED_ORIGINS', 'CORS_ALLOWED_ORIGINS']);
 if ($origin !== '' && in_array($origin, $allowedOrigins, true)) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
@@ -1229,12 +2002,6 @@ if ($requestMethod !== 'POST') {
     header('Allow: POST');
     respondWithError(405, 'Method not allowed. Use POST.');
 }
-
-$autoload = __DIR__ . '/vendor/autoload.php';
-if (!is_file($autoload)) {
-    respondWithError(500, 'Composer dependencies are missing. Run: composer install');
-}
-require_once $autoload;
 
 $raw = file_get_contents('php://input');
 if ($raw === false || trim($raw) === '') {
@@ -1252,15 +2019,57 @@ if ($format !== 'pdf' && $format !== 'xlsx') {
 
 $year = parseSelectedYear($payload['year'] ?? ($payload['report']['year'] ?? null));
 $analyticsPayload = is_array($payload['analytics'] ?? null) ? $payload['analytics'] : null;
-$report = null;
-if ($analyticsPayload !== null) {
-    $report = buildAnnualReportDataFromAnalytics($analyticsPayload, $year);
+if (!is_array($analyticsPayload)) {
+    respondWithError(400, 'Analytics payload is required for report export.');
 }
+$payloadYear = parseSelectedYear($analyticsPayload['year'] ?? null);
+if ($payloadYear !== $year) {
+    respondWithError(422, 'Analytics data is outdated for the selected year. Refresh the Reports page and export again.');
+}
+$profilePdo = dbConnection();
+$profile = reportProfileData($profilePdo);
+$report = buildAnnualReportDataFromAnalytics($analyticsPayload, $year, $profile);
 if (!is_array($report)) {
-    $report = buildAnnualReportData($year);
+    respondWithError(422, 'Analytics payload is incomplete for report export.');
 }
 
 if ($format === 'pdf') {
-    outputPdf($report);
+    outputPdf($report, $profile);
 }
-outputSpreadsheet($report);
+
+if ($format === 'xlsx' && PHP_VERSION_ID < 80300) {
+    $excelPhpBinary = findExcelCliPhpBinary();
+    if (is_string($excelPhpBinary) && $excelPhpBinary !== '') {
+        $externalError = '';
+        $generatedFile = exportSpreadsheetUsingExternalPhp($report, $profile, $excelPhpBinary, $externalError);
+        if (is_string($generatedFile) && is_file($generatedFile)) {
+            $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'xlsx');
+            clearOutputBuffers();
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+            $length = (int) @filesize($generatedFile);
+            if ($length > 0) {
+                header('Content-Length: ' . (string) $length);
+            }
+            readfile($generatedFile);
+            @unlink($generatedFile);
+            exit;
+        }
+    }
+}
+
+$autoload = __DIR__ . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    respondWithError(500, 'Excel export dependencies are missing. Run: composer install');
+}
+try {
+    require_once $autoload;
+} catch (Throwable $exception) {
+    respondWithError(
+        500,
+        'Excel export is unavailable on this server setup (current PHP ' . PHP_VERSION
+        . '). Install dependencies compatible with your PHP version or upgrade PHP to 8.3+.'
+    );
+}
+outputSpreadsheet($report, $profile);

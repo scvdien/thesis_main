@@ -10,6 +10,9 @@ function dash_api_respond(int $statusCode, array $payload): never
 {
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -589,4 +592,3 @@ try {
     error_log('dashboard-analytics-api.php failed: ' . $exception->getMessage());
     dash_api_error(500, 'Unable to load dashboard analytics right now.');
 }
-

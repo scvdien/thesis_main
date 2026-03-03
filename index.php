@@ -4,6 +4,44 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandCoreCandidate = preg_replace('/^\s*barangay\b[\s,]*/i', '', $brandLabel);
+$brandCore = trim((string) ($brandCoreCandidate ?? $brandLabel));
+if ($brandCore === '') {
+  $brandCore = trim($brandLabel);
+}
+$brandFooterLabel = $brandCore !== '' ? 'Barangay ' . $brandCore : 'Barangay';
+if ($brandCity !== '' && stripos($brandFooterLabel, $brandCity) === false) {
+  $brandFooterLabel = trim($brandFooterLabel . ', ' . $brandCity);
+}
+$brandSidebarLabel = $brandCore;
+if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandSidebarLabel . ' ' . $brandCity);
+}
+if ($brandSidebarLabel === '') {
+  $brandSidebarLabel = $brandFooterLabel;
+}
+$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$dashboardStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -17,7 +55,7 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
 <script src="assets/vendor/chartjs/chart.umd.min.js"></script>
-<link rel="stylesheet" href="assets/css/site-style.css">
+<link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($dashboardStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
@@ -29,8 +67,8 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
     <!-- SIDEBAR -->
     <aside id="sidebar">
   <div class="brand d-flex align-items-center gap-2 mb-3">
-    <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-    <span class="fw-bold text-primary">Barangay Cabarian</span>
+    <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+    <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
   </div>
   <div class="menu">
     <a href="#" class="active"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -151,7 +189,7 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODERN REFRESH MODAL -->

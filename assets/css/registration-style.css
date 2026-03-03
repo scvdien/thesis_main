@@ -477,6 +477,11 @@ body.sidebar-open{
   margin-bottom:6px;
   font-weight:600;
 }
+.household-data-primary-row .form-label{
+  min-height:2.2rem;
+  display:flex;
+  align-items:flex-end;
+}
 .form-control, .form-select{
   border-radius:12px;
   border:1px solid var(--border);
@@ -730,6 +735,9 @@ body.sidebar-open{
   gap:10px;
   min-width:0;
 }
+.sync-status.sync-status-clickable{
+  cursor:pointer;
+}
 .sync-status-main{
   display:flex;
   align-items:center;
@@ -750,6 +758,18 @@ body.sidebar-open{
   border:1px solid transparent;
   line-height:1;
   white-space:nowrap;
+}
+.sync-badge.sync-badge-clickable{
+  cursor:pointer;
+  transition:transform 0.14s ease, box-shadow 0.14s ease;
+}
+.sync-badge.sync-badge-clickable:hover{
+  transform:translateY(-1px);
+  box-shadow:0 3px 10px rgba(15,23,42,0.18);
+}
+.sync-badge.sync-badge-clickable:focus-visible{
+  outline:2px solid rgba(255,255,255,0.95);
+  outline-offset:2px;
 }
 .sync-badge.sync-badge-neutral{
   background:#e2e8f0;
@@ -852,6 +872,78 @@ body.sidebar-open{
 }
 .offline-pending-line.sidebar-pending i{
   color:#fed7aa;
+}
+
+.pending-sync-modal .modal-body{
+  max-height:65vh;
+  overflow:auto;
+}
+.pending-sync-title-count{
+  font-weight:600;
+  color:#64748b;
+}
+.pending-sync-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.pending-sync-item{
+  border:1px solid #dbe2ea;
+  border-radius:12px;
+  padding:10px 12px;
+  background:#f8fafc;
+}
+.pending-sync-item-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:flex-start;
+  flex-wrap:wrap;
+}
+.pending-sync-item-id{
+  font-weight:700;
+  color:#0f172a;
+}
+.pending-sync-item-name{
+  color:#334155;
+  font-size:0.88rem;
+}
+.pending-sync-item-zone{
+  color:#64748b;
+  font-size:0.8rem;
+}
+.pending-sync-duplicate-chip{
+  display:inline-flex;
+  align-items:center;
+  border-radius:999px;
+  padding:4px 10px;
+  font-size:0.8rem;
+  font-weight:600;
+  color:#92400e;
+  border:1px solid #fcd9a6;
+  background:#fff8ea;
+}
+.pending-sync-item-error{
+  margin-top:8px;
+  border:1px solid #fdba74;
+  background:#fff7ed;
+  color:#9a3412;
+  border-radius:8px;
+  padding:8px 10px;
+  font-size:0.84rem;
+  line-height:1.35;
+}
+.pending-sync-item-error.is-waiting{
+  border-color:#cbd5e1;
+  background:#f1f5f9;
+  color:#475569;
+}
+.pending-sync-item-actions{
+  margin-top:10px;
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
 }
 .action-buttons .btn{
   border-radius:999px;
@@ -1318,5 +1410,12 @@ footer.page-footer{
   }
   .content-title{
     font-size:1.05rem;
+  }
+}
+
+@media (max-width: 767.98px){
+  .household-data-primary-row .form-label{
+    min-height:0;
+    display:block;
   }
 }

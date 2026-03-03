@@ -26,7 +26,6 @@ window.addEventListener('resize', () => {
 });
 
 const API_ENDPOINT = 'registration-sync.php';
-const HOUSEHOLD_BASE_YEAR = '2026';
 const HOUSEHOLD_FETCH_LIMIT = 500;
 
 const state = {
@@ -44,15 +43,48 @@ const escapeHtml = (value) => {
     .replace(/'/g, '&#39;');
 };
 
-const replaceHouseholdIdYear = (value, year) => {
-  return String(value || '').replace(/^HH-\d{4}(-\d+)$/i, `HH-${String(year)}$1`);
+const normalizeZoneLabel = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.replace(/\s+/g, ' ');
+  const namedMatch = compact.match(/^(?:zone|purok)\s*([a-z0-9-]+)$/i);
+  if (namedMatch) {
+    const suffix = String(namedMatch[1] || '').trim();
+    if (!suffix) return 'Zone';
+    if (/^\d+$/.test(suffix)) {
+      return `Zone ${Number.parseInt(suffix, 10)}`;
+    }
+    return `Zone ${suffix.toUpperCase()}`;
+  }
+  if (/^\d+$/.test(compact)) {
+    return `Zone ${Number.parseInt(compact, 10)}`;
+  }
+  return compact;
 };
 
-const replaceFirstYearToken = (value, year) => {
-  return String(value || '').replace(/\b(19|20)\d{2}\b/, String(year));
+const normalizeZone = (value) => normalizeZoneLabel(value).toLowerCase();
+
+const extractYearFromDate = (value) => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getFullYear();
 };
 
-const normalizeZone = (value) => String(value || '').trim().toLowerCase();
+const extractHouseholdYear = (value) => {
+  const match = String(value || '').match(/^HH-(\d{4})-/i);
+  if (!match) return 0;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) ? parsed : 0;
+};
+
+const getHouseholdRowYear = (row) => {
+  const fromCode = extractHouseholdYear(row?.household_id);
+  if (fromCode > 0) return fromCode;
+  const fromUpdated = extractYearFromDate(row?.updated_at);
+  if (fromUpdated > 0) return fromUpdated;
+  return extractYearFromDate(row?.created_at);
+};
 
 const formatUpdatedDate = (value) => {
   if (!value) return '-';
@@ -66,24 +98,37 @@ const formatUpdatedDate = (value) => {
 };
 
 const currentYear = new Date().getFullYear();
-const previousYear = currentYear - 1;
 const yearSelect = document.getElementById('yearSelect');
-if (yearSelect) {
+const ensureYearOptions = (rows = []) => {
+  if (!yearSelect) return;
+  const currentValue = String(yearSelect.value || '').trim();
+  const yearSet = new Set([currentYear]);
+  rows.forEach((row) => {
+    const year = getHouseholdRowYear(row);
+    if (Number.isInteger(year) && year > 0) {
+      yearSet.add(year);
+    }
+  });
+  const years = Array.from(yearSet).sort((a, b) => b - a);
   yearSelect.innerHTML = '';
-  [previousYear, currentYear].forEach((year) => {
+  years.forEach((year) => {
     const option = document.createElement('option');
     option.value = String(year);
     option.textContent = String(year);
     yearSelect.appendChild(option);
   });
-  yearSelect.value = String(currentYear);
-}
+  if (currentValue && years.includes(Number.parseInt(currentValue, 10))) {
+    yearSelect.value = currentValue;
+  } else {
+    yearSelect.value = String(currentYear);
+  }
+};
 
-const getDisplayYear = () => String(yearSelect?.value || HOUSEHOLD_BASE_YEAR);
+const getSelectedYear = () => String(yearSelect?.value || currentYear);
 
 const footerYear = document.getElementById('year');
 if (footerYear) {
-  footerYear.textContent = '2026';
+  footerYear.textContent = String(new Date().getFullYear());
 }
 
 const refreshBtn = document.getElementById('refreshBtn');
@@ -110,6 +155,41 @@ const householdSearchInput = document.getElementById('householdSearchInput');
 const householdZoneFilter = document.getElementById('householdZoneFilter');
 const householdsTableBody = document.getElementById('householdsTableBody');
 
+const ensureZoneOptions = (rows = []) => {
+  if (!householdZoneFilter) return;
+  const currentValue = normalizeZone(householdZoneFilter.value || 'all') || 'all';
+  const zoneMap = new Map();
+
+  rows.forEach((row) => {
+    const label = normalizeZoneLabel(row?.zone);
+    const key = normalizeZone(label);
+    if (!key || key === '-') return;
+    if (!zoneMap.has(key)) {
+      zoneMap.set(key, label);
+    }
+  });
+
+  const zones = Array.from(zoneMap.entries()).sort((a, b) => {
+    return a[1].localeCompare(b[1], undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  householdZoneFilter.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = 'All Zones';
+  householdZoneFilter.appendChild(allOption);
+
+  zones.forEach(([key, label]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    householdZoneFilter.appendChild(option);
+  });
+
+  const hasCurrent = currentValue === 'all' || zoneMap.has(currentValue);
+  householdZoneFilter.value = hasCurrent ? currentValue : 'all';
+};
+
 const roleFromQueryRaw = new URLSearchParams(window.location.search).get('role');
 const roleFromQuery = (roleFromQueryRaw || '').toLowerCase();
 const roleFromStorage = (sessionStorage.getItem('userRole') || '').toLowerCase();
@@ -130,11 +210,6 @@ if (dashboardLink && canEdit) {
 const isAdminRole = canEdit;
 const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Households | ${dashboardLabel}`;
-
-const reportsLink = document.querySelector('.menu a[href="reports.php"]');
-if (reportsLink && isAdminRole) {
-  reportsLink.setAttribute('href', 'admin-reports.php');
-}
 
 const editModalEl = document.getElementById('editHouseholdModal');
 const editModal = editModalEl ? new bootstrap.Modal(editModalEl) : null;
@@ -179,19 +254,23 @@ const setErrorState = (message) => {
   `;
 };
 
-const getFilteredRows = (displayYear) => {
+const getFilteredRows = (selectedYear) => {
   const term = String(householdSearchInput?.value || '').trim().toLowerCase();
   const zone = normalizeZone(householdZoneFilter?.value || 'all');
+  const yearFilter = String(selectedYear || '').trim();
 
   return state.rows.filter((row) => {
-    const displayHouseholdId = replaceHouseholdIdYear(row.household_id, displayYear);
-    const updatedText = replaceFirstYearToken(formatUpdatedDate(row.updated_at), displayYear);
-    const searchText = `${displayHouseholdId} ${row.head_name} ${row.zone} ${updatedText}`.toLowerCase();
-    const rowZone = normalizeZone(row.zone);
+    const householdId = String(row.household_id || '');
+    const updatedText = formatUpdatedDate(row.updated_at);
+    const rowZoneLabel = normalizeZoneLabel(row.zone);
+    const searchText = `${householdId} ${row.head_name} ${rowZoneLabel} ${updatedText}`.toLowerCase();
+    const rowZone = normalizeZone(rowZoneLabel);
+    const rowYear = String(getHouseholdRowYear(row) || '');
 
     const matchesSearch = !term || searchText.includes(term);
     const matchesZone = zone === 'all' || rowZone === zone;
-    return matchesSearch && matchesZone;
+    const matchesYear = yearFilter === '' || rowYear === yearFilter;
+    return matchesSearch && matchesZone && matchesYear;
   });
 };
 
@@ -208,22 +287,22 @@ const renderHouseholdTable = () => {
     return;
   }
 
-  const displayYear = getDisplayYear();
-  const filteredRows = getFilteredRows(displayYear);
+  const selectedYear = getSelectedYear();
+  const filteredRows = getFilteredRows(selectedYear);
 
   const rowsHtml = filteredRows
     .map((row) => {
       const householdId = String(row.household_id || '');
-      const displayHouseholdId = replaceHouseholdIdYear(householdId, displayYear);
+      const displayHouseholdId = householdId;
       const headName = String(row.head_name || '-');
-      const zoneLabel = String(row.zone || '-');
+      const zoneLabel = normalizeZoneLabel(row.zone) || '-';
       const zoneKey = normalizeZone(zoneLabel);
       const memberCount = Number.isFinite(Number(row.member_count)) ? Number(row.member_count) : 0;
       const baseUpdated = formatUpdatedDate(row.updated_at);
-      const displayUpdated = replaceFirstYearToken(baseUpdated, displayYear);
+      const displayUpdated = baseUpdated;
 
       return `
-        <tr data-household-id="${escapeHtml(displayHouseholdId)}" data-base-household-id="${escapeHtml(householdId)}" data-zone="${escapeHtml(zoneKey)}">
+        <tr data-household-id="${escapeHtml(householdId)}" data-base-household-id="${escapeHtml(householdId)}" data-zone="${escapeHtml(zoneKey)}">
           <td>${escapeHtml(displayHouseholdId || '-')}</td>
           <td>${escapeHtml(headName)}</td>
           <td>${escapeHtml(zoneLabel)}</td>
@@ -286,7 +365,7 @@ const fetchHouseholds = async () => {
   return items.map((item) => ({
     household_id: String(item?.household_id || ''),
     head_name: String(item?.head_name || ''),
-    zone: String(item?.zone || ''),
+    zone: normalizeZoneLabel(item?.zone),
     member_count: Number(item?.member_count || 0),
     updated_at: String(item?.updated_at || ''),
     source: String(item?.source || '')
@@ -300,9 +379,13 @@ async function loadHouseholds() {
 
   try {
     state.rows = await fetchHouseholds();
+    ensureYearOptions(state.rows);
+    ensureZoneOptions(state.rows);
   } catch (error) {
     state.rows = [];
     state.error = error instanceof Error ? error.message : 'Unable to load households.';
+    ensureYearOptions([]);
+    ensureZoneOptions([]);
   } finally {
     state.loading = false;
     renderHouseholdTable();
@@ -383,4 +466,6 @@ householdSearchInput?.addEventListener('input', renderHouseholdTable);
 householdZoneFilter?.addEventListener('change', renderHouseholdTable);
 yearSelect?.addEventListener('change', renderHouseholdTable);
 
+ensureYearOptions([]);
+ensureZoneOptions([]);
 void loadHouseholds();

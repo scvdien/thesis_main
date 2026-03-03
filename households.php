@@ -4,6 +4,43 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandCoreCandidate = preg_replace('/^\s*barangay\b[\s,]*/i', '', $brandLabel);
+$brandCore = trim((string) ($brandCoreCandidate ?? $brandLabel));
+if ($brandCore === '') {
+  $brandCore = trim($brandLabel);
+}
+$brandFooterLabel = $brandCore !== '' ? 'Barangay ' . $brandCore : 'Barangay';
+if ($brandCity !== '' && stripos($brandFooterLabel, $brandCity) === false) {
+  $brandFooterLabel = trim($brandFooterLabel . ', ' . $brandCity);
+}
+$brandSidebarLabel = $brandCore;
+if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandSidebarLabel . ' ' . $brandCity);
+}
+if ($brandSidebarLabel === '') {
+  $brandSidebarLabel = $brandFooterLabel;
+}
+$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
 $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -28,8 +65,8 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary">Barangay Cabarian</span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
       </div>
       <div class="menu">
         <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -66,10 +103,6 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
           <div class="households-toolbar">
             <select class="form-select form-select-sm" id="householdZoneFilter">
               <option value="all">All Zones</option>
-              <option value="zone 1">Zone 1</option>
-              <option value="zone 2">Zone 2</option>
-              <option value="zone 3">Zone 3</option>
-              <option value="zone 4">Zone 4</option>
             </select>
             <div class="search-inline households-search">
               <input type="text" id="householdSearchInput" class="form-control" placeholder="Search head, household ID, or zone">
@@ -87,7 +120,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
               <tr>
                 <th>Household ID</th>
                 <th>Head of Household</th>
-                <th>Zone/Purok</th>
+                <th>Zone</th>
                 <th>Members</th>
                 <th>Last Updated</th>
                 <th class="text-end">Action</th>
@@ -109,7 +142,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- HOUSEHOLD DETAILS MODAL -->
@@ -151,7 +184,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
               <div class="hh-kv-grid">
                 <div class="kv"><div class="k">Contact</div><div class="v" id="hhHeadContact">-</div></div>
                 <div class="kv"><div class="k">Address</div><div class="v" id="hhHeadAddress">-</div></div>
-                <div class="kv"><div class="k">Zone/Purok</div><div class="v" id="hhHeadZone">-</div></div>
+                <div class="kv"><div class="k">Zone</div><div class="v" id="hhHeadZone">-</div></div>
                 <div class="kv"><div class="k">Barangay</div><div class="v" id="hhHeadBarangay">-</div></div>
                 <div class="kv"><div class="k">City/Municipality</div><div class="v" id="hhHeadCity">-</div></div>
                 <div class="kv"><div class="k">Province</div><div class="v" id="hhHeadProvince">-</div></div>
@@ -287,7 +320,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
               <input type="text" class="form-control" id="editHouseholdHead">
             </div>
             <div>
-              <label class="form-label small">Zone/Purok</label>
+              <label class="form-label small">Zone</label>
               <input type="text" class="form-control" id="editHouseholdZone">
             </div>
             <div>

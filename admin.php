@@ -4,6 +4,44 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['admin']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandCoreCandidate = preg_replace('/^\s*barangay\b[\s,]*/i', '', $brandLabel);
+$brandCore = trim((string) ($brandCoreCandidate ?? $brandLabel));
+if ($brandCore === '') {
+  $brandCore = trim($brandLabel);
+}
+$brandFooterLabel = $brandCore !== '' ? 'Barangay ' . $brandCore : 'Barangay';
+if ($brandCity !== '' && stripos($brandFooterLabel, $brandCity) === false) {
+  $brandFooterLabel = trim($brandFooterLabel . ', ' . $brandCity);
+}
+$brandSidebarLabel = $brandCore;
+if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandSidebarLabel . ' ' . $brandCity);
+}
+if ($brandSidebarLabel === '') {
+  $brandSidebarLabel = $brandFooterLabel;
+}
+$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$adminDashboardStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/admin-style.css') ?: time());
 $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-dashboard-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -17,7 +55,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
 <script src="assets/vendor/chartjs/chart.umd.min.js"></script>
-<link rel="stylesheet" href="assets/css/admin-style.css">
+<link rel="stylesheet" href="assets/css/admin-style.css?v=<?= htmlspecialchars($adminDashboardStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
 <?php echo auth_client_role_script($authRole); ?>
@@ -28,14 +66,14 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
     <!-- SIDEBAR -->
     <aside id="sidebar">
   <div class="brand d-flex align-items-center gap-2 mb-3">
-    <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-    <span class="fw-bold text-primary">Barangay Cabarian</span>
+    <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+    <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
   </div>
   <div class="menu">
     <a href="#" class="active"><i class="bi bi-speedometer2"></i>Dashboard</a>
     <a href="households.php?role=admin"><i class="bi bi-house"></i>Households</a>
     <a href="residents.php"><i class="bi bi-people"></i>Residents</a>
-    <a href="admin-reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
+    <a href="reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
     <a href="settings.php?role=admin"><i class="bi bi-gear"></i>Settings</a>
     <a href="#" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a>
   </div>
@@ -150,7 +188,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODALS (same as captain dashboard) -->

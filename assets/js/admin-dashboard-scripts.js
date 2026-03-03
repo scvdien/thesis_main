@@ -147,6 +147,27 @@
   };
 
   const formatNumber = (value) => new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(toNumber(value))));
+  const sumValues = (values) => (Array.isArray(values) ? values.reduce((total, item) => total + toNumber(item), 0) : 0);
+  const percentValue = (value, total) => {
+    const safeTotal = toNumber(total);
+    if (safeTotal <= 0) return 0;
+    return (toNumber(value) / safeTotal) * 100;
+  };
+  const formatPercent = (value, total) => `${percentValue(value, total).toFixed(1).replace(/\.0$/, "")}%`;
+  const pieTooltipLabel = (context) => {
+    const data = context?.dataset?.data || [];
+    const total = sumValues(data);
+    const raw = toNumber(context?.raw);
+    const label = String(context?.label || "Value");
+    return `${label}: ${formatPercent(raw, total)} (${formatNumber(raw)})`;
+  };
+  const ageTooltipLabel = (context) => {
+    const data = context?.dataset?.data || [];
+    const total = sumValues(data);
+    const raw = toNumber(context?.raw);
+    const label = String(context?.label || "Age Group");
+    return `${label}: ${formatPercent(raw, total)} (${formatNumber(raw)})`;
+  };
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -175,17 +196,44 @@
     yearSelect.value = String(targetYear);
   };
 
+  const syncPieCardLayout = (legend) => {
+    if (!legend) return;
+    const card = legend.closest(".card-box.chart-card--pie");
+    if (!card) return;
+
+    // Edge can wrap legend text differently; compute card min-height from actual content.
+    const chartWrap = card.querySelector(".chart-square-wrap");
+    const titleEl = card.querySelector("h6");
+    const chartHeight = chartWrap ? chartWrap.getBoundingClientRect().height : 0;
+    const titleHeight = titleEl ? titleEl.getBoundingClientRect().height : 0;
+    const legendHeight = legend.scrollHeight || legend.getBoundingClientRect().height || 0;
+    const computedMinHeight = Math.max(290, Math.ceil(titleHeight + chartHeight + legendHeight + 44));
+
+    card.style.height = "auto";
+    card.style.minHeight = `${computedMinHeight}px`;
+    card.style.overflow = "visible";
+  };
+
   const renderLegend = (chart, legendId) => {
     const legend = document.getElementById(legendId);
     if (!legend || !chart) return;
     const labels = chart.data.labels || [];
     const colors = chart.data.datasets?.[0]?.backgroundColor || [];
+    const values = chart.data.datasets?.[0]?.data || [];
+    const total = sumValues(values);
     legend.innerHTML = labels
       .map((label, index) => {
         const color = Array.isArray(colors) ? colors[index] || "#9ca3af" : colors || "#9ca3af";
-        return `<span class="legend-item"><i class="legend-swatch" style="background:${color}"></i>${label}</span>`;
+        const value = Array.isArray(values) ? toNumber(values[index]) : 0;
+        return `<span class="legend-item"><i class="legend-swatch" style="background:${color}"></i>${label} (${formatPercent(value, total)})</span>`;
       })
       .join("");
+
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => syncPieCardLayout(legend));
+    } else {
+      syncPieCardLayout(legend);
+    }
   };
 
   const pickEntries = (source, fallbackEntries) => {
@@ -215,7 +263,14 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ageTooltipLabel,
+              },
+            },
+          },
           scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
         },
       });
@@ -224,7 +279,14 @@
     const pieOptions = {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: pieTooltipLabel,
+          },
+        },
+      },
     };
 
     if (genderCanvas) {
@@ -428,4 +490,3 @@
   initCharts();
   loadDashboardData(currentYear, false);
 })();
-

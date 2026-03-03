@@ -4,6 +4,30 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandSidebarLabel = $brandLabel;
+if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandLabel . ' ' . $brandCity);
+}
 $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/household-view.js') ?: time());
 ?>
 <!doctype html>
@@ -25,14 +49,14 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
     <!-- SIDEBAR (reuse) -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary">Barangay Cabarian</span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
       </div>
       <div class="menu">
         <a href="admin.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
         <a href="households.php" class="active"><i class="bi bi-house"></i>Households</a>
         <a href="residents.php"><i class="bi bi-people"></i>Residents</a>
-        <a href="admin-reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
+        <a href="reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
         <a href="settings.php"><i class="bi bi-gear"></i>Settings</a>
         <a href="#" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a>
       </div>
@@ -118,7 +142,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
             </div>
             <div class="kv-grid hv-quick-kv">
               <div class="kv"><span class="k">Contact</span><span class="v" id="hvHeadContact">-</span></div>
-              <div class="kv"><span class="k">Zone/Purok</span><span class="v" id="hvHeadZone">-</span></div>
+              <div class="kv"><span class="k">Zone</span><span class="v" id="hvHeadZone">-</span></div>
               <div class="kv wide"><span class="k">Address</span><span class="v" id="hvHeadAddress">-</span></div>
               <div class="kv"><span class="k">Barangay</span><span class="v" id="hvHeadBarangay">-</span></div>
               <div class="kv"><span class="k">City/Municipality</span><span class="v" id="hvHeadCity">-</span></div>
@@ -299,7 +323,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
 
   <!-- MEMBER DETAILS MODAL -->
   <div class="modal fade" id="memberDetailsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content modern-modal">
         <div class="modal-header border-0 pb-0">
           <div>
@@ -309,42 +333,149 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body pt-3">
-          <div class="member-detail-grid">
-            <div class="member-detail-item">
-              <span class="k">Full Name</span>
-              <span class="v" id="mdName">-</span>
+          <div class="accordion member-modal-accordion" id="memberDetailsAccordion">
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="memberDetailsBasicHead">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsBasic" aria-expanded="true" aria-controls="memberDetailsBasic">
+                  Basic Information
+                </button>
+              </h2>
+              <div id="memberDetailsBasic" class="accordion-collapse collapse show" aria-labelledby="memberDetailsBasicHead" data-bs-parent="#memberDetailsAccordion">
+                <div class="accordion-body">
+                  <div class="member-detail-grid">
+                    <div class="member-detail-item full"><span class="k">Full Name</span><span class="v" id="mdName">-</span></div>
+                    <div class="member-detail-item"><span class="k">Relation</span><span class="v" id="mdRelationToHeadValue">-</span></div>
+                    <div class="member-detail-item"><span class="k">Birthday</span><span class="v" id="mdBirthday">-</span></div>
+                    <div class="member-detail-item"><span class="k">Age</span><span class="v" id="mdAge">-</span></div>
+                    <div class="member-detail-item"><span class="k">Sex</span><span class="v" id="mdSex">-</span></div>
+                    <div class="member-detail-item"><span class="k">Civil Status</span><span class="v" id="mdCivilStatus">-</span></div>
+                    <div class="member-detail-item"><span class="k">Citizenship</span><span class="v" id="mdCitizenship">-</span></div>
+                    <div class="member-detail-item"><span class="k">Religion</span><span class="v" id="mdReligion">-</span></div>
+                    <div class="member-detail-item"><span class="k">Blood Type</span><span class="v" id="mdBloodType">-</span></div>
+                    <div class="member-detail-item"><span class="k">Pregnant</span><span class="v" id="mdPregnant">-</span></div>
+                    <div class="member-detail-item"><span class="k">Height</span><span class="v" id="mdHeight">-</span></div>
+                    <div class="member-detail-item"><span class="k">Weight</span><span class="v" id="mdWeight">-</span></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="member-detail-item">
-              <span class="k">Age</span>
-              <span class="v" id="mdAge">-</span>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="memberDetailsContactHead">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsContact" aria-expanded="false" aria-controls="memberDetailsContact">
+                  Contact and Address
+                </button>
+              </h2>
+              <div id="memberDetailsContact" class="accordion-collapse collapse" aria-labelledby="memberDetailsContactHead" data-bs-parent="#memberDetailsAccordion">
+                <div class="accordion-body">
+                  <div class="member-detail-grid">
+                    <div class="member-detail-item"><span class="k">Contact</span><span class="v" id="mdContact">-</span></div>
+                    <div class="member-detail-item"><span class="k">Zone</span><span class="v" id="mdZone">-</span></div>
+                    <div class="member-detail-item"><span class="k">Barangay</span><span class="v" id="mdBarangay">-</span></div>
+                    <div class="member-detail-item"><span class="k">City/Municipality</span><span class="v" id="mdCity">-</span></div>
+                    <div class="member-detail-item"><span class="k">Province</span><span class="v" id="mdProvince">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Address</span><span class="v" id="mdAddress">-</span></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="member-detail-item">
-              <span class="k">Sex</span>
-              <span class="v" id="mdSex">-</span>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="memberDetailsProfileHead">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsProfile" aria-expanded="false" aria-controls="memberDetailsProfile">
+                  Education and Employment
+                </button>
+              </h2>
+              <div id="memberDetailsProfile" class="accordion-collapse collapse" aria-labelledby="memberDetailsProfileHead" data-bs-parent="#memberDetailsAccordion">
+                <div class="accordion-body">
+                  <div class="member-detail-grid">
+                    <div class="member-detail-item"><span class="k">Education</span><span class="v" id="mdEducation">-</span></div>
+                    <div class="member-detail-item"><span class="k">Degree/Course</span><span class="v" id="mdDegree">-</span></div>
+                    <div class="member-detail-item full"><span class="k">School Name</span><span class="v" id="mdSchoolName">-</span></div>
+                    <div class="member-detail-item"><span class="k">School Type</span><span class="v" id="mdSchoolType">-</span></div>
+                    <div class="member-detail-item"><span class="k">Dropout</span><span class="v" id="mdDropout">-</span></div>
+                    <div class="member-detail-item"><span class="k">Out of School Youth</span><span class="v" id="mdOSY">-</span></div>
+                    <div class="member-detail-item"><span class="k">Currently Studying</span><span class="v" id="mdCurrentlyStudying">-</span></div>
+                    <div class="member-detail-item"><span class="k">Occupation</span><span class="v" id="mdOccupation">-</span></div>
+                    <div class="member-detail-item"><span class="k">Employment Status</span><span class="v" id="mdEmploymentStatus">-</span></div>
+                    <div class="member-detail-item"><span class="k">Work Type</span><span class="v" id="mdWorkType">-</span></div>
+                    <div class="member-detail-item"><span class="k">Monthly Income</span><span class="v" id="mdMonthlyIncome">-</span></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="member-detail-item">
-              <span class="k">Civil Status</span>
-              <span class="v" id="mdCivilStatus">-</span>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="memberDetailsGovHead">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsGov" aria-expanded="false" aria-controls="memberDetailsGov">
+                  Government IDs and Social Welfare
+                </button>
+              </h2>
+              <div id="memberDetailsGov" class="accordion-collapse collapse" aria-labelledby="memberDetailsGovHead" data-bs-parent="#memberDetailsAccordion">
+                <div class="accordion-body">
+                  <div class="member-detail-grid">
+                    <div class="member-detail-item"><span class="k">4Ps Beneficiary</span><span class="v" id="md4ps">-</span></div>
+                    <div class="member-detail-item"><span class="k">Senior Citizen</span><span class="v" id="mdSenior">-</span></div>
+                    <div class="member-detail-item"><span class="k">PWD</span><span class="v" id="mdPWD">-</span></div>
+                    <div class="member-detail-item"><span class="k">Indigenous People</span><span class="v" id="mdIP">-</span></div>
+                    <div class="member-detail-item"><span class="k">Registered Voter</span><span class="v" id="mdVoter">-</span></div>
+                    <div class="member-detail-item"><span class="k">Precinct</span><span class="v" id="mdPrecinct">-</span></div>
+                    <div class="member-detail-item"><span class="k">SSS</span><span class="v" id="mdSSS">-</span></div>
+                    <div class="member-detail-item"><span class="k">PhilHealth</span><span class="v" id="mdPhilhealth">-</span></div>
+                    <div class="member-detail-item"><span class="k">GSIS</span><span class="v" id="mdGSIS">-</span></div>
+                    <div class="member-detail-item"><span class="k">TIN</span><span class="v" id="mdTIN">-</span></div>
+                    <div class="member-detail-item"><span class="k">PhilSys ID</span><span class="v" id="mdPhilID">-</span></div>
+                    <div class="member-detail-item"><span class="k">Driver's License</span><span class="v" id="mdDriverLicense">-</span></div>
+                    <div class="member-detail-item"><span class="k">Passport</span><span class="v" id="mdPassport">-</span></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="member-detail-item">
-              <span class="k">Contact</span>
-              <span class="v" id="mdContact">-</span>
-            </div>
-            <div class="member-detail-item">
-              <span class="k">Education</span>
-              <span class="v" id="mdEducation">-</span>
-            </div>
-            <div class="member-detail-item">
-              <span class="k">Occupation</span>
-              <span class="v" id="mdOccupation">-</span>
-            </div>
-            <div class="member-detail-item full">
-              <span class="k">Address</span>
-              <span class="v" id="mdAddress">-</span>
-            </div>
-            <div class="member-detail-item full">
-              <span class="k">Health Notes</span>
-              <span class="v" id="mdHealthNotes">-</span>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="memberDetailsHealthHead">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsHealth" aria-expanded="false" aria-controls="memberDetailsHealth">
+                  Household and Health Profile
+                </button>
+              </h2>
+              <div id="memberDetailsHealth" class="accordion-collapse collapse" aria-labelledby="memberDetailsHealthHead" data-bs-parent="#memberDetailsAccordion">
+                <div class="accordion-body">
+                  <div class="member-detail-grid">
+                    <div class="member-detail-item"><span class="k">Household Members</span><span class="v" id="mdNumMembers">-</span></div>
+                    <div class="member-detail-item"><span class="k">Relation to Head</span><span class="v" id="mdRelationToHead">-</span></div>
+                    <div class="member-detail-item"><span class="k">No. of Children</span><span class="v" id="mdNumChildren">-</span></div>
+                    <div class="member-detail-item"><span class="k">Partner Name</span><span class="v" id="mdPartnerName">-</span></div>
+                    <div class="member-detail-item"><span class="k">Current Illness</span><span class="v" id="mdHealthCurrentIllness">-</span></div>
+                    <div class="member-detail-item"><span class="k">Illness Type</span><span class="v" id="mdHealthIllnessType">-</span></div>
+                    <div class="member-detail-item"><span class="k">Illness Duration (Years)</span><span class="v" id="mdHealthIllnessYears">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Chronic Diseases</span><span class="v" id="mdHealthChronicDiseases">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Common Illnesses</span><span class="v" id="mdHealthCommonIllnesses">-</span></div>
+                    <div class="member-detail-item"><span class="k">Maintenance Meds</span><span class="v" id="mdHealthMaintenanceMeds">-</span></div>
+                    <div class="member-detail-item"><span class="k">Medicine Name</span><span class="v" id="mdHealthMedicineName">-</span></div>
+                    <div class="member-detail-item"><span class="k">Medicine Frequency</span><span class="v" id="mdHealthMedicineFrequency">-</span></div>
+                    <div class="member-detail-item"><span class="k">Medicine Source</span><span class="v" id="mdHealthMedicineSource">-</span></div>
+                    <div class="member-detail-item"><span class="k">Maternal Pregnant</span><span class="v" id="mdHealthMaternalPregnant">-</span></div>
+                    <div class="member-detail-item"><span class="k">Months Pregnant</span><span class="v" id="mdHealthMonthsPregnant">-</span></div>
+                    <div class="member-detail-item"><span class="k">Prenatal Care</span><span class="v" id="mdHealthPrenatalCare">-</span></div>
+                    <div class="member-detail-item"><span class="k">Child Immunized</span><span class="v" id="mdHealthChildImmunized">-</span></div>
+                    <div class="member-detail-item"><span class="k">Child Malnutrition</span><span class="v" id="mdHealthChildMalnutrition">-</span></div>
+                    <div class="member-detail-item"><span class="k">Child Sick/Year</span><span class="v" id="mdHealthChildSickPerYear">-</span></div>
+                    <div class="member-detail-item"><span class="k">Has Disability</span><span class="v" id="mdHealthHasDisability">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Disability Types</span><span class="v" id="mdHealthDisabilityTypes">-</span></div>
+                    <div class="member-detail-item"><span class="k">Regular Care</span><span class="v" id="mdHealthDisabilityRegularCare">-</span></div>
+                    <div class="member-detail-item"><span class="k">Smoker</span><span class="v" id="mdHealthSmoker">-</span></div>
+                    <div class="member-detail-item"><span class="k">Alcohol (Daily)</span><span class="v" id="mdHealthAlcoholDaily">-</span></div>
+                    <div class="member-detail-item"><span class="k">Malnutrition Present</span><span class="v" id="mdHealthMalnutritionPresent">-</span></div>
+                    <div class="member-detail-item"><span class="k">Access to Clean Water</span><span class="v" id="mdHealthCleanWater">-</span></div>
+                    <div class="member-detail-item"><span class="k">RHU Visits</span><span class="v" id="mdHealthRhuVisits">-</span></div>
+                    <div class="member-detail-item full"><span class="k">RHU Visit Reason</span><span class="v" id="mdHealthRhuReason">-</span></div>
+                    <div class="member-detail-item"><span class="k">Has PhilHealth</span><span class="v" id="mdHealthHasPhilhealth">-</span></div>
+                    <div class="member-detail-item"><span class="k">Hospitalized (5 yrs)</span><span class="v" id="mdHealthHospitalized5yrs">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Hospitalization Reason</span><span class="v" id="mdHealthHospitalizedReason">-</span></div>
+                    <div class="member-detail-item full"><span class="k">Health Notes</span><span class="v" id="mdHealthNotes">-</span></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

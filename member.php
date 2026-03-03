@@ -4,6 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['staff', 'secretary', 'admin']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$systemLabel = trim($brandLabel . ($brandCity !== '' ? ' ' . $brandCity : '') . ' Household Information Management System');
 $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts.js') ?: time());
 ?>
 <!DOCTYPE html>
@@ -25,10 +29,10 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
     <div class="page-header mb-4">
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 header-row">
         <div class="d-flex align-items-center gap-3 header-main">
-          <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" class="brand-logo">
+          <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo" class="brand-logo">
           <div class="header-text">
             <div class="title">Add Household Member</div>
-            <div class="subtitle">Barangay Cabarian Household Information Management System</div>
+            <div class="subtitle"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></div>
           </div>
         </div>
         <div class="header-actions">
@@ -71,19 +75,6 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
             <div class="col-md-2"><label class="form-label" for="weight">Weight (kg)</label><input type="number" class="form-control" id="weight"></div>
             <div class="col-md-2"><label class="form-label" for="age">Age</label><input type="number" class="form-control" id="age" readonly></div>
 
-            <div class="col-md-2" id="pregnantWrap" style="display:none;">
-              <label class="form-label">Pregnant?</label>
-              <div class="d-flex gap-3" style="min-height:42px; align-items:center;">
-                <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="pregnant" id="pregnant_yes" value="Yes">
-                  <label class="form-check-label" for="pregnant_yes">Yes</label>
-                </div>
-                <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="pregnant" id="pregnant_no" value="No">
-                  <label class="form-check-label" for="pregnant_no">No</label>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -95,7 +86,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
           <div class="row g-3">
             <div class="col-md-4"><label class="form-label" for="contact">Contact Number</label><input type="tel" class="form-control" id="contact"></div>
             <div class="col-md-4"><label class="form-label" for="address">Complete Address</label><input type="text" class="form-control" id="address"></div>
-            <div class="col-md-4"><label class="form-label" for="zone">Zone/Purok</label><input type="text" class="form-control" id="zone"></div>
+            <div class="col-md-4"><label class="form-label" for="zone">Zone</label><input type="text" class="form-control" id="zone"></div>
             <div class="col-md-4"><label class="form-label" for="barangay">Barangay</label><input type="text" class="form-control" id="barangay"></div>
             <div class="col-md-4"><label class="form-label" for="city">City/Municipality</label><input type="text" class="form-control" id="city"></div>
             <div class="col-md-4"><label class="form-label" for="province">Province</label><input type="text" class="form-control" id="province"></div>
@@ -524,8 +515,8 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
 
   <footer class="footer page-footer py-3 text-center mt-4">
     <div class="page-wrap">
-      <p class="mb-1 fw-semibold">Barangay Cabarian Household Information Management System</p>
-      <p class="mb-0 small">&copy; <span id="year"></span> Barangay Cabarian, Ligao City</p>
+      <p class="mb-1 fw-semibold"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></p>
+      <p class="mb-0 small">&copy; <span id="year"></span> <?= htmlspecialchars(trim($brandLabel . ($brandCity !== '' ? ', ' . $brandCity : '')), ENT_QUOTES, 'UTF-8') ?></p>
     </div>
   </footer>
 

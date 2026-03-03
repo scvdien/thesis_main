@@ -89,6 +89,36 @@ function reg_title_case_text(mixed $value): string
     return trim(implode('', $result));
 }
 
+function reg_normalize_zone_text(mixed $value): string
+{
+    $text = reg_text(reg_title_case_text($value), 80);
+    if ($text === '') {
+        return '';
+    }
+
+    $compact = preg_replace('/\s+/u', ' ', $text);
+    if (!is_string($compact) || $compact === '') {
+        return '';
+    }
+
+    if (preg_match('/^(?:zone|purok)\s*([[:alnum:]-]+)$/iu', $compact, $matches) === 1) {
+        $suffix = reg_text($matches[1] ?? '', 30);
+        if ($suffix === '') {
+            return 'Zone';
+        }
+        if (preg_match('/^\d+$/', $suffix) === 1) {
+            return 'Zone ' . (string) ((int) $suffix);
+        }
+        return 'Zone ' . strtoupper($suffix);
+    }
+
+    if (preg_match('/^\d+$/', $compact) === 1) {
+        return 'Zone ' . (string) ((int) $compact);
+    }
+
+    return $compact;
+}
+
 /**
  * @param array<string, mixed> $person
  * @return array<string, mixed>
@@ -441,7 +471,7 @@ function reg_find_duplicate_household(PDO $pdo, array $record, string $excludeHo
         return [
             'household_id' => (string) ($row['household_code'] ?? ''),
             'head_name' => (string) ($row['head_name'] ?? ''),
-            'zone' => (string) ($row['zone'] ?? ''),
+            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
             'year' => $targetYear,
             'created_at' => (string) ($row['created_at'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
@@ -508,11 +538,23 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     if ($headName === '') {
         $headName = 'Unnamed household head';
     }
-    $zone = reg_text(reg_title_case_text($record['zone'] ?? ($head['zone'] ?? '')), 80);
+    $zone = reg_normalize_zone_text($record['zone'] ?? ($head['zone'] ?? ''));
     if ($zone === '') {
-        throw new InvalidArgumentException('Zone/Purok is required.');
+        throw new InvalidArgumentException('Zone is required.');
     }
     $head['zone'] = $zone;
+
+    foreach ($members as $index => $member) {
+        if (!is_array($member)) {
+            continue;
+        }
+        $memberZone = reg_normalize_zone_text($member['zone'] ?? $zone);
+        if ($memberZone === '') {
+            $memberZone = $zone;
+        }
+        $member['zone'] = $memberZone;
+        $members[$index] = $member;
+    }
     $source = reg_text($record['source'] ?? 'registration-module', 80);
     $memberCount = max(1, count($members) + 1);
     $actorUserId = (int) ($authUser['id'] ?? 0);
@@ -758,7 +800,7 @@ function reg_list_households(PDO $pdo): array
         'items' => array_map(static fn(array $row): array => [
             'household_id' => (string) ($row['household_code'] ?? ''),
             'head_name' => (string) ($row['head_name'] ?? ''),
-            'zone' => (string) ($row['zone'] ?? ''),
+            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
             'member_count' => (int) ($row['member_count'] ?? 0),
             'source' => (string) ($row['source'] ?? ''),
             'created_at' => (string) ($row['created_at'] ?? ''),
@@ -788,7 +830,7 @@ function reg_get_household(PDO $pdo, string $householdCode): ?array
     $record = reg_json_decode_assoc((string) ($row['record_data_json'] ?? ''));
     $record['household_id'] = (string) ($row['household_code'] ?? $householdCode);
     $record['head_name'] = (string) ($row['head_name'] ?? ($record['head_name'] ?? ''));
-    $record['zone'] = (string) ($row['zone'] ?? ($record['zone'] ?? ''));
+    $record['zone'] = reg_normalize_zone_text($row['zone'] ?? ($record['zone'] ?? ''));
     $record['member_count'] = (int) ($row['member_count'] ?? ($record['member_count'] ?? 0));
     $record['source'] = (string) ($row['source'] ?? ($record['source'] ?? 'registration-module'));
     $record['head'] = reg_json_decode_assoc((string) ($row['head_data_json'] ?? ''));
@@ -815,10 +857,23 @@ function reg_get_household(PDO $pdo, string $householdCode): ?array
         $record['members'] = $members;
     }
 
+    $recordHead = is_array($record['head'] ?? null) ? $record['head'] : [];
+    $recordHead['zone'] = reg_normalize_zone_text($recordHead['zone'] ?? $record['zone']);
+    $record['head'] = $recordHead;
+    $record['zone'] = reg_normalize_zone_text($record['zone'] ?? $recordHead['zone']);
+    $recordMembers = is_array($record['members'] ?? null) ? $record['members'] : [];
+    foreach ($recordMembers as $memberIndex => $memberRow) {
+        if (!is_array($memberRow)) {
+            continue;
+        }
+        $recordMembers[$memberIndex]['zone'] = reg_normalize_zone_text($memberRow['zone'] ?? $record['zone']);
+    }
+    $record['members'] = $recordMembers;
+
     return [
         'household_id' => (string) ($row['household_code'] ?? ''),
         'head_name' => (string) ($row['head_name'] ?? ''),
-        'zone' => (string) ($row['zone'] ?? ''),
+        'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
         'member_count' => (int) ($row['member_count'] ?? 0),
         'source' => (string) ($row['source'] ?? ''),
         'created_at' => (string) ($row['created_at'] ?? ''),
@@ -862,7 +917,7 @@ function reg_list_members(PDO $pdo): array
             'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
             'sex' => (string) ($row['sex'] ?? ''),
             'age' => (string) ($row['age'] ?? ''),
-            'zone' => (string) ($row['zone'] ?? ''),
+            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
             'member' => reg_json_decode_assoc((string) ($row['member_data_json'] ?? '')),
         ], $rows),
@@ -894,7 +949,7 @@ function reg_get_member(PDO $pdo, string $residentCode): ?array
         'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
         'sex' => (string) ($row['sex'] ?? ''),
         'age' => (string) ($row['age'] ?? ''),
-        'zone' => (string) ($row['zone'] ?? ''),
+        'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
         'member' => reg_json_decode_assoc((string) ($row['member_data_json'] ?? '')),
@@ -942,7 +997,7 @@ function reg_list_residents(PDO $pdo): array
             'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
             'sex' => (string) ($row['sex'] ?? ''),
             'age' => (string) ($row['age'] ?? ''),
-            'zone' => (string) ($row['zone'] ?? ''),
+            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
         ], $rows),
         'count' => count($rows),
@@ -965,6 +1020,23 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
     if (!is_array($row)) {
         return null;
     }
+    $resident = reg_json_decode_assoc((string) ($row['resident_data_json'] ?? ''));
+    if (is_array($resident)) {
+        $profile = is_array($resident['member'] ?? null)
+            ? $resident['member']
+            : (is_array($resident['head'] ?? null) ? $resident['head'] : $resident);
+        if (is_array($profile)) {
+            $profile['zone'] = reg_normalize_zone_text($profile['zone'] ?? ($row['zone'] ?? ''));
+            if (is_array($resident['member'] ?? null)) {
+                $resident['member'] = $profile;
+            } elseif (is_array($resident['head'] ?? null)) {
+                $resident['head'] = $profile;
+            } else {
+                $resident = $profile;
+            }
+        }
+    }
+
     return [
         'resident_id' => (string) ($row['resident_code'] ?? ''),
         'household_id' => (string) ($row['household_code'] ?? ''),
@@ -974,10 +1046,10 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
         'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
         'sex' => (string) ($row['sex'] ?? ''),
         'age' => (string) ($row['age'] ?? ''),
-        'zone' => (string) ($row['zone'] ?? ''),
+        'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
-        'resident' => reg_json_decode_assoc((string) ($row['resident_data_json'] ?? '')),
+        'resident' => $resident,
     ];
 }
 

@@ -45,7 +45,7 @@
   }
 
   const footerYear = document.getElementById('year');
-  if (footerYear) footerYear.textContent = '2026';
+  if (footerYear) footerYear.textContent = String(currentYear);
 
   const reportModalEl = document.getElementById('reportModal');
   const reportModal = reportModalEl ? new bootstrap.Modal(reportModalEl) : null;
@@ -66,10 +66,9 @@
   const reportModalUpdated = document.getElementById('reportModalUpdated');
   const reportModalDownload = document.getElementById('reportModalDownload');
   const reportModalPrint = document.getElementById('reportModalPrint');
+  const analyticsApiEndpoint = 'dashboard-analytics-api.php';
   const exportEndpoints = [
-    'report-export.php',
-    'http://localhost/thesis-main/report-export.php',
-    'http://127.0.0.1/thesis-main/report-export.php'
+    'report-export.php'
   ];
 
   const reportsTableBody = document.getElementById('reportsTableBody');
@@ -92,100 +91,102 @@
     return new Date().toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
   };
 
-  const safeFileSlug = (value) => {
-    return String(value || 'report').replace(/[^a-zA-Z0-9-_]/g, '_');
+  const escapeHtml = (value) => {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  const upsertDefaultReportRow = () => {
+    if (!reportsTableBody) return;
+    const selectedYear = Number(yearSelect ? yearSelect.value : currentYear) || currentYear;
+    const reportId = 'RP-' + selectedYear + '-001';
+    const title = 'Annual Household Analytics Report';
+    const category = 'Annual';
+    const period = 'Year ' + selectedYear;
+    const updated = formatToday();
+    const summary = 'Generated annual analytics report for barangay households and residents.';
+    const documentBody = 'This report summarizes barangay household and resident analytics for the selected year.';
+
+    let row = reportsTableBody.querySelector('tr[data-seed-report="default"]');
+    if (!row) {
+      row = document.createElement('tr');
+      row.dataset.seedReport = 'default';
+      if (emptyRow && emptyRow.parentElement === reportsTableBody) {
+        reportsTableBody.insertBefore(row, emptyRow);
+      } else {
+        reportsTableBody.appendChild(row);
+      }
+    }
+
+    row.innerHTML = `
+      <td>${escapeHtml(reportId)}</td>
+      <td>${escapeHtml(title)}</td>
+      <td>${escapeHtml(category)}</td>
+      <td>${escapeHtml(period)}</td>
+      <td>${escapeHtml(updated)}</td>
+      <td class="text-end">
+        <div class="table-actions">
+          <button type="button" class="btn btn-outline-primary btn-sm report-view-btn open-report view-report"
+                  data-id="${escapeHtml(reportId)}"
+                  data-title="${escapeHtml(title)}"
+                  data-category="${escapeHtml(category)}"
+                  data-period="${escapeHtml(period)}"
+                  data-status="Draft"
+                  data-updated="${escapeHtml(updated)}"
+                  data-summary="${escapeHtml(summary)}"
+                  data-document="${escapeHtml(documentBody)}">
+            <i class="bi bi-eye"></i> View
+          </button>
+        </div>
+      </td>
+    `;
   };
 
   const ANALYTICS_STORAGE_KEY = 'barangay_analytics_payload_by_year';
   const ANALYTICS_CURRENT_KEY = 'barangay_analytics_payload_current';
 
-  const buildDefaultAnalyticsPayload = (selectedYear) => {
-    return {
-      year: Number(selectedYear),
-      population_summary: {
-        total_population: 3200,
-        male: 1600,
-        female: 1600,
-        households: 780,
-        average_household_size: 4.1
-      },
-      age_group_distribution: {
-        '0-5': 260,
-        '6-12': 446,
-        '13-17': 360,
-        '18-59': 2042,
-        '60+': 422
-      },
-      socio_economic: {
-        employment_status: {
-          Employed: 1800,
-          Unemployed: 600,
-          'Self-Employed': 500
-        },
-        educational_attainment: {
-          'No Schooling': 300,
-          Elementary: 900,
-          'High School': 1400,
-          College: 600,
-          Vocational: 0
-        },
-        other_indicators: {
-          PWD: 110,
-          'Senior Citizens': 420,
-          'Solo Parents': 0
-        }
-      },
-      housing_utilities: {
-        toilet_type: {
-          'Water-sealed (Flush toilet)': 620,
-          'Pit Latrine': 120,
-          'Shared Toilet': 40
-        },
-        water_source: {
-          'Piped Water': 520,
-          'Deep Well': 180,
-          'Water Delivery': 80
-        },
-        electricity_source: {
-          'With Electricity': 720,
-          'No Electricity': 60
-        },
-        housing_ownership: {
-          Owned: 600,
-          Rented: 180
-        }
-      },
-      health_risk: {
-        pregnant_women: 68,
-        malnourished_children: 60,
-        persons_with_illness: 350,
-        deaths_by_cause: {
-          'Heart Disease': 25,
-          Accident: 10,
-          'Other Illness': 15
-        }
-      }
-    };
-  };
-
-  const getAnalyticsPayloadForYear = (selectedYear) => {
+  const fetchAnalyticsPayloadForYear = async (selectedYear) => {
     const normalizedYear = Number(selectedYear) || currentYear;
-    const yearKey = String(normalizedYear);
+    const requestTime = Date.now();
+    const response = await fetch(`${analyticsApiEndpoint}?year=${encodeURIComponent(normalizedYear)}&_ts=${requestTime}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    });
+
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (e) {
+      result = null;
+    }
+
+    const payload = result && typeof result === 'object' ? result.data : null;
+    if (!response.ok || !result || result.success !== true || !payload || typeof payload !== 'object') {
+      const message = result && typeof result.error === 'string' && result.error.trim() !== ''
+        ? result.error.trim()
+        : 'Unable to load the latest analytics data for export.';
+      throw new Error(message);
+    }
+
     try {
       const byYear = JSON.parse(localStorage.getItem(ANALYTICS_STORAGE_KEY) || '{}');
-      if (byYear && typeof byYear === 'object' && byYear[yearKey]) {
-        return byYear[yearKey];
-      }
+      const cacheMap = byYear && typeof byYear === 'object' ? byYear : {};
+      cacheMap[String(normalizedYear)] = payload;
+      localStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(cacheMap));
+      localStorage.setItem(ANALYTICS_CURRENT_KEY, JSON.stringify(payload));
     } catch (e) {}
 
-    try {
-      const currentPayload = JSON.parse(localStorage.getItem(ANALYTICS_CURRENT_KEY) || 'null');
-      if (currentPayload && typeof currentPayload === 'object') {
-        return currentPayload;
-      }
-    } catch (e) {}
-
-    return buildDefaultAnalyticsPayload(normalizedYear);
+    return payload;
   };
 
   const fileNameFromDisposition = (contentDisposition, fallbackName) => {
@@ -212,28 +213,6 @@
     link.click();
     link.remove();
     URL.revokeObjectURL(blobUrl);
-  };
-
-  const tryDownloadDemoTemplate = async (format, selectedYear, preferredName) => {
-    const demoCandidates = [
-      'assets/demo/Barangay_Cabarian_Annual_Report_' + selectedYear + '.' + format,
-      'assets/demo/Barangay_Cabarian_Annual_Report_2026.' + format,
-      'assets/demo/Barangay_Cabarian_Annual_Report_DEMO.' + format
-    ];
-
-    for (const path of demoCandidates) {
-      try {
-        const response = await fetch(path, { cache: 'no-store' });
-        if (!response.ok) continue;
-        const blob = await response.blob();
-        if (!blob || blob.size === 0) continue;
-        const fallbackFileName = path.split('/').pop() || ('Barangay_Cabarian_Annual_Report_' + selectedYear + '.' + format);
-        downloadBlobAsFile(blob, preferredName || fallbackFileName);
-        return true;
-      } catch (e) {}
-    }
-
-    return false;
   };
 
   const setExportButtonLoading = (button, isLoading) => {
@@ -270,6 +249,16 @@
       : null;
   };
 
+  if (yearSelect) {
+    yearSelect.addEventListener('change', () => {
+      upsertDefaultReportRow();
+      updateEmptyState();
+      if (activeModalRow && activeModalRow.dataset.seedReport === 'default') {
+        openRowInModal(activeModalRow);
+      }
+    });
+  }
+
   const exportActiveReport = async (format) => {
     const data = getActiveModalData();
     if (!data) {
@@ -279,28 +268,29 @@
 
     const normalizedFormat = format === 'xlsx' ? 'xlsx' : 'pdf';
     const selectedYear = Number(yearSelect ? yearSelect.value : currentYear) || currentYear;
-    const analyticsPayload = getAnalyticsPayloadForYear(selectedYear);
     const triggerButton = normalizedFormat === 'pdf' ? reportModalDownload : reportModalPrint;
-    const fallbackName = 'Barangay_Cabarian_Annual_Report_' + selectedYear + '.' + normalizedFormat;
-    const requestPayload = {
-      year: selectedYear,
-      format: normalizedFormat,
-      analytics: analyticsPayload,
-      report: {
-        id: data.id || '-',
-        title: data.title || '-',
-        category: data.category || '-',
-        period: 'Year ' + selectedYear,
-        year: selectedYear,
-        status: 'Draft',
-        updated: data.updated || '-',
-        summary: data.summary || '-',
-        document: data.document || '-'
-      }
-    };
+    const fallbackName = 'Annual_Report_' + selectedYear + '.' + normalizedFormat;
 
     setExportButtonLoading(triggerButton, true);
     try {
+      const analyticsPayload = await fetchAnalyticsPayloadForYear(selectedYear);
+      const requestPayload = {
+        year: selectedYear,
+        format: normalizedFormat,
+        analytics: analyticsPayload,
+        report: {
+          id: data.id || '-',
+          title: data.title || '-',
+          category: data.category || '-',
+          period: 'Year ' + selectedYear,
+          year: selectedYear,
+          status: 'Draft',
+          updated: data.updated || '-',
+          summary: data.summary || '-',
+          document: data.document || '-'
+        }
+      };
+
       let response = null;
       let lastErrorMessage = '';
 
@@ -349,13 +339,8 @@
       const fileName = fileNameFromDisposition(disposition, fallbackName);
       downloadBlobAsFile(blob, fileName);
     } catch (error) {
-      const usedDemo = await tryDownloadDemoTemplate(normalizedFormat, selectedYear, fallbackName);
-      if (usedDemo) {
-        window.alert('Live export is unavailable on this server. Demo template was downloaded instead.');
-      } else {
-        const message = error instanceof Error ? error.message : 'Unable to export this report.';
-        window.alert(message);
-      }
+      const message = error instanceof Error ? error.message : 'Unable to export this report.';
+      window.alert(message);
     } finally {
       setExportButtonLoading(triggerButton, false);
     }
@@ -386,5 +371,6 @@
     });
   }
 
+  upsertDefaultReportRow();
   updateEmptyState();
 })();

@@ -42,16 +42,6 @@ const isAdminRole = resolvedRole === 'secretary' || resolvedRole === 'admin';
 const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Reports | ${dashboardLabel}`;
 
-const reportsLink = document.querySelector('.menu a[href="reports.php"]');
-if (reportsLink && isAdminRole) {
-  reportsLink.setAttribute('href', 'admin-reports.php');
-}
-
-if (isAdminRole) {
-  window.location.href = 'admin-reports.php';
-  return;
-}
-
 const currentYear = new Date().getFullYear();
 const previousYear = currentYear - 1;
 const yearSelect = document.getElementById('yearSelect');
@@ -66,7 +56,7 @@ if (yearSelect) {
 
 const footerYear = document.getElementById('year');
 if (footerYear) {
-  footerYear.textContent = '2026';
+  footerYear.textContent = String(new Date().getFullYear());
 }
 
 const refreshBtn = document.getElementById('refreshBtn');

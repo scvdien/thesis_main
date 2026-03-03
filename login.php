@@ -33,13 +33,17 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
 }
 
 $csrfToken = auth_csrf_token();
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Barangay Cabarian - Login</title>
+  <title><?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> - Login</title>
 
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
@@ -54,19 +58,19 @@ $csrfToken = auth_csrf_token();
           Authorized Access
         </div>
         <div class="brand-mark">
-          <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo">
+          <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
           <div>
-            <div class="brand-title">Barangay Cabarian</div>
+            <div class="brand-title"><?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?></div>
             <div class="brand-sub">Household Information Management System</div>
           </div>
         </div>
         <p class="brand-desc">
-          Secure access for authorized personnel of Ligao City. Manage resident
+          Secure access for authorized personnel of <?= htmlspecialchars($accessAreaLabel, ENT_QUOTES, 'UTF-8') ?>. Manage resident
           records, reports, and community services in one place.
         </p>
         <div class="brand-logos">
-          <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo">
-          <img src="assets/img/ligao-city-logo.png" alt="Ligao City Logo">
+          <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
+          <img src="assets/img/ligao-city-logo.png" alt="<?= htmlspecialchars($accessAreaLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
         </div>
         <div class="brand-note">
           <i class="bi bi-shield-check"></i>
@@ -83,10 +87,6 @@ $csrfToken = auth_csrf_token();
 
         <form id="loginForm" class="login-form" autocomplete="on" method="post" action="login.php" novalidate>
           <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
-
-          <div id="error" class="form-error<?php echo $errorMessage !== '' ? ' is-visible' : ''; ?>">
-            <?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?>
-          </div>
 
           <div class="field">
             <label for="username">Username</label>
@@ -113,6 +113,10 @@ $csrfToken = auth_csrf_token();
             </div>
           </div>
 
+          <div id="error" class="form-error<?php echo $errorMessage !== '' ? ' is-visible' : ''; ?>" role="alert" aria-live="polite">
+            <?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?>
+          </div>
+
           <button id="loginBtn" class="btn btn-primary w-100" type="submit">Sign In</button>
         </form>
       </section>
@@ -120,7 +124,7 @@ $csrfToken = auth_csrf_token();
   </div>
 
   <footer>
-    &copy; 2026 Barangay Cabarian | All Rights Reserved
+    &copy; <?php echo date('Y'); ?> <?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved
   </footer>
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>

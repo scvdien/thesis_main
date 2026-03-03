@@ -48,14 +48,9 @@ const isAdminRole = resolvedRole === 'secretary' || resolvedRole === 'admin';
 const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Audit Trail | ${dashboardLabel}`;
 
-const reportsLink = document.querySelector('.menu a[href="reports.php"]');
-if (reportsLink && isAdminRole) {
-  reportsLink.setAttribute('href', 'admin-reports.php');
-}
-
 const footerYear = document.getElementById('year');
 if (footerYear) {
-  footerYear.textContent = '2026';
+  footerYear.textContent = String(new Date().getFullYear());
 }
 
 const refreshBtn = document.getElementById('refreshBtn');
@@ -77,25 +72,19 @@ const FETCH_LIMIT = 200;
 
 const yearSelect = document.getElementById('yearSelect');
 const auditSearchInput = document.getElementById('auditSearchInput');
-const auditActionFilter = document.getElementById('auditActionFilter');
+const auditActionPills = document.querySelectorAll('.audit-quick-pill[data-audit-action]');
 const auditUserFilter = document.getElementById('auditUserFilter');
+const auditSortFilter = document.getElementById('auditSortFilter');
+const auditClearFiltersBtn = document.getElementById('auditClearFiltersBtn');
+const auditRecordCount = document.getElementById('auditRecordCount');
 const auditTableBody = document.getElementById('auditTableBody');
-const auditTotalActions = document.getElementById('auditTotalActions');
-const auditCreatedCount = document.getElementById('auditCreatedCount');
-const auditUpdatedCount = document.getElementById('auditUpdatedCount');
-const auditDeletedCount = document.getElementById('auditDeletedCount');
 
 const state = {
   loading: false,
   error: '',
   items: [],
-  summary: {
-    total_actions: 0,
-    created_count: 0,
-    updated_count: 0,
-    deleted_count: 0
-  },
-  availableYears: []
+  availableYears: [],
+  total: 0
 };
 
 const escapeHtml = (value) => {
@@ -137,27 +126,72 @@ const formatDateTime = (value) => {
   });
 };
 
-const setSummary = (summary) => {
-  const safeSummary = summary && typeof summary === 'object' ? summary : {};
-  if (auditTotalActions) {
-    auditTotalActions.textContent = String(Number(safeSummary.total_actions || 0));
+const formatIpAddress = (value) => {
+  const ip = normalizeText(value);
+  if (!ip) return '-';
+  if (ip === '::1') return '127.0.0.1 (localhost)';
+  if (ip === '::ffff:127.0.0.1') return '127.0.0.1';
+  return ip;
+};
+
+const setAuditRecordCount = (count) => {
+  if (!auditRecordCount) return;
+  const numericCount = Number(count);
+  const safeCount = Number.isFinite(numericCount) && numericCount >= 0 ? Math.trunc(numericCount) : 0;
+  const label = safeCount === 1 ? 'record found' : 'records found';
+  auditRecordCount.textContent = `${safeCount} ${label}`;
+};
+
+const setActivePillValue = (buttons, attributeName, nextValue) => {
+  const targetValue = normalizeText(nextValue).toLowerCase() || 'all';
+  let hasMatch = false;
+  buttons.forEach((button) => {
+    const buttonValue = normalizeText(button?.dataset?.[attributeName]).toLowerCase();
+    const isActive = buttonValue === targetValue;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    if (isActive) hasMatch = true;
+  });
+  if (hasMatch) return targetValue;
+  const fallbackButton = buttons[0];
+  if (!fallbackButton) return 'all';
+  fallbackButton.classList.add('is-active');
+  fallbackButton.setAttribute('aria-pressed', 'true');
+  return normalizeText(fallbackButton.dataset?.[attributeName]).toLowerCase() || 'all';
+};
+
+const getActivePillValue = (buttons, attributeName, fallback = 'all') => {
+  for (const button of buttons) {
+    if (button.classList.contains('is-active')) {
+      return normalizeText(button?.dataset?.[attributeName]).toLowerCase() || fallback;
+    }
   }
-  if (auditCreatedCount) {
-    auditCreatedCount.textContent = String(Number(safeSummary.created_count || 0));
+  return fallback;
+};
+
+const getTimestampValue = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return 0;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getSortedAuditItems = (items) => {
+  const rows = Array.isArray(items) ? items.slice() : [];
+  const sortValue = normalizeText(auditSortFilter?.value).toLowerCase();
+  if (sortValue === 'oldest') {
+    rows.sort((a, b) => getTimestampValue(a?.created_at) - getTimestampValue(b?.created_at));
+    return rows;
   }
-  if (auditUpdatedCount) {
-    auditUpdatedCount.textContent = String(Number(safeSummary.updated_count || 0));
-  }
-  if (auditDeletedCount) {
-    auditDeletedCount.textContent = String(Number(safeSummary.deleted_count || 0));
-  }
+  rows.sort((a, b) => getTimestampValue(b?.created_at) - getTimestampValue(a?.created_at));
+  return rows;
 };
 
 const ensureYearOptions = (years = []) => {
   if (!yearSelect) return;
   const currentValue = normalizeText(yearSelect.value);
   const currentYear = new Date().getFullYear();
-  const fallbackYears = [currentYear - 1, currentYear];
+  const fallbackYears = [currentYear];
   const merged = [...new Set([...years, ...fallbackYears])]
     .filter((year) => Number.isInteger(year) && year > 0)
     .sort((a, b) => b - a);
@@ -179,6 +213,7 @@ const ensureYearOptions = (years = []) => {
 
 const renderLoadingState = () => {
   if (!auditTableBody) return;
+  setAuditRecordCount(0);
   auditTableBody.innerHTML = `
     <tr id="auditLoadingRow">
       <td colspan="6" class="text-center text-muted">Loading activity logs...</td>
@@ -191,6 +226,7 @@ const renderLoadingState = () => {
 
 const renderErrorState = (message) => {
   if (!auditTableBody) return;
+  setAuditRecordCount(0);
   const safeMessage = escapeHtml(message || 'Unable to load activity logs.');
   auditTableBody.innerHTML = `
     <tr id="auditErrorRow">
@@ -215,6 +251,23 @@ const buildActionBadge = (actionType, actionKey) => {
   return `<span class="badge bg-secondary-subtle text-secondary">${escapeHtml(fallbackLabel)}</span>`;
 };
 
+const buildResultBadge = (actionType, actionKey, details) => {
+  const type = normalizeText(actionType).toLowerCase();
+  const key = normalizeText(actionKey).toLowerCase();
+  const detailText = normalizeText(details).toLowerCase();
+
+  const isFailed = key.includes('failed') || detailText.includes('failed');
+  const isSuccess = key.includes('success') || detailText.includes('successful');
+
+  if (isFailed || type === 'security') {
+    return '<span class="badge bg-danger-subtle text-danger">Failed</span>';
+  }
+  if (isSuccess || ['access', 'created', 'updated', 'deleted'].includes(type)) {
+    return '<span class="badge bg-success-subtle text-success">Success</span>';
+  }
+  return '<span class="badge bg-secondary-subtle text-secondary">N/A</span>';
+};
+
 const renderAuditTable = () => {
   if (!auditTableBody) return;
 
@@ -228,33 +281,41 @@ const renderAuditTable = () => {
     return;
   }
 
-  const rowsHtml = state.items.map((item) => {
+  const sortedItems = getSortedAuditItems(state.items);
+  const apiTotal = Number(state.total);
+  const hasApiTotal = Number.isFinite(apiTotal) && apiTotal >= 0;
+  setAuditRecordCount(hasApiTotal ? Math.trunc(apiTotal) : sortedItems.length);
+
+  const rowsHtml = sortedItems.map((item) => {
     const createdAt = formatDateTime(item.created_at);
     const actor = item && typeof item.actor === 'object' ? item.actor : {};
     const role = normalizeText(actor.role).toLowerCase();
-    const roleLabel = roleLabelMap[role] || normalizeText(actor.role_label) || '-';
+    const roleLabel = roleLabelMap[role] || normalizeText(actor.role_label);
     const username = normalizeText(actor.username);
-    const userLabel = username ? `${roleLabel} (${username})` : roleLabel;
+    const isUnknownRole = roleLabel.toLowerCase() === 'unknown';
+    const userLabel = username
+      ? (roleLabel && !isUnknownRole ? `${roleLabel} (${username})` : username)
+      : (roleLabel || '-');
     const actionBadge = buildActionBadge(item.action_type, item.action_key);
-    const recordId = normalizeText(item.record_id) || '-';
-    const moduleName = normalizeText(item.module_name) || '-';
+    const resultBadge = buildResultBadge(item.action_type, item.action_key, item.details);
     const details = normalizeText(item.details) || '-';
+    const ipAddress = formatIpAddress(item.ip_address);
 
     return `
       <tr>
         <td>${escapeHtml(createdAt)}</td>
         <td>${escapeHtml(userLabel)}</td>
         <td>${actionBadge}</td>
-        <td>${escapeHtml(recordId)}</td>
-        <td>${escapeHtml(moduleName)}</td>
+        <td>${resultBadge}</td>
         <td>${escapeHtml(details)}</td>
+        <td class="audit-ip-cell"><span class="audit-ip-text" title="${escapeHtml(ipAddress)}">${escapeHtml(ipAddress)}</span></td>
       </tr>
     `;
   }).join('');
 
   auditTableBody.innerHTML = `
     ${rowsHtml}
-    <tr id="auditEmptyRow" class="${state.items.length === 0 ? '' : 'd-none'}">
+    <tr id="auditEmptyRow" class="${sortedItems.length === 0 ? '' : 'd-none'}">
       <td colspan="6" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
@@ -269,7 +330,7 @@ const fetchAuditLogs = async () => {
   const searchValue = normalizeText(auditSearchInput?.value);
   if (searchValue) params.set('q', searchValue);
 
-  const actionType = normalizeText(auditActionFilter?.value).toLowerCase();
+  const actionType = getActivePillValue(auditActionPills, 'auditAction', 'all');
   if (actionType && actionType !== 'all') params.set('action_type', actionType);
 
   const userRole = normalizeText(auditUserFilter?.value).toLowerCase();
@@ -285,10 +346,23 @@ const fetchAuditLogs = async () => {
   });
 
   let payload = null;
+  let rawText = '';
   try {
-    payload = await response.json();
+    rawText = await response.text();
+    payload = rawText ? JSON.parse(rawText) : null;
   } catch (error) {
     payload = null;
+  }
+  if (!payload && rawText) {
+    const firstBrace = rawText.indexOf('{');
+    const lastBrace = rawText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        payload = JSON.parse(rawText.slice(firstBrace, lastBrace + 1));
+      } catch (error) {
+        payload = null;
+      }
+    }
   }
 
   if (!response.ok || !payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
@@ -309,30 +383,18 @@ async function loadAuditLogs() {
   try {
     const data = await fetchAuditLogs();
     state.items = Array.isArray(data.items) ? data.items : [];
-    state.summary = data.summary && typeof data.summary === 'object'
-      ? data.summary
-      : {
-          total_actions: 0,
-          created_count: 0,
-          updated_count: 0,
-          deleted_count: 0
-        };
+    const total = Number(data?.total);
+    state.total = Number.isFinite(total) && total >= 0 ? Math.trunc(total) : state.items.length;
     state.availableYears = Array.isArray(data?.filters?.years)
       ? data.filters.years.map((year) => Number(year)).filter((year) => Number.isInteger(year) && year > 0)
       : [];
     ensureYearOptions(state.availableYears);
   } catch (error) {
     state.items = [];
-    state.summary = {
-      total_actions: 0,
-      created_count: 0,
-      updated_count: 0,
-      deleted_count: 0
-    };
+    state.total = 0;
     state.error = error instanceof Error ? error.message : 'Unable to load audit logs.';
   } finally {
     state.loading = false;
-    setSummary(state.summary);
     renderAuditTable();
   }
 }
@@ -347,16 +409,53 @@ const triggerLoadWithDebounce = () => {
   }, 250);
 };
 
+const resetAuditFilters = () => {
+  if (auditSearchInput) {
+    auditSearchInput.value = '';
+  }
+  if (auditUserFilter) {
+    auditUserFilter.value = 'all';
+  }
+  if (yearSelect) {
+    yearSelect.value = 'all';
+  }
+  if (auditSortFilter) {
+    auditSortFilter.value = 'latest';
+  }
+  setActivePillValue(auditActionPills, 'auditAction', 'all');
+};
+
 refreshBtn?.addEventListener('click', () => {
   refreshModal?.show();
   void loadAuditLogs();
 });
 
 auditSearchInput?.addEventListener('input', triggerLoadWithDebounce);
-auditActionFilter?.addEventListener('change', () => { void loadAuditLogs(); });
 auditUserFilter?.addEventListener('change', () => { void loadAuditLogs(); });
 yearSelect?.addEventListener('change', () => { void loadAuditLogs(); });
+auditSortFilter?.addEventListener('change', renderAuditTable);
+auditActionPills.forEach((button) => {
+  button.addEventListener('click', () => {
+    const nextValue = normalizeText(button?.dataset?.auditAction).toLowerCase() || 'all';
+    const previousValue = getActivePillValue(auditActionPills, 'auditAction', 'all');
+    setActivePillValue(auditActionPills, 'auditAction', nextValue);
+    if (nextValue !== previousValue) {
+      void loadAuditLogs();
+    }
+  });
+});
+auditClearFiltersBtn?.addEventListener('click', () => {
+  resetAuditFilters();
+  void loadAuditLogs();
+});
 
 ensureYearOptions([]);
-setSummary(state.summary);
+setActivePillValue(auditActionPills, 'auditAction', 'all');
+if (auditUserFilter) {
+  auditUserFilter.value = 'all';
+}
+if (auditSortFilter) {
+  auditSortFilter.value = 'latest';
+}
+setAuditRecordCount(0);
 void loadAuditLogs();

@@ -4,6 +4,43 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandCoreCandidate = preg_replace('/^\s*barangay\b[\s,]*/i', '', $brandLabel);
+$brandCore = trim((string) ($brandCoreCandidate ?? $brandLabel));
+if ($brandCore === '') {
+  $brandCore = trim($brandLabel);
+}
+$brandFooterLabel = $brandCore !== '' ? 'Barangay ' . $brandCore : 'Barangay';
+if ($brandCity !== '' && stripos($brandFooterLabel, $brandCity) === false) {
+  $brandFooterLabel = trim($brandFooterLabel . ', ' . $brandCity);
+}
+$brandSidebarLabel = $brandCore;
+if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandSidebarLabel . ' ' . $brandCity);
+}
+if ($brandSidebarLabel === '') {
+  $brandSidebarLabel = $brandFooterLabel;
+}
+$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
 ?>
 
 <!doctype html>
@@ -29,8 +66,8 @@ $authRole = auth_user_role($authUser);
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary">Barangay Cabarian</span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
       </div>
       <div class="menu">
         <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -67,10 +104,6 @@ $authRole = auth_user_role($authUser);
           <div class="residents-toolbar">
               <select class="form-select form-select-sm" id="residentZoneFilter">
                 <option value="all">All Zones</option>
-                <option value="zone 1">Zone 1</option>
-                <option value="zone 2">Zone 2</option>
-                <option value="zone 3">Zone 3</option>
-                <option value="zone 4">Zone 4</option>
               </select>
               <div class="search-inline residents-search">
                 <input type="text" id="residentSearchInput" class="form-control" placeholder="Search name, resident ID, or household">
@@ -101,7 +134,7 @@ $authRole = auth_user_role($authUser);
                 <th>Age</th>
                 <th>Sex</th>
                 <th>Household</th>
-                <th>Zone/Purok</th>
+                <th>Zone</th>
                 <th>Last Updated</th>
                 <th class="text-end">Action</th>
               </tr>
@@ -122,7 +155,7 @@ $authRole = auth_user_role($authUser);
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- RESIDENT DETAILS MODAL -->
@@ -174,7 +207,7 @@ $authRole = auth_user_role($authUser);
                 <div class="accordion-body">
                   <div class="resident-detail-grid">
                     <div class="resident-detail-item"><span class="k">Contact</span><span class="v" id="rdContact">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Zone/Purok</span><span class="v" id="rdZone">-</span></div>
+                    <div class="resident-detail-item"><span class="k">Zone</span><span class="v" id="rdZone">-</span></div>
                     <div class="resident-detail-item"><span class="k">Barangay</span><span class="v" id="rdBarangay">-</span></div>
                     <div class="resident-detail-item"><span class="k">City/Municipality</span><span class="v" id="rdCity">-</span></div>
                     <div class="resident-detail-item"><span class="k">Province</span><span class="v" id="rdProvince">-</span></div>
@@ -282,8 +315,35 @@ $authRole = auth_user_role($authUser);
             </div>
           </div>
         </div>
-        <div class="modal-footer border-0 pt-0">
+        <div class="modal-footer border-0 pt-0 resident-modal-footer">
+          <?php if ($authRole === AUTH_ROLE_ADMIN): ?>
+            <button type="button" class="btn btn-outline-primary btn-modern" id="residentEditBtn">
+              <i class="bi bi-pencil-square"></i> Edit
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-modern" id="residentDeleteBtn">
+              <i class="bi bi-trash"></i> Delete
+            </button>
+          <?php endif; ?>
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESIDENT DELETE CONFIRM MODAL -->
+  <div class="modal fade" id="residentDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal resident-delete-confirm-modal text-center p-4">
+        <div class="modal-icon mb-3 text-danger">
+          <i class="bi bi-trash fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2" id="residentDeleteConfirmTitle">Delete Resident</h5>
+        <p class="resident-delete-confirm-copy mb-3">
+          This will delete <strong id="residentDeleteConfirmTarget">RS-</strong>. This action cannot be undone.
+        </p>
+        <div class="resident-delete-confirm-actions">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="residentDeleteConfirmBtn">Confirm Delete</button>
         </div>
       </div>
     </div>

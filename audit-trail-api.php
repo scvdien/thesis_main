@@ -85,8 +85,27 @@ function audit_api_filter_sql(array $filters): array
 
     $q = audit_api_text($filters['q'] ?? '', 120);
     if ($q !== '') {
-        $where .= ' AND (`action_key` LIKE :q OR `details` LIKE :q OR `actor_username` LIKE :q OR `record_id` LIKE :q OR `module_name` LIKE :q)';
-        $params['q'] = '%' . $q . '%';
+        $likeQuery = '%' . strtolower($q) . '%';
+        $where .= ' AND (
+            LOWER(`action_key`) LIKE :q_action_key
+            OR LOWER(REPLACE(`action_key`, \'_\', \' \')) LIKE :q_action_key_words
+            OR LOWER(`action_type`) LIKE :q_action_type
+            OR LOWER(`details`) LIKE :q_details
+            OR LOWER(`actor_username`) LIKE :q_actor_username
+            OR LOWER(`actor_role`) LIKE :q_actor_role
+            OR LOWER(`record_id`) LIKE :q_record_id
+            OR LOWER(`record_type`) LIKE :q_record_type
+            OR LOWER(`module_name`) LIKE :q_module_name
+        )';
+        $params['q_action_key'] = $likeQuery;
+        $params['q_action_key_words'] = $likeQuery;
+        $params['q_action_type'] = $likeQuery;
+        $params['q_details'] = $likeQuery;
+        $params['q_actor_username'] = $likeQuery;
+        $params['q_actor_role'] = $likeQuery;
+        $params['q_record_id'] = $likeQuery;
+        $params['q_record_type'] = $likeQuery;
+        $params['q_module_name'] = $likeQuery;
     }
 
     $actionType = strtolower(audit_api_text($filters['action_type'] ?? '', 40));

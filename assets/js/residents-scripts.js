@@ -26,7 +26,6 @@ window.addEventListener('resize', () => {
 });
 
 const API_ENDPOINT = 'registration-sync.php';
-const RESIDENT_BASE_YEAR = '2026';
 const RESIDENT_FETCH_LIMIT = 1000;
 
 const state = {
@@ -45,19 +44,55 @@ const escapeHtml = (value) => {
     .replace(/'/g, '&#39;');
 };
 
-const replaceResidentIdYear = (value, year) => {
-  return String(value || '').replace(/^RS-\d{4}(-\d+)$/i, `RS-${String(year)}$1`);
+const normalizeZoneLabel = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.replace(/\s+/g, ' ');
+  const namedMatch = compact.match(/^(?:zone|purok)\s*([a-z0-9-]+)$/i);
+  if (namedMatch) {
+    const suffix = String(namedMatch[1] || '').trim();
+    if (!suffix) return 'Zone';
+    if (/^\d+$/.test(suffix)) {
+      return `Zone ${Number.parseInt(suffix, 10)}`;
+    }
+    return `Zone ${suffix.toUpperCase()}`;
+  }
+  if (/^\d+$/.test(compact)) {
+    return `Zone ${Number.parseInt(compact, 10)}`;
+  }
+  return compact;
 };
 
-const replaceHouseholdIdYear = (value, year) => {
-  return String(value || '').replace(/^HH-\d{4}(-\d+)$/i, `HH-${String(year)}$1`);
+const normalizeZone = (value) => normalizeZoneLabel(value).toLowerCase();
+
+const extractYearFromDate = (value) => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getFullYear();
 };
 
-const replaceFirstYearToken = (value, year) => {
-  return String(value || '').replace(/\b(19|20)\d{2}\b/, String(year));
+const extractResidentYear = (value) => {
+  const match = String(value || '').match(/^RS-(\d{4})-/i);
+  if (!match) return 0;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) ? parsed : 0;
 };
 
-const normalizeZone = (value) => String(value || '').trim().toLowerCase();
+const extractHouseholdYear = (value) => {
+  const match = String(value || '').match(/^HH-(\d{4})-/i);
+  if (!match) return 0;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) ? parsed : 0;
+};
+
+const getResidentRowYear = (row) => {
+  const fromResidentCode = extractResidentYear(row?.resident_id);
+  if (fromResidentCode > 0) return fromResidentCode;
+  const fromHouseholdCode = extractHouseholdYear(row?.household_id);
+  if (fromHouseholdCode > 0) return fromHouseholdCode;
+  return extractYearFromDate(row?.updated_at);
+};
 
 const formatUpdatedDate = (value) => {
   if (!value) return '-';
@@ -95,23 +130,36 @@ const joinNameParts = (source) => {
 };
 
 const currentYear = new Date().getFullYear();
-const previousYear = currentYear - 1;
 const yearSelect = document.getElementById('yearSelect');
-if (yearSelect) {
+const ensureYearOptions = (rows = []) => {
+  if (!yearSelect) return;
+  const currentValue = String(yearSelect.value || '').trim();
+  const yearSet = new Set([currentYear]);
+  rows.forEach((row) => {
+    const year = getResidentRowYear(row);
+    if (Number.isInteger(year) && year > 0) {
+      yearSet.add(year);
+    }
+  });
+  const years = Array.from(yearSet).sort((a, b) => b - a);
   yearSelect.innerHTML = '';
-  [previousYear, currentYear].forEach((year) => {
+  years.forEach((year) => {
     const option = document.createElement('option');
     option.value = String(year);
     option.textContent = String(year);
     yearSelect.appendChild(option);
   });
-  yearSelect.value = String(currentYear);
-}
+  if (currentValue && years.includes(Number.parseInt(currentValue, 10))) {
+    yearSelect.value = currentValue;
+  } else {
+    yearSelect.value = String(currentYear);
+  }
+};
 let currentResidentDisplayYear = String(yearSelect?.value || currentYear);
 
 const footerYear = document.getElementById('year');
 if (footerYear) {
-  footerYear.textContent = '2026';
+  footerYear.textContent = String(new Date().getFullYear());
 }
 
 const roleFromQueryRaw = new URLSearchParams(window.location.search).get('role');
@@ -136,11 +184,6 @@ if (dashboardLink && (resolvedRole === 'secretary' || resolvedRole === 'admin'))
 const isAdminRole = resolvedRole === 'secretary' || resolvedRole === 'admin';
 const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Residents | ${dashboardLabel}`;
-
-const reportsLink = document.querySelector('.menu a[href="reports.php"]');
-if (reportsLink && isAdminRole) {
-  reportsLink.setAttribute('href', 'admin-reports.php');
-}
 
 const refreshBtn = document.getElementById('refreshBtn');
 const refreshModalEl = document.getElementById('refreshModal');
@@ -169,8 +212,51 @@ const residentZoneFilter = document.getElementById('residentZoneFilter');
 const residentVisibleCount = document.getElementById('residentVisibleCount');
 const residentDetailsModalEl = document.getElementById('residentDetailsModal');
 const residentDetailsModal = residentDetailsModalEl ? new bootstrap.Modal(residentDetailsModalEl) : null;
+const residentEditBtn = document.getElementById('residentEditBtn');
+const residentDeleteBtn = document.getElementById('residentDeleteBtn');
+const residentDeleteConfirmModalEl = document.getElementById('residentDeleteConfirmModal');
+const residentDeleteConfirmModal = residentDeleteConfirmModalEl ? new bootstrap.Modal(residentDeleteConfirmModalEl) : null;
+const residentDeleteConfirmTitleEl = document.getElementById('residentDeleteConfirmTitle');
+const residentDeleteConfirmTargetEl = document.getElementById('residentDeleteConfirmTarget');
+const residentDeleteConfirmBtn = document.getElementById('residentDeleteConfirmBtn');
 
 let activeQuickFilter = 'all';
+let activeResidentAction = null;
+
+const ensureZoneOptions = (rows = []) => {
+  if (!residentZoneFilter) return;
+  const currentValue = normalizeZone(residentZoneFilter.value || 'all') || 'all';
+  const zoneMap = new Map();
+
+  rows.forEach((row) => {
+    const label = normalizeZoneLabel(row?.zone);
+    const key = normalizeZone(label);
+    if (!key || key === '-') return;
+    if (!zoneMap.has(key)) {
+      zoneMap.set(key, label);
+    }
+  });
+
+  const zones = Array.from(zoneMap.entries()).sort((a, b) => {
+    return a[1].localeCompare(b[1], undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  residentZoneFilter.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = 'All Zones';
+  residentZoneFilter.appendChild(allOption);
+
+  zones.forEach(([key, label]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    residentZoneFilter.appendChild(option);
+  });
+
+  const hasCurrent = currentValue === 'all' || zoneMap.has(currentValue);
+  residentZoneFilter.value = hasCurrent ? currentValue : 'all';
+};
 
 const setVisibleCount = (count, forceText = '') => {
   if (!residentVisibleCount) return;
@@ -190,6 +276,14 @@ const setActiveQuickFilter = (filter) => {
   });
 };
 
+const setResidentActionButtonsState = (enabled) => {
+  const allowActions = isAdminRole;
+  [residentEditBtn, residentDeleteBtn].forEach((button) => {
+    if (!button) return;
+    button.disabled = !allowActions || !enabled;
+  });
+};
+
 const rowMatchesQuickFilter = (row, filter) => {
   const sex = normalizeText(row.sex).toLowerCase();
   if (filter === 'male') return sex === 'male';
@@ -203,18 +297,22 @@ const rowMatchesQuickFilter = (row, filter) => {
 const getFilteredRows = (displayYear) => {
   const term = normalizeText(residentSearchInput?.value).toLowerCase();
   const zone = normalizeZone(residentZoneFilter?.value || 'all');
+  const yearFilter = String(displayYear || '').trim();
 
   return state.rows.filter((row) => {
-    const displayResidentId = replaceResidentIdYear(row.resident_id, displayYear);
-    const displayHouseholdId = replaceHouseholdIdYear(row.household_id, displayYear);
-    const displayUpdated = replaceFirstYearToken(formatUpdatedDate(row.updated_at), displayYear);
-    const searchText = `${displayResidentId} ${row.full_name} ${displayHouseholdId} ${row.zone} ${displayUpdated}`.toLowerCase();
-    const rowZone = normalizeZone(row.zone);
+    const displayResidentId = normalizeText(row.resident_id);
+    const displayHouseholdId = normalizeText(row.household_id);
+    const displayUpdated = formatUpdatedDate(row.updated_at);
+    const rowZoneLabel = normalizeZoneLabel(row.zone);
+    const searchText = `${displayResidentId} ${row.full_name} ${displayHouseholdId} ${rowZoneLabel} ${displayUpdated}`.toLowerCase();
+    const rowZone = normalizeZone(rowZoneLabel);
+    const rowYear = String(getResidentRowYear(row) || '');
 
     const matchesQuick = rowMatchesQuickFilter(row, activeQuickFilter);
     const matchesSearch = !term || searchText.includes(term);
     const matchesZone = zone === 'all' || rowZone === zone;
-    return matchesQuick && matchesSearch && matchesZone;
+    const matchesYear = yearFilter === '' || rowYear === yearFilter;
+    return matchesQuick && matchesSearch && matchesZone && matchesYear;
   });
 };
 
@@ -265,13 +363,13 @@ const renderResidentsTable = () => {
     .map((row) => {
       const residentId = normalizeText(row.resident_id);
       const householdId = normalizeText(row.household_id);
-      const displayResidentId = replaceResidentIdYear(residentId, displayYear);
-      const displayHouseholdId = replaceHouseholdIdYear(householdId, displayYear);
-      const displayUpdated = replaceFirstYearToken(formatUpdatedDate(row.updated_at), displayYear);
+      const displayResidentId = residentId;
+      const displayHouseholdId = householdId;
+      const displayUpdated = formatUpdatedDate(row.updated_at);
       const sex = normalizeText(row.sex) || '-';
       const age = normalizeText(row.age) || '-';
       const fullName = normalizeText(row.full_name) || '-';
-      const zone = normalizeText(row.zone) || '-';
+      const zone = normalizeZoneLabel(row.zone) || '-';
       const zoneKey = normalizeZone(zone);
 
       return `
@@ -283,6 +381,8 @@ const renderResidentsTable = () => {
           data-pwd="${row.isPwd ? 'true' : 'false'}"
           data-pregnant="${row.isPregnant ? 'true' : 'false'}"
           data-zone="${escapeHtml(zoneKey)}"
+          data-source-type="${escapeHtml(normalizeText(row.source_type).toLowerCase())}"
+          data-member-order="${Number.isInteger(row.member_order) ? row.member_order : 0}"
           data-base-household-id="${escapeHtml(householdId)}">
           <td>${escapeHtml(displayResidentId || '-')}</td>
           <td>${escapeHtml(fullName)}</td>
@@ -342,14 +442,19 @@ const fetchResidents = async () => {
   return items.map((item) => {
     const ageText = normalizeText(item?.age);
     const ageNumber = Number.parseInt(ageText, 10);
+    const memberOrderRaw = Number.parseInt(normalizeText(item?.member_order), 10);
+    const memberOrder = Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0;
+    const sourceType = normalizeText(item?.source_type).toLowerCase();
     return {
       resident_id: normalizeText(item?.resident_id),
       household_id: normalizeText(item?.household_id),
+      source_type: sourceType || (memberOrder === 0 ? 'head' : 'member'),
+      member_order: memberOrder,
       full_name: normalizeText(item?.full_name),
       relation_to_head: normalizeText(item?.relation_to_head),
       sex: normalizeText(item?.sex),
       age: ageText,
-      zone: normalizeText(item?.zone),
+      zone: normalizeZoneLabel(item?.zone),
       updated_at: normalizeText(item?.updated_at),
       source_type: normalizeText(item?.source_type),
       isSenior: Number.isInteger(ageNumber) && ageNumber >= 60,
@@ -366,9 +471,15 @@ async function loadResidents() {
 
   try {
     state.rows = await fetchResidents();
+    ensureYearOptions(state.rows);
+    ensureZoneOptions(state.rows);
+    currentResidentDisplayYear = String(yearSelect?.value || currentYear);
   } catch (error) {
     state.rows = [];
     state.error = error instanceof Error ? error.message : 'Unable to load residents.';
+    ensureYearOptions([]);
+    ensureZoneOptions([]);
+    currentResidentDisplayYear = String(yearSelect?.value || currentYear);
   } finally {
     state.loading = false;
     renderResidentsTable();
@@ -398,11 +509,19 @@ const toResidentListText = (value) => {
   return normalized || '-';
 };
 
+const composeResidentAddress = (zone, barangay, city, province) => {
+  const parts = [zone, barangay, city, province]
+    .map((value) => normalizeText(value))
+    .filter((value) => value && value !== '-');
+  return parts.length ? parts.join(', ') : '-';
+};
+
 const getRowDetails = (row) => {
   if (!row) return {};
   const cells = row.querySelectorAll('td');
   const residentIdDisplay = normalizeText(row.dataset.residentId || cells[0]?.textContent);
   const householdIdDisplay = normalizeText(cells[4]?.textContent);
+  const memberOrderRaw = Number.parseInt(normalizeText(row.dataset.memberOrder), 10);
   return {
     resident_id: residentIdDisplay,
     base_resident_id: normalizeText(row.dataset.baseResidentId || residentIdDisplay),
@@ -411,23 +530,25 @@ const getRowDetails = (row) => {
     sex: normalizeText(cells[3]?.textContent),
     household_id: householdIdDisplay,
     base_household_id: normalizeText(row.dataset.baseHouseholdId || householdIdDisplay),
-    zone: normalizeText(cells[5]?.textContent),
+    source_type: normalizeText(row.dataset.sourceType).toLowerCase(),
+    member_order: Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0,
+    zone: normalizeZoneLabel(cells[5]?.textContent),
     updated: normalizeText(cells[6]?.textContent)
   };
 };
 
 const buildResidentDefaults = (rowData = {}) => {
-  const zone = normalizeText(rowData.zone) || '-';
-  const barangay = 'Cabarian';
-  const city = 'Ligao City';
-  const province = 'Albay';
-  const address = zone && zone !== '-'
-    ? `${zone}, Barangay ${barangay}, ${city}, ${province}`
-    : `Barangay ${barangay}, ${city}, ${province}`;
+  const zone = normalizeZoneLabel(rowData.zone) || '-';
+  const barangay = normalizeText(rowData.barangay) || '-';
+  const city = normalizeText(rowData.city) || '-';
+  const province = normalizeText(rowData.province) || '-';
+  const address = composeResidentAddress(zone, barangay, city, province);
 
   return {
     resident_id: rowData.base_resident_id || rowData.resident_id || '',
     household_id: rowData.base_household_id || rowData.household_id || '',
+    source_type: normalizeText(rowData.source_type).toLowerCase(),
+    member_order: Number.isInteger(rowData.member_order) ? rowData.member_order : 0,
     full_name: rowData.full_name || '-',
     relation_to_head: '-',
     birthday: '-',
@@ -522,20 +643,31 @@ const normalizeResidentDetails = (rowData, payload) => {
   const fullName = normalizeText(payload.full_name) || fullNameFromProfile || defaults.full_name;
   const ageValue = normalizeText(payload.age) || normalizeText(profile.age) || defaults.age;
   const ageNumber = Number.parseInt(ageValue, 10);
+  const sourceType = (
+    normalizeText(payload.source_type)
+    || normalizeText(profile.source_type)
+    || normalizeText(defaults.source_type)
+  ).toLowerCase();
+  const payloadMemberOrder = Number.parseInt(normalizeText(payload.member_order), 10);
+  const profileMemberOrder = Number.parseInt(normalizeText(profile.member_order), 10);
 
-  const zone = normalizeText(payload.zone) || normalizeText(profile.zone) || defaults.zone;
+  const zone = normalizeZoneLabel(payload.zone) || normalizeZoneLabel(profile.zone) || defaults.zone;
   const barangay = normalizeText(profile.barangay) || defaults.barangay;
   const city = normalizeText(profile.city) || defaults.city;
   const province = normalizeText(profile.province) || defaults.province;
-  const fallbackAddress = zone && zone !== '-'
-    ? `${zone}, Barangay ${barangay}, ${city}, ${province}`
-    : `Barangay ${barangay}, ${city}, ${province}`;
+  const fallbackAddress = composeResidentAddress(zone, barangay, city, province);
 
   const details = {
     ...defaults,
     ...profile,
     resident_id: normalizeText(payload.resident_id) || defaults.resident_id,
     household_id: normalizeText(payload.household_id) || normalizeText(profile.household_id) || defaults.household_id,
+    source_type: sourceType,
+    member_order: Number.isInteger(payloadMemberOrder)
+      ? payloadMemberOrder
+      : Number.isInteger(profileMemberOrder)
+        ? profileMemberOrder
+        : defaults.member_order,
     full_name: fullName || defaults.full_name,
     relation_to_head: normalizeText(payload.relation_to_head) || normalizeText(profile.relation_to_head) || defaults.relation_to_head,
     age: ageValue || defaults.age,
@@ -598,6 +730,163 @@ const fetchResidentDetails = async (residentId) => {
   }
 
   return payload.data;
+};
+
+const postResidentAction = async (payload) => {
+  const response = await fetch(API_ENDPOINT, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (error) {
+    result = null;
+  }
+
+  if (!response.ok || !result || result.success !== true) {
+    const message = result && result.error
+      ? String(result.error)
+      : `Unable to complete request (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return result;
+};
+
+const resolveResidentActionMode = (context) => {
+  const sourceType = normalizeText(context?.sourceType).toLowerCase();
+  const memberOrderRaw = Number.parseInt(String(context?.memberOrder ?? ''), 10);
+  const memberOrder = Number.isInteger(memberOrderRaw) ? memberOrderRaw : null;
+
+  if (sourceType === 'head') return 'head';
+  if (sourceType === 'member') return 'member';
+  if (memberOrder === 0) return 'head';
+  if (memberOrder !== null && memberOrder > 0) return 'member';
+  return 'member';
+};
+
+const buildResidentActionContext = (details, rowData) => {
+  const memberOrderRaw = Number.parseInt(String(details.member_order ?? rowData.member_order ?? ''), 10);
+  return {
+    sourceType: normalizeText(details.source_type || rowData.source_type).toLowerCase(),
+    memberOrder: Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0,
+    residentCode: normalizeText(rowData.base_resident_id || details.resident_id || rowData.resident_id),
+    householdCode: normalizeText(rowData.base_household_id || details.household_id || rowData.household_id),
+    residentLabel: normalizeText(details.resident_id || rowData.resident_id),
+    householdLabel: normalizeText(details.household_id || rowData.household_id)
+  };
+};
+
+const confirmResidentDelete = (options) => {
+  const isHouseholdDelete = options?.isHouseholdDelete === true;
+  const targetLabel = normalizeText(options?.targetLabel) || '-';
+  const fallbackMessage = isHouseholdDelete
+    ? `Delete household ${targetLabel}? This action cannot be undone.`
+    : `Delete resident ${targetLabel}? This action cannot be undone.`;
+
+  if (!residentDeleteConfirmModal || !residentDeleteConfirmModalEl || !residentDeleteConfirmTitleEl || !residentDeleteConfirmTargetEl || !residentDeleteConfirmBtn) {
+    return Promise.resolve(window.confirm(fallbackMessage));
+  }
+
+  residentDeleteConfirmTitleEl.textContent = isHouseholdDelete ? 'Delete Household' : 'Delete Resident';
+  residentDeleteConfirmTargetEl.textContent = targetLabel;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+
+    const cleanup = () => {
+      residentDeleteConfirmBtn.removeEventListener('click', handleConfirm);
+      residentDeleteConfirmModalEl.removeEventListener('hidden.bs.modal', handleHidden);
+    };
+
+    const handleConfirm = () => {
+      resolved = true;
+      cleanup();
+      residentDeleteConfirmModal.hide();
+      resolve(true);
+    };
+
+    const handleHidden = () => {
+      cleanup();
+      if (!resolved) {
+        resolve(false);
+      }
+    };
+
+    residentDeleteConfirmBtn.addEventListener('click', handleConfirm);
+    residentDeleteConfirmModalEl.addEventListener('hidden.bs.modal', handleHidden);
+    residentDeleteConfirmModal.show();
+  });
+};
+
+const openResidentEditor = () => {
+  if (!isAdminRole || !activeResidentAction) return;
+  const householdCode = normalizeText(activeResidentAction.householdCode);
+  if (!householdCode) {
+    window.alert('Unable to open edit form for this resident.');
+    return;
+  }
+
+  const mode = resolveResidentActionMode(activeResidentAction);
+  const nextUrl = new URL('registration.php', window.location.href);
+  nextUrl.searchParams.set('edit', householdCode);
+  residentDetailsModal?.hide();
+  window.location.href = mode === 'member' ? `${nextUrl.toString()}#members` : nextUrl.toString();
+};
+
+const deleteResidentFromModal = async () => {
+  if (!isAdminRole || !activeResidentAction) return;
+  const mode = resolveResidentActionMode(activeResidentAction);
+  const residentCode = normalizeText(activeResidentAction.residentCode);
+  const householdCode = normalizeText(activeResidentAction.householdCode);
+  const residentLabel = normalizeText(activeResidentAction.residentLabel || residentCode) || 'this resident';
+  const householdLabel = normalizeText(activeResidentAction.householdLabel || householdCode) || 'this household';
+
+  const isHeadDelete = mode === 'head';
+  if (isHeadDelete && householdCode === '') {
+    window.alert('Unable to determine household id for this resident.');
+    return;
+  }
+  if (!isHeadDelete && residentCode === '') {
+    window.alert('Unable to determine resident id.');
+    return;
+  }
+
+  const confirmed = await confirmResidentDelete({
+    isHouseholdDelete: isHeadDelete,
+    targetLabel: isHeadDelete ? householdLabel : residentLabel
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  const payload = isHeadDelete
+    ? { action: 'delete_household', household_id: householdCode }
+    : { action: 'delete_member', resident_id: residentCode };
+
+  setResidentActionButtonsState(false);
+  try {
+    await postResidentAction(payload);
+    if (isHeadDelete) {
+      state.detailsCache.clear();
+    } else {
+      state.detailsCache.delete(residentCode);
+    }
+    residentDetailsModal?.hide();
+    await loadResidents();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete resident right now.';
+    window.alert(message);
+  } finally {
+    setResidentActionButtonsState(Boolean(activeResidentAction));
+  }
 };
 
 const populateResidentModal = (details, loadErrorMessage = '') => {
@@ -707,18 +996,23 @@ const openResidentDetails = async (residentId, row) => {
   }
 
   const details = normalizeResidentDetails(rowData, detailsPayload);
-  details.resident_id = replaceResidentIdYear(
-    details.resident_id || rowData.base_resident_id || rowData.resident_id,
-    currentResidentDisplayYear || RESIDENT_BASE_YEAR
-  );
-  details.household_id = replaceHouseholdIdYear(
-    details.household_id || rowData.base_household_id || rowData.household_id,
-    currentResidentDisplayYear || RESIDENT_BASE_YEAR
-  );
+  details.resident_id = normalizeText(details.resident_id) || rowData.base_resident_id || rowData.resident_id || '';
+  details.household_id = normalizeText(details.household_id) || rowData.base_household_id || rowData.household_id || '';
 
+  activeResidentAction = buildResidentActionContext(details, rowData);
+  setResidentActionButtonsState(Boolean(activeResidentAction));
   populateResidentModal(details, loadErrorMessage);
   residentDetailsModal?.show();
 };
+
+residentEditBtn?.addEventListener('click', openResidentEditor);
+residentDeleteBtn?.addEventListener('click', () => {
+  void deleteResidentFromModal();
+});
+residentDetailsModalEl?.addEventListener('hidden.bs.modal', () => {
+  activeResidentAction = null;
+  setResidentActionButtonsState(false);
+});
 
 quickFilterButtons.forEach((button) => {
   button.addEventListener('click', () => {
@@ -749,5 +1043,8 @@ if (residentsTableBody) {
   });
 }
 
+setResidentActionButtonsState(false);
 setActiveQuickFilter('all');
+ensureYearOptions([]);
+ensureZoneOptions([]);
 void loadResidents();

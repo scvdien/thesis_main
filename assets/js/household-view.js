@@ -36,11 +36,13 @@ if (backLink && (resolvedRole === 'secretary' || resolvedRole === 'admin')) {
 
 let currentRecord = null;
 let activeMemberIndex = -1;
-const HOUSEHOLD_BASE_DATA_YEAR = '2026';
+const HOUSEHOLD_BASE_DATA_YEAR = String(new Date().getFullYear());
 const HOUSEHOLD_API_ENDPOINT = 'registration-sync.php';
 const REGISTRATION_HEAD_KEY = 'household_head_data';
 const REGISTRATION_MEMBERS_KEY = 'household_members';
 const REGISTRATION_MEMBER_EDIT_KEY = 'household_member_edit_index';
+const REGISTRATION_RECORDS_KEY = 'household_registration_records';
+const REGISTRATION_SYNC_QUEUE_KEY = 'household_registration_sync_queue';
 let currentDisplayHouseholdId = '';
 let currentDisplayYear = HOUSEHOLD_BASE_DATA_YEAR;
 const HV_TEMP_MEMBERS_KEY = 'household_view_temp_members';
@@ -79,364 +81,6 @@ const applyHouseholdYear = (value, year) => {
 
 const replaceFirstYearToken = (value, year) => {
   return String(value || '').replace(/\b(19|20)\d{2}\b/, String(year || HOUSEHOLD_BASE_DATA_YEAR));
-};
-
-// Dummy data (mirrors households-scripts)
-const householdData = {
-  'HH-2026-118': {
-    id: 'HH-2026-118',
-    status: 'Verified',
-    updated: 'Feb 02, 2026',
-    head: {
-      name: 'Maria T. Santos',
-      age: '42',
-      sex: 'Female',
-      civilStatus: 'Married',
-      birthday: '1984-12-18',
-      citizenship: 'Filipino',
-      religion: 'Catholic',
-      blood: 'O+',
-      height: '158 cm',
-      weight: '58 kg',
-      pregnant: 'No',
-      contact: '0917 234 8899',
-      address: 'Purok 2, Zone 2',
-      zone: 'Zone 2',
-      barangay: 'Cabarian',
-      city: 'Ligao City',
-      province: 'Albay'
-    },
-    education: {
-      attainment: 'College Graduate',
-      degree: 'BS Education',
-      school: 'Bicol University',
-      schoolType: 'Public',
-      dropout: 'No',
-      osy: 'No',
-      studying: 'No'
-    },
-    employment: {
-      occupation: 'Public School Teacher',
-      status: 'Employed',
-      workType: 'Government',
-      income: 'PHP 32,000'
-    },
-    welfare: { fourPs: 'No', senior: 'No', pwd: 'No', ip: 'No' },
-    voter: { registered: 'Yes', precinct: '1234A' },
-    ids: {
-      sss: '12-3456789-0',
-      philhealth: '05-123456789-0',
-      gsis: '-',
-      tin: '123-456-789',
-      philid: 'PN-2026-991122',
-      driver: 'N12-34-567890',
-      passport: 'P1234567'
-    },
-    household: {
-      numMembers: 5,
-      relationToHead: 'Spouse',
-      numChildren: 3,
-      partnerName: 'Jose P. Santos'
-    },
-    housing: {
-      ownership: 'Owned',
-      houseType: 'Concrete',
-      toilet: 'Water-sealed (Flush toilet)',
-      rooms: '4',
-      electricity: 'Yes',
-      water: 'Piped water (Direktang linya ng tubig sa bahay)',
-      internet: 'Yes'
-    },
-    health: {
-      currentIllness: 'No',
-      illnessType: '',
-      chronic: ['Hypertension'],
-      common: ['Fever'],
-      maintenance: 'Yes',
-      medicine: 'Losartan 50mg',
-      frequency: '1x/day',
-      source: 'Pharmacy',
-      pregnant: 'No',
-      monthsPregnant: '0',
-      prenatal: 'N/A',
-      childImmunized: 'Yes',
-      childMalnutrition: 'No',
-      childSick: '1',
-      disability: 'No'
-    },
-    members: [
-      { name: 'Maria T. Santos', relation: 'Head', age: 42, sex: 'F' },
-      { name: 'Jose P. Santos', relation: 'Spouse', age: 44, sex: 'M' },
-      { name: 'Lea T. Santos', relation: 'Child', age: 17, sex: 'F' },
-      { name: 'Marco P. Santos', relation: 'Child', age: 14, sex: 'M' },
-      { name: 'Miguel P. Santos', relation: 'Child', age: 9, sex: 'M' }
-    ]
-  },
-  'HH-2026-119': {
-    id: 'HH-2026-119',
-    status: 'Pending',
-    updated: 'Jan 28, 2026',
-    head: {
-      name: 'Rogelio P. Cruz',
-      age: '38',
-      sex: 'Male',
-      civilStatus: 'Married',
-      birthday: '1987-03-10',
-      citizenship: 'Filipino',
-      religion: 'Iglesia ni Cristo',
-      blood: 'A+',
-      height: '170 cm',
-      weight: '70 kg',
-      pregnant: 'N/A',
-      contact: '0918 556 7788',
-      address: 'Purok 1, Zone 1',
-      zone: 'Zone 1',
-      barangay: 'Cabarian',
-      city: 'Ligao City',
-      province: 'Albay'
-    },
-    education: {
-      attainment: 'High School Graduate',
-      degree: '-',
-      school: 'Ligao National HS',
-      schoolType: 'Public',
-      dropout: 'No',
-      osy: 'No',
-      studying: 'No'
-    },
-    employment: {
-      occupation: 'Tricycle Driver',
-      status: 'Self-employed',
-      workType: 'Freelance',
-      income: 'PHP 12,000'
-    },
-    welfare: { fourPs: 'Yes', senior: 'No', pwd: 'No', ip: 'No' },
-    voter: { registered: 'Yes', precinct: '2088B' },
-    ids: {
-      sss: '-',
-      philhealth: '08-223344556-1',
-      gsis: '-',
-      tin: '-',
-      philid: 'PN-2026-112233',
-      driver: 'N22-11-334455',
-      passport: '-'
-    },
-    household: {
-      numMembers: 3,
-      relationToHead: 'Spouse',
-      numChildren: 1,
-      partnerName: 'Ana L. Cruz'
-    },
-    housing: {
-      ownership: 'Rented',
-      houseType: 'Mixed',
-      toilet: 'Shared toilet',
-      rooms: '2',
-      electricity: 'Yes',
-      water: 'Deep well (Malalim na balon na may pump)',
-      internet: 'No'
-    },
-    health: {
-      currentIllness: 'Yes',
-      illnessType: 'Type 2 Diabetes',
-      chronic: ['Diabetes'],
-      common: ['Cough & Cold'],
-      maintenance: 'Yes',
-      medicine: 'Metformin 500mg',
-      frequency: '2x/day',
-      source: 'RHU',
-      pregnant: 'N/A',
-      monthsPregnant: '0',
-      prenatal: 'N/A',
-      childImmunized: 'Yes',
-      childMalnutrition: 'No',
-      childSick: '2',
-      disability: 'No'
-    },
-    members: [
-      { name: 'Rogelio P. Cruz', relation: 'Head', age: 38, sex: 'M' },
-      { name: 'Ana L. Cruz', relation: 'Spouse', age: 36, sex: 'F' },
-      { name: 'Leo P. Cruz', relation: 'Child', age: 8, sex: 'M' }
-    ]
-  },
-  'HH-2026-120': {
-    id: 'HH-2026-120',
-    status: 'Verified',
-    updated: 'Jan 21, 2026',
-    head: {
-      name: 'Lea M. Navarro',
-      age: '45',
-      sex: 'Female',
-      civilStatus: 'Widowed',
-      birthday: '1980-08-05',
-      citizenship: 'Filipino',
-      religion: 'Catholic',
-      blood: 'B+',
-      height: '156 cm',
-      weight: '60 kg',
-      pregnant: 'No',
-      contact: '0917 998 4411',
-      address: 'Purok 4, Zone 4',
-      zone: 'Zone 4',
-      barangay: 'Cabarian',
-      city: 'Ligao City',
-      province: 'Albay'
-    },
-    education: {
-      attainment: 'College Graduate',
-      degree: 'BS Nursing',
-      school: 'Ateneo de Naga',
-      schoolType: 'Private',
-      dropout: 'No',
-      osy: 'No',
-      studying: 'No'
-    },
-    employment: {
-      occupation: 'Clinic Nurse',
-      status: 'Employed',
-      workType: 'Private',
-      income: 'PHP 28,000'
-    },
-    welfare: { fourPs: 'No', senior: 'No', pwd: 'No', ip: 'No' },
-    voter: { registered: 'Yes', precinct: '3102C' },
-    ids: {
-      sss: '34-5566778-9',
-      philhealth: '11-556677889-0',
-      gsis: '-',
-      tin: '456-789-123',
-      philid: 'PN-2026-334455',
-      driver: 'N33-22-110099',
-      passport: 'P7788990'
-    },
-    household: {
-      numMembers: 6,
-      relationToHead: 'Children',
-      numChildren: 5,
-      partnerName: '-'
-    },
-    housing: {
-      ownership: 'Owned',
-      houseType: 'Concrete',
-      toilet: 'Water-sealed (Flush toilet)',
-      rooms: '5',
-      electricity: 'Yes',
-      water: 'Water refilling station (Binibiling inumin)',
-      internet: 'Yes'
-    },
-    health: {
-      currentIllness: 'No',
-      illnessType: '',
-      chronic: ['Hypertension'],
-      common: ['Fever'],
-      maintenance: 'Yes',
-      medicine: 'Amlodipine 5mg',
-      frequency: '1x/day',
-      source: 'Pharmacy',
-      pregnant: 'No',
-      monthsPregnant: '0',
-      prenatal: 'N/A',
-      childImmunized: 'Yes',
-      childMalnutrition: 'No',
-      childSick: '1',
-      disability: 'No'
-    },
-    members: [
-      { name: 'Lea M. Navarro', relation: 'Head', age: 45, sex: 'F' },
-      { name: 'Marco G. Navarro', relation: 'Child', age: 22, sex: 'M' },
-      { name: 'Liam Navarro', relation: 'Child', age: 18, sex: 'M' },
-      { name: 'Lara M. Navarro', relation: 'Child', age: 16, sex: 'F' },
-      { name: 'Liza M. Navarro', relation: 'Child', age: 12, sex: 'F' },
-      { name: 'Luis M. Navarro', relation: 'Child', age: 9, sex: 'M' }
-    ]
-  },
-  'HH-2026-121': {
-    id: 'HH-2026-121',
-    status: 'Unverified',
-    updated: 'Jan 18, 2026',
-    head: {
-      name: 'Jun R. Mateo',
-      age: '34',
-      sex: 'Male',
-      civilStatus: 'Married',
-      birthday: '1991-02-14',
-      citizenship: 'Filipino',
-      religion: 'Catholic',
-      blood: 'AB+',
-      height: '168 cm',
-      weight: '68 kg',
-      pregnant: 'N/A',
-      contact: '0917 112 3344',
-      address: 'Purok 3, Zone 3',
-      zone: 'Zone 3',
-      barangay: 'Cabarian',
-      city: 'Ligao City',
-      province: 'Albay'
-    },
-    education: {
-      attainment: 'Vocational Graduate',
-      degree: 'Automotive Servicing NCII',
-      school: 'TESDA Ligao',
-      schoolType: 'Public',
-      dropout: 'No',
-      osy: 'No',
-      studying: 'No'
-    },
-    employment: {
-      occupation: 'Mechanic',
-      status: 'Employed',
-      workType: 'Private',
-      income: 'PHP 18,000'
-    },
-    welfare: { fourPs: 'Yes', senior: 'No', pwd: 'No', ip: 'No' },
-    voter: { registered: 'No', precinct: '' },
-    ids: {
-      sss: '77-8899001-2',
-      philhealth: '15-998877665-4',
-      gsis: '-',
-      tin: '987-654-321',
-      philid: 'PN-2026-556677',
-      driver: 'N44-55-667788',
-      passport: '-'
-    },
-    household: {
-      numMembers: 4,
-      relationToHead: 'Spouse',
-      numChildren: 2,
-      partnerName: 'Liza P. Mateo'
-    },
-    housing: {
-      ownership: 'Rented',
-      houseType: 'Wood',
-      toilet: 'Pit latrine',
-      rooms: '2',
-      electricity: 'Yes',
-      water: 'Hand pump / Poso',
-      internet: 'No'
-    },
-    health: {
-      currentIllness: 'No',
-      illnessType: '',
-      chronic: [],
-      common: ['Cough & Cold'],
-      maintenance: 'No',
-      medicine: '',
-      frequency: '',
-      source: '',
-      pregnant: 'N/A',
-      monthsPregnant: '0',
-      prenatal: 'N/A',
-      childImmunized: 'Yes',
-      childMalnutrition: 'No',
-      childSick: '3',
-      disability: 'No'
-    },
-    members: [
-      { name: 'Jun R. Mateo', relation: 'Head', age: 34, sex: 'M' },
-      { name: 'Liza P. Mateo', relation: 'Spouse', age: 32, sex: 'F' },
-      { name: 'Kurt Mateo', relation: 'Child', age: 10, sex: 'M' },
-      { name: 'Kyla Mateo', relation: 'Child', age: 6, sex: 'F' }
-    ]
-  }
 };
 
 const setText = (id, val, fallback = '-') => {
@@ -540,6 +184,7 @@ const toMemberFormData = (member = {}, record = {}) => {
     existingFormData.barangay = existingFormData.barangay || record.head?.barangay || '';
     existingFormData.city = existingFormData.city || record.head?.city || '';
     existingFormData.province = existingFormData.province || record.head?.province || '';
+    existingFormData._hv_health_notes = existingFormData._hv_health_notes || (profile.healthNotes === '-' ? '' : profile.healthNotes);
     return existingFormData;
   }
 
@@ -889,6 +534,31 @@ const deleteHouseholdFromServer = async (householdId) => {
   return payload;
 };
 
+const removeHouseholdFromRegistrationCache = (householdId) => {
+  const targetId = toTextOrEmpty(householdId);
+  if (!targetId) return;
+
+  try {
+    const records = JSON.parse(window.localStorage.getItem(REGISTRATION_RECORDS_KEY) || '[]');
+    if (Array.isArray(records)) {
+      const filtered = records.filter((item) => String(item?.household_id || '').trim() !== targetId);
+      window.localStorage.setItem(REGISTRATION_RECORDS_KEY, JSON.stringify(filtered));
+    }
+  } catch (error) {
+    // Ignore cache cleanup issues.
+  }
+
+  try {
+    const queue = JSON.parse(window.localStorage.getItem(REGISTRATION_SYNC_QUEUE_KEY) || '[]');
+    if (Array.isArray(queue)) {
+      const filtered = queue.filter((item) => String(item?.household_id || '').trim() !== targetId);
+      window.localStorage.setItem(REGISTRATION_SYNC_QUEUE_KEY, JSON.stringify(filtered));
+    }
+  } catch (error) {
+    // Ignore cache cleanup issues.
+  }
+};
+
 const loadHouseholdRecordFromApi = async (requestedId) => {
   const primaryId = toTextOrEmpty(requestedId);
   if (!primaryId) return null;
@@ -955,7 +625,11 @@ const seedRegistrationEditDraft = async (record) => {
   }
 };
 
-const applyPendingMemberEditResult = async (householdId) => {
+const applyPendingMemberEditResult = async (record, householdId) => {
+  if (!record || !Array.isArray(record.members)) {
+    return;
+  }
+
   const rawResult = storage.getItem(HV_RESULT_KEY);
   if (!rawResult) return;
 
@@ -971,38 +645,32 @@ const applyPendingMemberEditResult = async (householdId) => {
   const normalizedResultId = normalizeHouseholdId(result?.householdId);
   if (!result || normalizedResultId !== normalizedTargetId) return;
 
-  const target = householdData[normalizedTargetId];
-  if (!target || !Array.isArray(target.members)) {
-    await storage.removeItem(HV_RESULT_KEY);
-    return;
-  }
-
   const memberIndex = Number(result.memberIndex);
-  if (Number.isNaN(memberIndex) || memberIndex < 0 || memberIndex >= target.members.length) {
+  if (Number.isNaN(memberIndex) || memberIndex < 0 || memberIndex >= record.members.length) {
     await storage.removeItem(HV_RESULT_KEY);
     return;
   }
 
   const updatedMember = fromMemberFormData(result.memberData || {});
-  target.members[memberIndex] = {
-    ...target.members[memberIndex],
+  record.members[memberIndex] = {
+    ...record.members[memberIndex],
     ...updatedMember
   };
 
-  if (target.household) {
-    target.household.numMembers = target.members.length;
+  if (record.household) {
+    record.household.numMembers = record.members.length;
   }
 
   const updatedRelation = (updatedMember.relation || '').toLowerCase();
-  if (updatedRelation === 'head' && target.head) {
-    if (updatedMember.name && updatedMember.name !== '-') target.head.name = updatedMember.name;
-    if (updatedMember.age && updatedMember.age !== '-') target.head.age = String(updatedMember.age);
-    if (updatedMember.sex && updatedMember.sex !== '-') target.head.sex = toFormSex(updatedMember.sex);
-    if (updatedMember.civilStatus && updatedMember.civilStatus !== '-') target.head.civilStatus = updatedMember.civilStatus;
-    if (updatedMember.contact && updatedMember.contact !== '-') target.head.contact = updatedMember.contact;
-    if (updatedMember.address && updatedMember.address !== '-') target.head.address = updatedMember.address;
-    if (updatedMember.education && updatedMember.education !== '-' && target.education) target.education.attainment = updatedMember.education;
-    if (updatedMember.occupation && updatedMember.occupation !== '-' && target.employment) target.employment.occupation = updatedMember.occupation;
+  if (updatedRelation === 'head' && record.head) {
+    if (updatedMember.name && updatedMember.name !== '-') record.head.name = updatedMember.name;
+    if (updatedMember.age && updatedMember.age !== '-') record.head.age = String(updatedMember.age);
+    if (updatedMember.sex && updatedMember.sex !== '-') record.head.sex = toFormSex(updatedMember.sex);
+    if (updatedMember.civilStatus && updatedMember.civilStatus !== '-') record.head.civilStatus = updatedMember.civilStatus;
+    if (updatedMember.contact && updatedMember.contact !== '-') record.head.contact = updatedMember.contact;
+    if (updatedMember.address && updatedMember.address !== '-') record.head.address = updatedMember.address;
+    if (updatedMember.education && updatedMember.education !== '-' && record.education) record.education.attainment = updatedMember.education;
+    if (updatedMember.occupation && updatedMember.occupation !== '-' && record.employment) record.employment.occupation = updatedMember.occupation;
   }
 
   await storage.removeItem(HV_RESULT_KEY);
@@ -1165,9 +833,12 @@ const openMemberDetails = (memberIndex) => {
   const memberData = toMemberFormData(member, currentRecord);
   const relation = memberData.relation_to_head || member.relation || '-';
   const fullName = buildFullName(memberData, member.name || '-');
+  const residentId = toTextOrEmpty(memberData.resident_id || memberData.resident_code || member.resident_id || member.resident_code) || '-';
+  const householdId = toTextOrEmpty(currentDisplayHouseholdId || currentRecord.id || memberData.household_id || memberData.household_code) || '-';
+  const healthNotes = toTextOrEmpty(memberData._hv_health_notes || member.healthNotes) || memberData.health_illness_type;
 
   setText('mdName', fullName);
-  setText('mdRelation', `Relation: ${relation}`);
+  setText('mdRelation', `Relation: ${relation} | Resident ID: ${residentId} | Household: ${householdId}`);
   setText('mdRelationToHeadValue', relation);
   setText('mdBirthday', memberData.birthday);
   setText('mdAge', memberData.age);
@@ -1220,6 +891,7 @@ const openMemberDetails = (memberIndex) => {
   setText('mdHealthCurrentIllness', memberData.health_current_illness);
   setText('mdHealthIllnessType', memberData.health_illness_type);
   setText('mdHealthIllnessYears', memberData.health_illness_years);
+  setText('mdHealthNotes', healthNotes);
   setText('mdHealthChronicDiseases', toListText(memberData.health_chronic_diseases));
   setText('mdHealthCommonIllnesses', toListText(memberData.health_common_illnesses));
   setText('mdHealthMaintenanceMeds', memberData.health_maintenance_meds);
@@ -1334,6 +1006,7 @@ const main = async () => {
     return;
   }
 
+  await applyPendingMemberEditResult(resolvedRecord, resolvedRecord.id || requestedId);
   currentRecord = resolvedRecord;
   try {
     sessionStorage.setItem('selectedHouseholdId', currentRecord.id || requestedId);
@@ -1376,6 +1049,7 @@ const main = async () => {
 
     try {
       await deleteHouseholdFromServer(householdId);
+      removeHouseholdFromRegistrationCache(householdId);
       try {
         const selected = String(sessionStorage.getItem('selectedHouseholdId') || '').trim();
         if (selected === householdId) {

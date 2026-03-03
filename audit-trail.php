@@ -4,6 +4,32 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
+$brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
+$brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+$brandSidebarLabel = $brandLabel;
+if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
+  $brandSidebarLabel = trim($brandLabel . ' ' . $brandCity);
+}
+$systemLabel = trim($brandSidebarLabel . ' Household Information Management System');
+$siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 ?>
 <!doctype html>
 <html lang="en">
@@ -15,7 +41,7 @@ $authRole = auth_user_role($authUser);
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site-style.css">
+<link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
@@ -27,8 +53,8 @@ $authRole = auth_user_role($authUser);
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="Barangay Cabarian Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary">Barangay Cabarian</span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
+        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
       </div>
       <div class="menu">
         <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -48,9 +74,8 @@ $authRole = auth_user_role($authUser);
           <i class="bi bi-list toggle-btn" onclick="toggleSidebar()"></i>
           <h4 class="mb-0 text-primary">System Logs</h4>
         </div>
-        <div>
-          <select id="yearSelect" class="form-select d-inline w-auto"></select>
-          <button class="btn btn-outline-primary ms-2" id="refreshBtn">
+        <div class="topbar-actions">
+          <button class="btn btn-outline-primary" id="refreshBtn">
             <i class="bi bi-arrow-clockwise"></i> Refresh
           </button>
         </div>
@@ -58,48 +83,34 @@ $authRole = auth_user_role($authUser);
 
       <section class="module audit-module">
         <div class="module-header">
-          <div>
+          <div class="audit-title-wrap">
             <h5 class="mb-1 fw-bold">Activity Logs</h5>
             <p class="mb-0 text-muted small">System actions and approvals recorded for accountability</p>
           </div>
-          <div class="module-actions">
-            <div class="input-group input-group-sm module-search">
-              <input type="text" class="form-control" id="auditSearchInput" placeholder="Search action, user, or record">
-              <span class="input-group-text"><i class="bi bi-search"></i></span>
-            </div>
-            <select class="form-select form-select-sm" id="auditActionFilter">
-              <option value="all">All Actions</option>
-              <option value="created">Created</option>
-              <option value="updated">Updated</option>
-              <option value="deleted">Deleted</option>
-              <option value="security">Security</option>
-              <option value="access">Access</option>
-            </select>
-            <select class="form-select form-select-sm" id="auditUserFilter">
-              <option value="all">All Users</option>
-              <option value="captain">Captain</option>
-              <option value="admin">Admin</option>
-              <option value="staff">Staff</option>
+          <div class="audit-header-actions">
+            <select class="form-select form-select-sm audit-pill-filter audit-year-filter" id="yearSelect">
+              <option value="all">All Years</option>
             </select>
           </div>
         </div>
-
-        <div class="module-grid">
-          <div class="module-card">
-            <div class="module-label">Total Actions</div>
-            <div class="module-value" id="auditTotalActions">0</div>
+        <div class="audit-toolbar" role="search" aria-label="Activity log filters">
+          <div class="audit-search-pill">
+            <input type="text" class="form-control" id="auditSearchInput" placeholder="Search action, user, or record">
+            <span class="audit-search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
           </div>
-          <div class="module-card">
-            <div class="module-label">Created</div>
-            <div class="module-value" id="auditCreatedCount">0</div>
-          </div>
-          <div class="module-card">
-            <div class="module-label">Updates</div>
-            <div class="module-value" id="auditUpdatedCount">0</div>
-          </div>
-          <div class="module-card">
-            <div class="module-label">Deleted</div>
-            <div class="module-value" id="auditDeletedCount">0</div>
+          <div class="audit-quick-row">
+            <div class="audit-quick-group">
+              <span class="audit-quick-label">Quick Filter</span>
+              <div class="audit-quick-pills" role="group" aria-label="Action filters">
+                <button type="button" class="audit-quick-pill is-active" data-audit-action="all" aria-pressed="true">All</button>
+                <button type="button" class="audit-quick-pill" data-audit-action="created" aria-pressed="false">Created</button>
+                <button type="button" class="audit-quick-pill" data-audit-action="updated" aria-pressed="false">Updated</button>
+                <button type="button" class="audit-quick-pill" data-audit-action="deleted" aria-pressed="false">Deleted</button>
+                <button type="button" class="audit-quick-pill" data-audit-action="security" aria-pressed="false">Security</button>
+                <button type="button" class="audit-quick-pill" data-audit-action="access" aria-pressed="false">Access</button>
+              </div>
+            </div>
+            <div class="audit-record-inline text-muted small" id="auditRecordCount" aria-live="polite">0 records found</div>
           </div>
         </div>
 
@@ -110,9 +121,9 @@ $authRole = auth_user_role($authUser);
                 <th>Date &amp; Time</th>
                 <th>User</th>
                 <th>Action</th>
-                <th>Record</th>
-                <th>Module</th>
+                <th>Result</th>
                 <th>Details</th>
+                <th>IP Address</th>
               </tr>
             </thead>
             <tbody id="auditTableBody">
@@ -131,7 +142,7 @@ $authRole = auth_user_role($authUser);
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> Barangay Cabarian Ligao City Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODERN REFRESH MODAL -->

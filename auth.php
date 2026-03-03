@@ -1,10 +1,14 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/db.php';
+
 const AUTH_SESSION_USER_KEY = 'auth_user';
 const AUTH_SESSION_LAST_ACTIVITY_KEY = 'auth_last_activity';
 const AUTH_SESSION_CSRF_KEY = 'auth_csrf_token';
 const AUTH_IDLE_TIMEOUT_SECONDS = 60 * 60 * 4;
+const AUTH_PRESENCE_OFFLINE_AFTER_SECONDS = 60 * 2;
+const AUTH_PRESENCE_HEARTBEAT_INTERVAL_MS = 15 * 1000;
 
 const AUTH_ROLE_ADMIN = 'admin';
 // Legacy value kept for backward compatibility with existing rows/actions.
@@ -102,11 +106,98 @@ function auth_role_home(string $role): string
     };
 }
 
+function auth_set_last_denial_reason(string $reason): void
+{
+    $GLOBALS['__auth_last_denial_reason'] = $reason;
+}
+
+function auth_last_denial_reason(): string
+{
+    $value = $GLOBALS['__auth_last_denial_reason'] ?? '';
+    return is_string($value) ? $value : '';
+}
+
+/**
+ * @param array<string, mixed> $sessionUser
+ * @return array{state: string, user: array<string, mixed>}
+ */
+function auth_sync_session_user(array $sessionUser): array
+{
+    $sessionRole = auth_normalize_role((string) ($sessionUser['role'] ?? ''));
+    if ($sessionRole === '') {
+        return [
+            'state' => 'invalid_role',
+            'user' => $sessionUser,
+        ];
+    }
+
+    $sessionUser['role'] = $sessionRole;
+    $userId = (int) ($sessionUser['id'] ?? 0);
+    if ($userId <= 0) {
+        return [
+            'state' => 'invalid_user',
+            'user' => $sessionUser,
+        ];
+    }
+
+    try {
+        $pdo = auth_db();
+        $stmt = $pdo->prepare(
+            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `must_change_password`
+             FROM `users`
+             WHERE `id` = :id
+             LIMIT 1'
+        );
+        $stmt->execute(['id' => $userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $exception) {
+        // Keep existing session on transient database issues.
+        return [
+            'state' => 'unverified',
+            'user' => $sessionUser,
+        ];
+    }
+
+    if (!is_array($row)) {
+        return [
+            'state' => 'account_not_found',
+            'user' => $sessionUser,
+        ];
+    }
+
+    if ((int) ($row['is_active'] ?? 0) !== 1) {
+        return [
+            'state' => 'account_deactivated',
+            'user' => $sessionUser,
+        ];
+    }
+
+    $role = auth_normalize_role((string) ($row['role'] ?? ''));
+    if ($role === '') {
+        return [
+            'state' => 'invalid_role',
+            'user' => $sessionUser,
+        ];
+    }
+
+    return [
+        'state' => 'active',
+        'user' => [
+            'id' => (int) ($row['id'] ?? 0),
+            'full_name' => (string) ($row['full_name'] ?? ''),
+            'username' => (string) ($row['username'] ?? ''),
+            'role' => $role,
+            'requires_credential_update' => (int) ($row['must_change_password'] ?? 0) === 1,
+        ],
+    ];
+}
+
 /**
  * @return array<string, mixed>|null
  */
 function auth_current_user(): ?array
 {
+    auth_set_last_denial_reason('');
     auth_start_session();
 
     if (!isset($_SESSION[AUTH_SESSION_USER_KEY]) || !is_array($_SESSION[AUTH_SESSION_USER_KEY])) {
@@ -116,20 +207,35 @@ function auth_current_user(): ?array
     if (isset($_SESSION[AUTH_SESSION_LAST_ACTIVITY_KEY])) {
         $lastActivity = (int) $_SESSION[AUTH_SESSION_LAST_ACTIVITY_KEY];
         if ($lastActivity > 0 && (time() - $lastActivity) > AUTH_IDLE_TIMEOUT_SECONDS) {
+            auth_set_last_denial_reason('idle_timeout');
             auth_logout();
             return null;
         }
     }
 
     $user = $_SESSION[AUTH_SESSION_USER_KEY];
+    $syncResult = auth_sync_session_user($user);
+    if (($syncResult['state'] ?? '') !== 'active' && ($syncResult['state'] ?? '') !== 'unverified') {
+        auth_set_last_denial_reason((string) ($syncResult['state'] ?? 'invalid_session'));
+        auth_logout();
+        return null;
+    }
+
+    $user = ($syncResult['state'] ?? '') === 'active'
+        ? (array) ($syncResult['user'] ?? [])
+        : (array) ($syncResult['user'] ?? $user);
+
     $userRole = auth_normalize_role((string) ($user['role'] ?? ''));
     if ($userRole === '') {
+        auth_set_last_denial_reason('invalid_role');
         auth_logout();
         return null;
     }
 
     $user['role'] = $userRole;
+    $_SESSION[AUTH_SESSION_USER_KEY] = $user;
     $_SESSION[AUTH_SESSION_LAST_ACTIVITY_KEY] = time();
+    auth_mark_user_presence($user, true);
     return $user;
 }
 
@@ -153,6 +259,13 @@ function auth_logout(): void
 {
     auth_start_session();
 
+    $currentUser = isset($_SESSION[AUTH_SESSION_USER_KEY]) && is_array($_SESSION[AUTH_SESSION_USER_KEY])
+        ? $_SESSION[AUTH_SESSION_USER_KEY]
+        : null;
+    if (is_array($currentUser)) {
+        auth_mark_user_presence($currentUser, false);
+    }
+
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $params = session_get_cookie_params();
@@ -161,45 +274,76 @@ function auth_logout(): void
     session_destroy();
 }
 
-function auth_db(): PDO
+/**
+ * @param array<string, mixed> $user
+ */
+function auth_presence_user_id(array $user): int
 {
-    static $pdo = null;
-    if ($pdo instanceof PDO) {
-        return $pdo;
+    return (int) ($user['id'] ?? 0);
+}
+
+function auth_presence_is_online(mixed $lastSeenAt): bool
+{
+    $lastSeen = trim((string) $lastSeenAt);
+    if ($lastSeen === '') {
+        return false;
     }
 
-    if (!class_exists('PDO')) {
-        throw new RuntimeException('PDO extension is not available.');
+    $timestamp = strtotime($lastSeen);
+    if ($timestamp === false) {
+        return false;
     }
 
-    $host = auth_env(['DB_HOST'], '127.0.0.1');
-    $port = auth_env(['DB_PORT'], '3306');
-    $username = auth_env(['DB_USERNAME', 'DB_USER'], 'root');
-    $password = auth_env(['DB_PASSWORD', 'DB_PASS'], '');
-    $database = auth_env(['DB_NAME'], 'thesis_main');
+    return (time() - $timestamp) <= AUTH_PRESENCE_OFFLINE_AFTER_SECONDS;
+}
 
-    if (preg_match('/^[A-Za-z0-9_]+$/', $database) !== 1) {
-        throw new RuntimeException('Invalid database name.');
+function auth_mark_user_presence_with_pdo(PDO $pdo, int $userId, bool $online): void
+{
+    if ($userId <= 0) {
+        return;
     }
 
-    $options = [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES => false,
-    ];
+    $stmt = $pdo->prepare(
+        'UPDATE `users`
+         SET `last_seen_at` = :last_seen_at
+         WHERE `id` = :id
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'last_seen_at' => $online ? date('Y-m-d H:i:s') : null,
+        'id' => $userId,
+    ]);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function auth_mark_user_presence(array $user, bool $online = true): void
+{
+    $userId = auth_presence_user_id($user);
+    if ($userId <= 0) {
+        return;
+    }
+    static $requestPresenceState = [];
+    $requestKey = $userId . ':' . ($online ? '1' : '0');
+    if (isset($requestPresenceState[$requestKey])) {
+        return;
+    }
+    $requestPresenceState[$requestKey] = true;
 
     try {
-        $pdo = new PDO("mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4", $username, $password, $options);
-        return $pdo;
+        $pdo = auth_db();
+        auth_mark_user_presence_with_pdo($pdo, $userId, $online);
     } catch (Throwable $exception) {
-        // Fallback: try creating the database when it does not exist yet.
+        // Presence updates are best-effort and should not break requests.
     }
+}
 
-    $pdo = new PDO("mysql:host={$host};port={$port};charset=utf8mb4", $username, $password, $options);
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("USE `{$database}`");
-
-    return $pdo;
+function auth_db(): PDO
+{
+    return db_connection(
+        static fn(array $keys, string $default = ''): string => auth_env($keys, $default)
+    );
 }
 
 function auth_bootstrap_users_table(PDO $pdo): void
@@ -217,9 +361,11 @@ function auth_bootstrap_users_table(PDO $pdo): void
             `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `last_seen_at` DATETIME NULL DEFAULT NULL,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uq_users_username` (`username`),
-            KEY `idx_users_role` (`role`)
+            KEY `idx_users_role` (`role`),
+            KEY `idx_users_last_seen_at` (`last_seen_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
 }
@@ -251,6 +397,9 @@ function auth_ensure_users_columns(PDO $pdo): void
     }
     if (!auth_users_has_column($pdo, 'must_change_password')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `must_change_password` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_active`');
+    }
+    if (!auth_users_has_column($pdo, 'last_seen_at')) {
+        $pdo->exec('ALTER TABLE `users` ADD COLUMN `last_seen_at` DATETIME NULL DEFAULT NULL AFTER `updated_at`');
     }
 }
 
@@ -423,9 +572,13 @@ function auth_attempt_login(string $username, string $password, string $selected
     $username = trim($username);
     $selectedRoleRaw = trim($selectedRole);
     $selectedRole = $selectedRoleRaw === '' ? '' : auth_normalize_role($selectedRoleRaw);
-    $auditLogin = static function (bool $success, string $message, array $context = []) use ($username, $selectedRoleRaw): void {
+    $auditLogin = static function (bool $success, string $message, array $context = []) use ($username, $selectedRoleRaw, $selectedRole): void {
+        $contextRole = auth_normalize_role((string) ($context['role'] ?? $context['stored_role'] ?? $context['selected_role'] ?? ''));
+        $actorRole = $contextRole !== '' ? $contextRole : $selectedRole;
         $actionKey = $success ? 'login_success' : 'login_failed';
         auth_audit_log([
+            'actor_username' => $username,
+            'actor_role' => $actorRole,
             'action_key' => $actionKey,
             'action_type' => $success ? 'access' : 'security',
             'module_name' => 'Authentication',
@@ -563,6 +716,11 @@ function auth_attempt_login(string $username, string $password, string $selected
     session_regenerate_id(true);
     $_SESSION[AUTH_SESSION_USER_KEY] = $user;
     $_SESSION[AUTH_SESSION_LAST_ACTIVITY_KEY] = time();
+    try {
+        auth_mark_user_presence_with_pdo($pdo, (int) ($user['id'] ?? 0), true);
+    } catch (Throwable $exception) {
+        // Presence updates are best-effort and should not block login.
+    }
 
     $auditLogin(true, 'Login successful.', [
         'user_id' => (int) ($user['id'] ?? 0),
@@ -596,11 +754,18 @@ function auth_require_page(array $allowedRoles = []): array
     return $user;
 }
 
-function auth_json_error(int $statusCode, string $message): never
+function auth_json_error(int $statusCode, string $message, string $code = ''): never
 {
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['success' => false, 'error' => $message], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $payload = [
+        'success' => false,
+        'error' => $message,
+    ];
+    if ($code !== '') {
+        $payload['code'] = $code;
+    }
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
@@ -612,6 +777,16 @@ function auth_require_api(array $allowedRoles = []): array
 {
     $user = auth_current_user();
     if (!is_array($user)) {
+        $reason = auth_last_denial_reason();
+        if ($reason === 'account_deactivated') {
+            auth_json_error(403, 'Your account is deactivated.', 'account_deactivated');
+        }
+        if ($reason === 'idle_timeout') {
+            auth_json_error(401, 'Session expired. Please log in again.', 'session_expired');
+        }
+        if ($reason === 'account_not_found') {
+            auth_json_error(401, 'Account not found.', 'account_not_found');
+        }
         auth_json_error(401, 'Authentication required.');
     }
 
@@ -655,7 +830,105 @@ function auth_client_role_script(string $role): string
         return '';
     }
 
-    return '<script>(function(){var role='
-        . $jsonRole
-        . ';try{sessionStorage.setItem("userRole",role);}catch(e){}window.__AUTH_ROLE=role;if(document.body){document.body.dataset.role=role;}})();</script>';
+    $scriptTemplate = <<<'HTML'
+<script>(function(){
+  var role=__ROLE__;
+  var endpoint="auth-presence.php";
+  var heartbeatMs=__HEARTBEAT_MS__;
+  var inFlight=false;
+  var deactivationHandled=false;
+
+  try{sessionStorage.setItem("userRole",role);}catch(e){}
+  window.__AUTH_ROLE=role;
+  if(document.body){document.body.dataset.role=role;}
+
+  var redirectToLogout=function(){
+    window.location.href="logout.php?reason=deactivated";
+  };
+
+  var showDeactivationModal=function(){
+    if(deactivationHandled){return;}
+    deactivationHandled=true;
+
+    var mount=function(){
+      if(document.getElementById("authDeactivatedModal")){return;}
+      var overlay=document.createElement("div");
+      overlay.id="authDeactivatedModal";
+      overlay.setAttribute("role","alertdialog");
+      overlay.setAttribute("aria-modal","true");
+      overlay.style.position="fixed";
+      overlay.style.top="0";
+      overlay.style.right="0";
+      overlay.style.bottom="0";
+      overlay.style.left="0";
+      overlay.style.zIndex="2147483647";
+      overlay.style.display="flex";
+      overlay.style.alignItems="center";
+      overlay.style.justifyContent="center";
+      overlay.style.padding="16px";
+      overlay.style.background="rgba(0,0,0,0.55)";
+      overlay.innerHTML='<div style="width:100%;max-width:420px;background:#fff;border-radius:12px;padding:20px 20px 16px;box-shadow:0 20px 40px rgba(0,0,0,0.2);font-family:Arial,sans-serif;text-align:center;"><h2 style="margin:0 0 10px;font-size:20px;color:#1f2937;">Account Deactivated</h2><p style="margin:0 0 16px;color:#4b5563;font-size:14px;">Your account is deactivated. You will be logged out.</p><button type="button" id="authDeactivatedModalBtn" style="display:inline-block;border:0;border-radius:8px;background:#dc2626;color:#fff;padding:10px 16px;font-size:14px;cursor:pointer;">Logout</button></div>';
+      document.body.appendChild(overlay);
+      var button=document.getElementById("authDeactivatedModalBtn");
+      if(button&&typeof button.addEventListener==="function"){
+        button.addEventListener("click",redirectToLogout,{once:true});
+      }
+    };
+
+    if(document.body){
+      mount();
+    }else if(document&&typeof document.addEventListener==="function"){
+      document.addEventListener("DOMContentLoaded",mount,{once:true});
+    }
+
+    if(typeof window.setTimeout==="function"){
+      window.setTimeout(redirectToLogout,1800);
+    }else{
+      redirectToLogout();
+    }
+  };
+
+  var parseJson=function(response){
+    try{
+      if(response&&typeof response.json==="function"){
+        return response.json();
+      }
+    }catch(e){}
+    return Promise.resolve(null);
+  };
+
+  var handleFailedPing=function(response){
+    return parseJson(response).then(function(payload){
+      var code=(payload&&typeof payload.code==="string")?payload.code:"";
+      if(response&&response.status===403&&code==="account_deactivated"){
+        showDeactivationModal();
+      }
+    }).catch(function(){});
+  };
+
+  var ping=function(){
+    if(inFlight||deactivationHandled){return;}
+    inFlight=true;
+    fetch(endpoint,{method:"GET",credentials:"same-origin",cache:"no-store",keepalive:true})
+      .then(function(response){
+        if(response&&response.ok){return;}
+        return handleFailedPing(response);
+      })
+      .catch(function(){})
+      .then(function(){inFlight=false;},function(){inFlight=false;});
+  };
+
+  ping();
+  if(typeof window.setInterval==="function"){window.setInterval(ping,heartbeatMs);}
+  if(document&&typeof document.addEventListener==="function"){
+    document.addEventListener("visibilitychange",function(){if(!document.hidden){ping();}});
+  }
+  if(window&&typeof window.addEventListener==="function"){window.addEventListener("focus",ping);}
+})();</script>
+HTML;
+
+    return strtr($scriptTemplate, [
+        '__ROLE__' => $jsonRole,
+        '__HEARTBEAT_MS__' => (string) AUTH_PRESENCE_HEARTBEAT_INTERVAL_MS,
+    ]);
 }

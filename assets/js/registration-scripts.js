@@ -1,4 +1,4 @@
-document.getElementById("year").textContent = "2026";
+document.getElementById("year").textContent = String(new Date().getFullYear());
 
 document.addEventListener("DOMContentLoaded", async () => {
   const urlParams = new URLSearchParams(window.location.search);
@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
   const LAST_SYNC_KEY = "household_registration_last_sync_at";
+  const LAST_SYNC_ERROR_KEY = "household_registration_last_sync_error";
   const localStorage = window.createIndexedStorageProxy
     ? window.createIndexedStorageProxy([
         MEMBERS_KEY,
@@ -18,7 +19,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         HEAD_KEY,
         REGISTRATION_RECORDS_KEY,
         SYNC_QUEUE_KEY,
-        LAST_SYNC_KEY
+        LAST_SYNC_KEY,
+        LAST_SYNC_ERROR_KEY
       ])
     : window.localStorage;
   const SYNC_ENDPOINT = "registration-sync.php";
@@ -50,8 +52,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sidebarToggle = document.getElementById("sidebarToggle");
   const sidebarOverlay = document.getElementById("sidebarOverlay");
   const sidebar = document.getElementById("sidebar");
-  const sidebarMembersToggle = document.getElementById("sidebarMembersToggle");
-  const sidebarMembersSection = document.querySelector(".sidebar-members");
   const logoutModalEl = document.getElementById("logoutModal");
   const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
   const logoutConfirm = document.getElementById("logoutConfirm");
@@ -63,10 +63,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveModalTitle = saveModalEl ? saveModalEl.querySelector(".modal-title") : null;
   const saveModalDescription = saveModalEl ? saveModalEl.querySelector("p") : null;
   const saveConfirm = document.getElementById("saveConfirm");
-  const replaceHouseholdModalEl = document.getElementById("replaceHouseholdModal");
-  const replaceHouseholdModal = replaceHouseholdModalEl ? new bootstrap.Modal(replaceHouseholdModalEl) : null;
-  const replaceHouseholdMessage = document.getElementById("replaceHouseholdMessage");
-  const replaceHouseholdConfirm = document.getElementById("replaceHouseholdConfirm");
+  const pendingSyncModalEl = document.getElementById("pendingSyncModal");
+  const pendingSyncModal = pendingSyncModalEl ? new bootstrap.Modal(pendingSyncModalEl) : null;
+  const pendingSyncList = document.getElementById("pendingSyncList");
+  const pendingSyncEmpty = document.getElementById("pendingSyncEmpty");
+  const pendingSyncTitleCount = document.getElementById("pendingSyncTitleCount");
+  const pendingActionModalEl = document.getElementById("pendingActionModal");
+  const pendingActionModal = pendingActionModalEl ? new bootstrap.Modal(pendingActionModalEl) : null;
+  const pendingActionModalTitle = document.getElementById("pendingActionModalTitle");
+  const pendingActionModalMessage = document.getElementById("pendingActionModalMessage");
+  const pendingActionConfirm = document.getElementById("pendingActionConfirm");
   const syncToastEl = document.getElementById("syncToast");
   const syncToastTitle = document.getElementById("syncToastTitle");
   const syncToastBody = document.getElementById("syncToastBody");
@@ -74,6 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const syncToast = syncToastEl
     ? bootstrap.Toast.getOrCreateInstance(syncToastEl, { autohide: false })
     : null;
+  const syncStatusWrap = document.getElementById("syncStatusWrap");
   const syncStatusBadge = document.getElementById("syncStatusBadge");
   const syncStatusText = document.getElementById("syncStatusText");
   const offlinePendingLine = document.getElementById("offlinePendingLine");
@@ -89,6 +96,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let syncSuccessExpiresAt = 0;
   let syncSuccessTimerId = null;
   let syncToastHideTimerId = null;
+  let pendingActionBusy = false;
 
   if (isEditMode) {
     document.title = "Update Household";
@@ -111,14 +119,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (sidebarOverlay) sidebarOverlay.setAttribute("aria-hidden", String(!open));
   };
 
-  const setMembersCollapsed = (collapsed) => {
-    if (!sidebarMembersSection) return;
-    sidebarMembersSection.classList.toggle("is-collapsed", collapsed);
-    if (sidebarMembersToggle) {
-      sidebarMembersToggle.setAttribute("aria-expanded", String(!collapsed));
-    }
-  };
-
   if (editMemberBtn) {
     editMemberBtn.disabled = true;
   }
@@ -133,6 +133,149 @@ document.addEventListener("DOMContentLoaded", async () => {
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  };
+
+  const normalizeZoneLabel = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const compact = raw.replace(/\s+/g, " ");
+    const namedMatch = compact.match(/^(?:zone|purok)\s*([a-z0-9-]+)$/i);
+    if (namedMatch) {
+      const suffix = String(namedMatch[1] || "").trim();
+      if (!suffix) return "Zone";
+      if (/^\d+$/.test(suffix)) {
+        return `Zone ${Number.parseInt(suffix, 10)}`;
+      }
+      return `Zone ${suffix.toUpperCase()}`;
+    }
+    if (/^\d+$/.test(compact)) {
+      return `Zone ${Number.parseInt(compact, 10)}`;
+    }
+    return compact;
+  };
+
+  const parseSyncErrorMessage = (message) => {
+    const text = String(message || "").trim();
+    if (!text) {
+      return { householdId: "", message: "" };
+    }
+    const match = text.match(/^(HH-\d{4}-\d+)\s*:\s*(.+)$/i);
+    if (match) {
+      return {
+        householdId: String(match[1] || "").trim(),
+        message: String(match[2] || "").trim()
+      };
+    }
+    return { householdId: "", message: text };
+  };
+
+  const normalizeDuplicateMeta = (value) => {
+    if (!value || typeof value !== "object") return null;
+    const householdId = String(value.household_id || "").trim();
+    if (!householdId) return null;
+    return {
+      household_id: householdId,
+      head_name: String(value.head_name || "").trim(),
+      zone: String(value.zone || "").trim(),
+      year: String(value.year || "").trim(),
+      created_at: String(value.created_at || "").trim(),
+      updated_at: String(value.updated_at || "").trim()
+    };
+  };
+
+  const buildSyncIssue = (issue = null) => {
+    if (!issue || typeof issue !== "object") return null;
+    const message = String(issue.message || "").trim();
+    const code = String(issue.code || "").trim();
+    const status = Number(issue.status || 0);
+    const duplicate = normalizeDuplicateMeta(issue.duplicate);
+    if (!message && !code && !status && !duplicate) {
+      return null;
+    }
+    return {
+      message: message || "Unable to sync right now.",
+      code,
+      status: Number.isFinite(status) ? status : 0,
+      duplicate,
+      at: new Date().toISOString()
+    };
+  };
+
+  const withSyncIssue = (record, issue = null) => {
+    const source = record && typeof record === "object" ? record : {};
+    return {
+      ...source,
+      sync_issue: buildSyncIssue(issue)
+    };
+  };
+
+  const getSyncIssueFromRecord = (record) => {
+    if (!record || typeof record !== "object") return null;
+    if (typeof record.sync_issue === "string") {
+      const issueFromString = buildSyncIssue({ message: record.sync_issue });
+      if (issueFromString) return issueFromString;
+    }
+    const directIssue = buildSyncIssue(record.sync_issue);
+    if (directIssue) return directIssue;
+    const legacyMessage = String(record._sync_error || "").trim();
+    if (!legacyMessage) return null;
+    return buildSyncIssue({
+      message: legacyMessage,
+      code: String(record._sync_error_code || "").trim(),
+      status: Number(record._sync_error_status || 0),
+      duplicate: record._sync_duplicate
+    });
+  };
+
+  const stripClientSyncMeta = (record) => {
+    if (!record || typeof record !== "object") return {};
+    const cleaned = { ...record };
+    delete cleaned.sync_issue;
+    delete cleaned._sync_error;
+    delete cleaned._sync_error_code;
+    delete cleaned._sync_error_status;
+    delete cleaned._sync_error_at;
+    delete cleaned._sync_duplicate;
+    return cleaned;
+  };
+
+  const getRecordDisplayName = (record) =>
+    String(record?.head_name || "").trim() || "Unnamed household head";
+
+  const clearResolvedLastSyncError = () => {
+    const parsed = parseSyncErrorMessage(getLastSyncError());
+    if (!parsed.message) return;
+    if (!parsed.householdId) {
+      if (getSyncQueue().length === 0) {
+        setLastSyncError("");
+      }
+      return;
+    }
+    const stillQueued = getSyncQueue().some(
+      (item) => String(item?.household_id || "").trim() === parsed.householdId
+    );
+    if (!stillQueued) {
+      setLastSyncError("");
+    }
+  };
+
+  const buildSyncIssueFromError = (error, fallbackMessage = "") => {
+    const code = String(error?.code || error?.payload?.code || "").trim().toLowerCase();
+    const duplicate = error?.payload?.duplicate && typeof error.payload.duplicate === "object"
+      ? error.payload.duplicate
+      : null;
+    let message = error instanceof Error
+      ? String(error.message || "").trim()
+      : String(fallbackMessage || "").trim();
+    if (code === "duplicate_household") {
+      message = "Household already exists in database. Resolve this in Sync Center Pending.";
+    }
+    return buildSyncIssue({
+      message: message || "Unable to sync right now.",
+      code,
+      status: Number(error?.status || 0),
+      duplicate
+    });
   };
 
   const getAgeFromBirthday = (value) => {
@@ -176,6 +319,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     radioNames.forEach((name) => {
       if (data[name] === undefined) data[name] = "";
     });
+    if (Object.prototype.hasOwnProperty.call(data, "zone")) {
+      data.zone = normalizeZoneLabel(data.zone);
+    }
     return data;
   };
 
@@ -207,6 +353,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       if (el.type === "radio") {
         el.checked = value !== "" && el.value === value;
+        return;
+      }
+      if (el.name === "zone") {
+        el.value = normalizeZoneLabel(value);
         return;
       }
       el.value = value;
@@ -253,6 +403,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
+  const getLastSyncError = () => {
+    try {
+      return String(localStorage.getItem(LAST_SYNC_ERROR_KEY) || "").trim();
+    } catch {
+      return "";
+    }
+  };
+
   const setLastSyncedAt = (value) => {
     try {
       if (value) {
@@ -260,6 +418,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       localStorage.removeItem(LAST_SYNC_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const setLastSyncError = (value) => {
+    try {
+      if (value) {
+        localStorage.setItem(LAST_SYNC_ERROR_KEY, String(value));
+        return;
+      }
+      localStorage.removeItem(LAST_SYNC_ERROR_KEY);
     } catch {
       // ignore storage errors
     }
@@ -297,8 +467,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const buildRegistrationRecord = () => {
-    const head = serializeHeadData();
-    const members = getMembers();
+    const headDraft = serializeHeadData();
+    const normalizedZone = normalizeZoneLabel(headDraft.zone);
+    const head = {
+      ...headDraft,
+      zone: normalizedZone
+    };
+    const members = getMembers().map((member) => ({
+      ...member,
+      zone: normalizeZoneLabel(member?.zone || normalizedZone)
+    }));
     const records = getRegistrationRecords();
     const existingRecord = isEditMode
       ? records.find((item) => String(item?.household_id || "") === editHouseholdId)
@@ -322,7 +500,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       head,
       members,
       head_name: headName || "Unnamed household head",
-      zone: String(head.zone || "").trim(),
+      zone: normalizedZone,
       member_count: members.length + 1,
       created_at: existingRecord?.created_at || now,
       updated_at: now
@@ -369,52 +547,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     }) || null;
   };
 
-  const askReplaceExistingHousehold = (duplicateLabel, duplicateId) => {
-    const message = `A household record already exists for ${duplicateLabel}${duplicateId ? ` (${duplicateId})` : ""}. Do you want to replace the existing household?`;
-
-    if (!replaceHouseholdModal || !replaceHouseholdModalEl || !replaceHouseholdConfirm) {
-      return Promise.resolve(window.confirm(message));
+  const findDuplicatePendingSyncRecord = (record) => {
+    const identity = getHouseholdIdentity(record?.head || {});
+    if (!identity) {
+      return null;
     }
-
-    if (replaceHouseholdMessage) {
-      replaceHouseholdMessage.textContent = message;
+    const currentId = String(record?.household_id || "").trim();
+    const currentYear = getHouseholdYearFromId(currentId);
+    if (!currentYear) {
+      return null;
     }
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-
-      const onConfirm = () => {
-        finish(true);
-        replaceHouseholdModal.hide();
-      };
-
-      const onHidden = () => {
-        replaceHouseholdConfirm.removeEventListener("click", onConfirm);
-        finish(false);
-      };
-
-      replaceHouseholdConfirm.addEventListener("click", onConfirm, { once: true });
-      replaceHouseholdModalEl.addEventListener("hidden.bs.modal", onHidden, { once: true });
-      replaceHouseholdModal.show();
-    });
+    const queue = getSyncQueue();
+    return queue.find((item) => {
+      if (!item || typeof item !== "object") return false;
+      const itemId = String(item.household_id || "").trim();
+      if (itemId && currentId && itemId === currentId) return false;
+      const itemYear = getHouseholdYearFromId(itemId);
+      if (!itemYear || itemYear !== currentYear) return false;
+      return getHouseholdIdentity(item.head || {}) === identity;
+    }) || null;
   };
 
   const upsertRegistrationRecord = (record) => {
+    const normalizedRecord = stripClientSyncMeta(record);
     const records = getRegistrationRecords();
-    const targetId = String(record?.household_id || "");
+    const targetId = String(normalizedRecord?.household_id || "");
     const index = records.findIndex((item) => String(item?.household_id || "") === targetId);
     if (index >= 0) {
       records[index] = {
         ...records[index],
-        ...record
+        ...normalizedRecord
       };
     } else {
-      records.unshift(record);
+      records.unshift(normalizedRecord);
     }
     setRegistrationRecords(records);
   };
@@ -430,15 +595,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const upsertSyncRecord = (record) => {
     const queue = getSyncQueue();
-    const targetId = String(record?.household_id || "");
+    const sourceRecord = record && typeof record === "object" ? record : {};
+    const targetId = String(sourceRecord?.household_id || "");
+    const normalizedRecord = {
+      ...sourceRecord,
+      sync_issue: buildSyncIssue(sourceRecord.sync_issue)
+    };
     const index = queue.findIndex((item) => String(item?.household_id || "") === targetId);
     if (index >= 0) {
-      queue[index] = {
-        ...queue[index],
-        ...record
-      };
+      queue[index] = normalizedRecord;
     } else {
-      queue.push(record);
+      queue.push(normalizedRecord);
     }
     setSyncQueue(queue);
     return queue.length;
@@ -449,6 +616,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!targetId) return getSyncQueue().length;
     const nextQueue = getSyncQueue().filter((item) => String(item?.household_id || "") !== targetId);
     setSyncQueue(nextQueue);
+    if (nextQueue.length === 0) {
+      setLastSyncError("");
+    } else {
+      clearResolvedLastSyncError();
+    }
     return nextQueue.length;
   };
 
@@ -531,12 +703,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const pendingCount = getSyncQueue().length;
     const isOffline = !window.navigator.onLine;
     const lastSyncedAt = getLastSyncedAt();
+    const lastSyncError = getLastSyncError();
     const suffix = pendingCount === 1 ? "" : "s";
     const successActive = !isOffline
       && !syncInProgress
       && pendingCount === 0
       && Boolean(syncSuccessMessage)
       && Date.now() < syncSuccessExpiresAt;
+    const pendingClickable = pendingCount > 0 && Boolean(pendingSyncModal);
     const shouldShowSyncCenter = isOffline || pendingCount > 0 || successActive;
 
     let badgeText = "Synced";
@@ -560,9 +734,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? `${pendingCount} household${suffix} queued. Auto-sync starts when internet returns.`
         : "Offline mode. New saves stay local until internet returns.";
     } else if (pendingCount > 0) {
-      badgeText = "Syncing";
-      badgeTone = "syncing";
-      description = `Syncing data (${pendingCount} household${suffix})...`;
+      badgeText = "Pending";
+      badgeTone = "pending";
+      description = lastSyncError
+        ? `Pending sync (${pendingCount} household${suffix}). Last error: ${lastSyncError}`
+        : `Pending sync (${pendingCount} household${suffix}).`;
     } else if (lastSyncedAt) {
       const formatted = formatSyncDate(lastSyncedAt);
       description = formatted ? `Last synced ${formatted}.` : description;
@@ -571,6 +747,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (syncStatusBadge) {
       syncStatusBadge.className = `sync-badge sync-badge-${badgeTone}`;
       syncStatusBadge.textContent = badgeText;
+      syncStatusBadge.classList.toggle("sync-badge-clickable", pendingClickable);
+      if (pendingClickable) {
+        syncStatusBadge.setAttribute("role", "button");
+        syncStatusBadge.setAttribute("tabindex", "0");
+        syncStatusBadge.setAttribute("aria-haspopup", "dialog");
+        syncStatusBadge.setAttribute("aria-controls", "pendingSyncModal");
+        syncStatusBadge.setAttribute("aria-label", `Open pending sync list (${pendingCount})`);
+      } else {
+        syncStatusBadge.removeAttribute("role");
+        syncStatusBadge.removeAttribute("tabindex");
+        syncStatusBadge.removeAttribute("aria-haspopup");
+        syncStatusBadge.removeAttribute("aria-controls");
+        syncStatusBadge.removeAttribute("aria-label");
+      }
+    }
+    if (syncStatusWrap) {
+      syncStatusWrap.classList.toggle("sync-status-clickable", pendingClickable);
+      if (pendingClickable) {
+        syncStatusWrap.setAttribute("role", "button");
+        syncStatusWrap.setAttribute("tabindex", "0");
+        syncStatusWrap.setAttribute("aria-haspopup", "dialog");
+        syncStatusWrap.setAttribute("aria-controls", "pendingSyncModal");
+        syncStatusWrap.setAttribute("aria-label", `Open pending sync list (${pendingCount})`);
+      } else {
+        syncStatusWrap.removeAttribute("role");
+        syncStatusWrap.removeAttribute("tabindex");
+        syncStatusWrap.removeAttribute("aria-haspopup");
+        syncStatusWrap.removeAttribute("aria-controls");
+        syncStatusWrap.removeAttribute("aria-label");
+      }
     }
     if (syncStatusText) {
       syncStatusText.textContent = description;
@@ -584,9 +790,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (offlinePendingLine) {
       offlinePendingLine.classList.toggle("d-none", !isOffline);
     }
+    if (pendingSyncModalEl && pendingSyncModalEl.classList.contains("show")) {
+      renderPendingSyncModal();
+    }
   };
 
   const syncRecordToServer = async (record) => {
+    const cleanRecord = stripClientSyncMeta(record);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 12000);
     try {
@@ -602,7 +812,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         headers,
         body: JSON.stringify({
           action: "upsert",
-          record
+          record: cleanRecord
         }),
         signal: controller.signal
       });
@@ -639,6 +849,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     let queue = getSyncQueue();
     if (!queue.length) {
+      setLastSyncError("");
       updateSyncStatus();
       if (showFeedback) {
         showSyncToast("No pending households to sync.", "info", "Sync Update");
@@ -653,23 +864,71 @@ document.addEventListener("DOMContentLoaded", async () => {
     let syncedCount = 0;
     let syncError = "";
 
-    while (queue.length) {
-      const nextRecord = queue[0];
+    for (let index = 0; index < queue.length;) {
+      const nextRecord = withSyncIssue(queue[index], null);
+      queue[index] = nextRecord;
+      setSyncQueue(queue);
       try {
         await syncRecordToServer(nextRecord);
-        queue.shift();
+        queue.splice(index, 1);
         setSyncQueue(queue);
         syncedCount += 1;
+        continue;
       } catch (error) {
-        syncError = error instanceof Error ? error.message : "Unable to sync right now.";
-        break;
+        const statusCode = Number(error?.status || 0);
+        const errorCode = String(error?.code || error?.payload?.code || "").toLowerCase();
+        const duplicate = error?.payload?.duplicate && typeof error.payload.duplicate === "object"
+          ? error.payload.duplicate
+          : null;
+        const duplicateHouseholdId = String(duplicate?.household_id || "").trim();
+
+        if (statusCode === 409 && errorCode === "duplicate_household" && duplicateHouseholdId) {
+          const duplicateIssue = buildSyncIssueFromError(error, "Household already exists in database.");
+          const duplicateErrorMessage = String(
+            duplicateIssue?.message || "Household already exists in database."
+          ).trim();
+          const pendingId = String(nextRecord?.household_id || "").trim();
+          const duplicateSyncError = pendingId
+            ? `${pendingId}: ${duplicateErrorMessage}`
+            : duplicateErrorMessage;
+          if (!syncError) {
+            syncError = duplicateSyncError;
+          }
+          queue[index] = withSyncIssue(nextRecord, duplicateIssue || {
+            message: duplicateErrorMessage,
+            code: "duplicate_household",
+            status: 409,
+            duplicate
+          });
+          setSyncQueue(queue);
+          index += 1;
+          continue;
+        }
+
+        const errorMessage = error instanceof Error ? error.message : "Unable to sync right now.";
+        const failedId = String(nextRecord?.household_id || "").trim();
+        const genericSyncError = failedId ? `${failedId}: ${errorMessage}` : errorMessage;
+        if (!syncError) {
+          syncError = genericSyncError;
+        }
+        queue[index] = withSyncIssue(
+          nextRecord,
+          buildSyncIssueFromError(error, errorMessage)
+        );
+        setSyncQueue(queue);
+        index += 1;
       }
     }
 
     syncInProgress = false;
 
-    if (syncedCount > 0 && queue.length === 0) {
+    if (syncedCount > 0) {
       setLastSyncedAt(new Date().toISOString());
+    }
+    if (queue.length === 0) {
+      setLastSyncError("");
+    } else if (syncError) {
+      setLastSyncError(syncError);
     }
 
     if (!syncError && syncedCount > 0 && queue.length === 0 && showSuccessState) {
@@ -680,33 +939,324 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (showFeedback) {
-      if (syncError) {
-        showSyncToast(`Sync stopped: ${syncError}`, "danger", "Sync Failed");
+      if (queue.length > 0) {
+        if (syncedCount > 0) {
+          const syncedSuffix = syncedCount === 1 ? "" : "s";
+          const pendingSuffix = queue.length === 1 ? "" : "s";
+          const details = syncError ? ` Last issue: ${syncError}` : "";
+          showSyncToast(
+            `Partial sync complete. ${syncedCount} household${syncedSuffix} uploaded, ${queue.length} household${pendingSuffix} still pending.${details}`,
+            "warning",
+            "Sync Partial"
+          );
+          return;
+        }
+        showSyncToast(`Sync pending: ${syncError || "Unable to sync pending households right now."}`, "danger", "Sync Failed");
         return;
       }
       showSyncToast(`Sync complete. ${syncedCount} household${syncedCount === 1 ? "" : "s"} uploaded.`, "success", "Sync Complete");
+      return;
     }
+
+    if (queue.length > 0 && syncError) {
+      const tone = syncedCount > 0 ? "warning" : "danger";
+      const title = syncedCount > 0 ? "Sync Partial" : "Sync Failed";
+      if (syncedCount > 0) {
+        const suffix = syncedCount === 1 ? "" : "s";
+        showSyncToast(`Synced ${syncedCount} household${suffix}. Remaining pending: ${queue.length}. Last issue: ${syncError}`, tone, title);
+        return;
+      }
+      showSyncToast(`Sync pending: ${syncError}`, tone, title);
+    }
+  };
+
+  const getQueueIssue = (record, index, parsedLastSyncError = parseSyncErrorMessage(getLastSyncError())) => {
+    const recordIssue = getSyncIssueFromRecord(record);
+    if (recordIssue) {
+      return recordIssue;
+    }
+    if (!parsedLastSyncError.message) {
+      return null;
+    }
+    const householdId = String(record?.household_id || "").trim();
+    if (parsedLastSyncError.householdId) {
+      if (parsedLastSyncError.householdId === householdId) {
+        return buildSyncIssue({ message: parsedLastSyncError.message });
+      }
+      return null;
+    }
+    if (index === 0) {
+      return buildSyncIssue({ message: parsedLastSyncError.message });
+    }
+    return null;
+  };
+
+  const renderPendingSyncModal = () => {
+    if (!pendingSyncList) return;
+    const queue = getSyncQueue();
+    const isOffline = !window.navigator.onLine;
+    if (pendingSyncTitleCount) {
+      pendingSyncTitleCount.textContent = `(${queue.length})`;
+    }
+    if (!queue.length) {
+      pendingSyncList.innerHTML = "";
+      pendingSyncEmpty?.classList.remove("d-none");
+      return;
+    }
+    pendingSyncEmpty?.classList.add("d-none");
+
+    const parsedLastSyncError = parseSyncErrorMessage(getLastSyncError());
+    pendingSyncList.innerHTML = queue.map((record, index) => {
+      const householdId = String(record?.household_id || "").trim() || "No Household ID";
+      const issue = getQueueIssue(record, index, parsedLastSyncError);
+      const issueMessage = String(issue?.message || "").trim();
+      const issueCode = String(issue?.code || "").trim().toLowerCase();
+      const duplicateHouseholdId = String(issue?.duplicate?.household_id || "").trim();
+      const duplicateHint = duplicateHouseholdId
+        ? `Existing record: ${duplicateHouseholdId}`
+        : "";
+      const duplicateMessage = isOffline
+        ? (duplicateHouseholdId
+          ? `Duplicate found: ${duplicateHouseholdId}. Go online to enable Replace.`
+          : "Duplicate found. Go online to enable Replace.")
+        : (duplicateHouseholdId
+          ? `Duplicate found: ${duplicateHouseholdId}. Click Replace to overwrite existing record.`
+          : "Duplicate found. Click Replace to overwrite existing record.");
+      const errorText = issueCode === "duplicate_household"
+        ? duplicateMessage
+        : (issueMessage || "Waiting to sync once internet/server is available.");
+      const errorClass = issueMessage ? "" : " is-waiting";
+      const replaceDisabledAttr = duplicateHouseholdId ? "" : 'disabled data-force-disabled="1"';
+      const replaceButtonHtml = isOffline
+        ? ""
+        : `<button type="button" class="btn btn-sm btn-primary" data-pending-action="replace" data-household-id="${escapeHtml(householdId)}" ${replaceDisabledAttr}>
+             Replace
+           </button>`;
+
+      return `
+        <div class="pending-sync-item">
+          <div class="pending-sync-item-head">
+            <div>
+              <div class="pending-sync-item-id">${escapeHtml(householdId)}</div>
+              <div class="pending-sync-item-name">${escapeHtml(getRecordDisplayName(record))}</div>
+              <div class="pending-sync-item-zone">${escapeHtml(String(record?.zone || "").trim())}</div>
+            </div>
+            ${duplicateHint ? `<span class="pending-sync-duplicate-chip">${escapeHtml(duplicateHint)}</span>` : ""}
+          </div>
+          <div class="pending-sync-item-error${errorClass}">
+            ${escapeHtml(errorText)}
+          </div>
+          <div class="pending-sync-item-actions">
+            <button type="button" class="btn btn-sm btn-outline-danger" data-pending-action="delete" data-household-id="${escapeHtml(householdId)}">
+              Delete
+            </button>
+            ${replaceButtonHtml}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    if (pendingActionBusy) {
+      pendingSyncList.querySelectorAll("button[data-pending-action]").forEach((button) => {
+        button.disabled = true;
+      });
+    }
+  };
+
+  const openPendingSyncModal = () => {
+    if (!pendingSyncModal) return;
+    if (getSyncQueue().length === 0) return;
+    renderPendingSyncModal();
+    pendingSyncModal.show();
+  };
+
+  const askPendingActionConfirm = ({
+    title = "Confirm Action",
+    message = "Are you sure you want to continue?",
+    confirmLabel = "Confirm",
+    confirmTone = "primary"
+  } = {}) => {
+    const promptMessage = String(message || "").trim() || "Are you sure you want to continue?";
+    if (!pendingActionModal || !pendingActionModalEl || !pendingActionConfirm) {
+      return Promise.resolve(window.confirm(promptMessage));
+    }
+
+    if (pendingActionModalTitle) {
+      pendingActionModalTitle.textContent = String(title || "Confirm Action");
+    }
+    if (pendingActionModalMessage) {
+      pendingActionModalMessage.textContent = promptMessage;
+    }
+    pendingActionConfirm.textContent = String(confirmLabel || "Confirm");
+
+    const tone = ["primary", "danger", "warning", "success", "secondary"].includes(confirmTone)
+      ? confirmTone
+      : "primary";
+    pendingActionConfirm.classList.remove(
+      "btn-primary",
+      "btn-danger",
+      "btn-warning",
+      "btn-success",
+      "btn-secondary"
+    );
+    pendingActionConfirm.classList.add(`btn-${tone}`);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(Boolean(value));
+      };
+
+      const onConfirm = () => {
+        finish(true);
+        pendingActionModal.hide();
+      };
+
+      const onHidden = () => {
+        pendingActionConfirm.removeEventListener("click", onConfirm);
+        finish(false);
+      };
+
+      pendingActionConfirm.addEventListener("click", onConfirm, { once: true });
+      pendingActionModalEl.addEventListener("hidden.bs.modal", onHidden, { once: true });
+      pendingActionModal.show();
+    });
+  };
+
+  const deletePendingRecord = async (householdId) => {
+    const targetId = String(householdId || "").trim();
+    if (!targetId) return;
+    const exists = getSyncQueue().some((item) => String(item?.household_id || "").trim() === targetId);
+    if (!exists) {
+      renderPendingSyncModal();
+      return;
+    }
+    const shouldDelete = await askPendingActionConfirm({
+      title: "Delete Pending Household?",
+      message: `Delete pending household ${targetId}?`,
+      confirmLabel: "Delete",
+      confirmTone: "danger"
+    });
+    if (!shouldDelete) {
+      return;
+    }
+    removeSyncRecord(targetId);
+    removeRegistrationRecord(targetId);
+    clearResolvedLastSyncError();
+    updateSyncStatus();
+    renderPendingSyncModal();
+    if (getSyncQueue().length === 0) {
+      pendingSyncModal?.hide();
+    }
+    showSyncToast(`Pending household ${targetId} deleted.`, "info", "Pending Updated");
+  };
+
+  const replacePendingRecord = async (householdId) => {
+    const targetId = String(householdId || "").trim();
+    if (!targetId) return;
+    const queue = getSyncQueue();
+    const index = queue.findIndex((item) => String(item?.household_id || "").trim() === targetId);
+    if (index < 0) {
+      renderPendingSyncModal();
+      return;
+    }
+
+    const pendingRecord = queue[index];
+    const parsedLastSyncError = parseSyncErrorMessage(getLastSyncError());
+    const issue = getQueueIssue(pendingRecord, index, parsedLastSyncError);
+    const duplicateHouseholdId = String(issue?.duplicate?.household_id || "").trim();
+    if (!duplicateHouseholdId) {
+      showSyncToast("Replace is only available for duplicate conflicts.", "warning", "Replace Unavailable");
+      return;
+    }
+
+    const shouldReplace = await askPendingActionConfirm({
+      title: "Replace Existing Household?",
+      message: `Replace existing household ${duplicateHouseholdId} using pending record ${targetId}?`,
+      confirmLabel: "Replace",
+      confirmTone: "primary"
+    });
+    if (!shouldReplace) {
+      return;
+    }
+
+    const replacementRecord = withSyncIssue({
+      ...pendingRecord,
+      household_id: duplicateHouseholdId,
+      mode: "replace",
+      created_at: String(issue?.duplicate?.created_at || pendingRecord?.created_at || "")
+    }, null);
+
+    if (targetId !== duplicateHouseholdId) {
+      removeRegistrationRecord(targetId);
+    }
+    upsertRegistrationRecord(replacementRecord);
+
+    const before = queue
+      .slice(0, index)
+      .filter((item) => String(item?.household_id || "").trim() !== duplicateHouseholdId);
+    const after = queue
+      .slice(index + 1)
+      .filter((item) => String(item?.household_id || "").trim() !== duplicateHouseholdId);
+    const nextQueue = [...before, replacementRecord, ...after];
+    setSyncQueue(nextQueue);
+    clearResolvedLastSyncError();
+    updateSyncStatus();
+    renderPendingSyncModal();
+
+    if (window.navigator.onLine) {
+      await flushSyncQueue({ showFeedback: true, showSuccessState: true });
+      renderPendingSyncModal();
+      return;
+    }
+    showSyncToast(
+      `Replacement prepared for ${duplicateHouseholdId}. It will sync once internet returns.`,
+      "info",
+      "Pending Updated"
+    );
   };
 
   const saveRegistration = async () => {
     let record = buildRegistrationRecord();
-    const initialHouseholdId = String(record.household_id || "").trim();
     clearSyncSuccessState();
     if (!ensureMemberRequirementForSave(Array.isArray(record.members) ? record.members.length : 0, { closeSaveModal: true })) {
       return false;
     }
 
-    if (!isEditMode) {
-      const duplicate = findDuplicateHouseholdRecord(record);
-      if (duplicate) {
-        const duplicateLabel = duplicate.head_name || "existing household";
-        const shouldReplace = await askReplaceExistingHousehold(duplicateLabel, duplicate.household_id);
-        if (!shouldReplace) {
+    if (!isEditMode && !window.navigator.onLine) {
+      const duplicatePending = findDuplicatePendingSyncRecord(record);
+      if (duplicatePending) {
+        const duplicateId = String(duplicatePending?.household_id || "").trim();
+        const duplicateLabel = String(duplicatePending?.head_name || "").trim() || "this household";
+        const shouldReplaceOffline = await askPendingActionConfirm({
+          title: "Offline Household Already Exists",
+          message: duplicateId
+            ? `A matching offline household already exists for ${duplicateLabel} (${duplicateId}). Do you want to replace that offline household with this new data?`
+            : `A matching offline household already exists for ${duplicateLabel}. Do you want to replace that offline household with this new data?`,
+          confirmLabel: "Replace",
+          confirmTone: "primary"
+        });
+        if (!shouldReplaceOffline) {
+          showSyncToast("Save cancelled. Existing offline household retained.", "info", "Cancelled");
           return false;
         }
-        record.household_id = String(duplicate.household_id || record.household_id);
-        record.created_at = duplicate.created_at || record.created_at;
-        record.mode = "replace";
+
+        const previousHouseholdId = String(record.household_id || "").trim();
+        const targetHouseholdId = duplicateId || previousHouseholdId;
+        record = {
+          ...record,
+          household_id: targetHouseholdId,
+          mode: "replace",
+          created_at: String(duplicatePending?.created_at || record.created_at || ""),
+          updated_at: new Date().toISOString()
+        };
+
+        if (previousHouseholdId && targetHouseholdId && previousHouseholdId !== targetHouseholdId) {
+          removeRegistrationRecord(previousHouseholdId);
+          removeSyncRecord(previousHouseholdId);
+        }
       }
     }
 
@@ -731,18 +1281,18 @@ document.addEventListener("DOMContentLoaded", async () => {
           const duplicateHouseholdId = String(duplicate?.household_id || "").trim();
 
           if (statusCode === 409 && errorCode === "duplicate_household" && duplicateHouseholdId) {
-            const shouldReplace = await askReplaceExistingHousehold(
-              String(duplicate?.head_name || "existing household"),
-              duplicateHouseholdId
-            );
-
+            const duplicateLabel = String(duplicate?.head_name || "existing household").trim() || "existing household";
+            const shouldReplace = await askPendingActionConfirm({
+              title: "Replace Existing Household?",
+              message: `A household record already exists for ${duplicateLabel} (${duplicateHouseholdId}). Do you want to replace the existing household?`,
+              confirmLabel: "Replace",
+              confirmTone: "primary"
+            });
             if (!shouldReplace) {
               if (!isEditMode) {
-                removeRegistrationRecord(initialHouseholdId);
-                removeSyncRecord(initialHouseholdId);
+                removeRegistrationRecord(record.household_id);
+                removeSyncRecord(record.household_id);
               }
-              syncInProgress = false;
-              updateSyncStatus();
               showSyncToast("Save cancelled. Existing household retained.", "info", "Cancelled");
               return false;
             }
@@ -779,17 +1329,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         removeSyncRecord(record.household_id);
         setLastSyncedAt(new Date().toISOString());
+        setLastSyncError("");
       } catch (error) {
         queuedByError = true;
-        syncErrorMessage = error instanceof Error ? error.message : "Unable to sync right now.";
-        upsertSyncRecord(record);
+        const syncIssue = buildSyncIssueFromError(error, "Unable to sync right now.");
+        syncErrorMessage = String(syncIssue?.message || "Unable to sync right now.").trim();
+        const failedId = String(record?.household_id || "").trim();
+        setLastSyncError(failedId ? `${failedId}: ${syncErrorMessage}` : syncErrorMessage);
+        upsertSyncRecord(
+          withSyncIssue(
+            record,
+            syncIssue
+          )
+        );
       } finally {
         syncInProgress = false;
         updateSyncStatus();
       }
     } else {
       queuedByOffline = true;
-      upsertSyncRecord(record);
+      upsertSyncRecord(withSyncIssue(record, null));
       updateSyncStatus();
     }
 
@@ -805,6 +1364,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const pendingCount = getSyncQueue().length;
+    if (!queuedByOffline && !queuedByError && pendingCount === 0 && !syncSuccessMessage) {
+      showSyncSuccessState("Sync successfully.");
+    }
     if (queuedByOffline) {
       showSyncToast(`Saved locally as ${record.household_id}. Offline mode is active; data will sync when online.`, "warning", "Saved Offline");
       return true;
@@ -875,7 +1437,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       buildSection("B. Contact & Location", [
         { label: "Contact Number", value: valueOf("contact") },
         { label: "Complete Address", value: valueOf("address") },
-        { label: "Zone/Purok", value: valueOf("zone") },
+        { label: "Zone", value: valueOf("zone") },
         { label: "Barangay", value: valueOf("barangay") },
         { label: "City/Municipality", value: valueOf("city") },
         { label: "Province", value: valueOf("province") }
@@ -1027,8 +1589,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       const record = payload?.data?.record;
       if (!record || typeof record !== "object") return;
 
-      const head = record.head && typeof record.head === "object" ? record.head : {};
-      const members = Array.isArray(record.members) ? record.members.filter((row) => row && typeof row === "object") : [];
+      const headRaw = record.head && typeof record.head === "object" ? record.head : {};
+      const householdZone = normalizeZoneLabel(record.zone || headRaw.zone);
+      const head = {
+        ...headRaw,
+        zone: householdZone
+      };
+      const members = Array.isArray(record.members)
+        ? record.members
+          .filter((row) => row && typeof row === "object")
+          .map((row) => ({
+            ...row,
+            zone: normalizeZoneLabel(row.zone || householdZone)
+          }))
+        : [];
 
       await localStorage.setItem(HEAD_KEY, JSON.stringify(head));
       setMembers(members);
@@ -1050,6 +1624,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateAgeField();
   };
 
+  const zoneInput = document.querySelector('input[name="zone"]');
   const headFields = [
     document.querySelector('input[name="first_name"]'),
     document.querySelector('input[name="last_name"]'),
@@ -1057,7 +1632,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("birthday"),
     document.querySelector('select[name="civil_status"]'),
     document.querySelector('input[name="contact"]'),
-    document.querySelector('input[name="address"]')
+    document.querySelector('input[name="address"]'),
+    zoneInput
   ].filter(Boolean);
 
   const isHeadComplete = () => {
@@ -1075,6 +1651,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     field.addEventListener("input", updateAddMemberState);
     field.addEventListener("change", updateAddMemberState);
   });
+
+  if (zoneInput) {
+    const normalizeZoneInputValue = () => {
+      const normalized = normalizeZoneLabel(zoneInput.value);
+      if (zoneInput.value !== normalized) {
+        zoneInput.value = normalized;
+      }
+    };
+    zoneInput.addEventListener("change", () => {
+      normalizeZoneInputValue();
+      saveHeadData();
+    });
+    zoneInput.addEventListener("blur", () => {
+      normalizeZoneInputValue();
+      saveHeadData();
+    });
+  }
 
   if (birthdayInput) {
     birthdayInput.addEventListener("input", updateAgeField);
@@ -1131,7 +1724,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       { label: "Pregnant", value: member.pregnant },
       { label: "Contact", value: member.contact },
       { label: "Address", value: member.address },
-      { label: "Zone/Purok", value: member.zone },
+      { label: "Zone", value: member.zone },
       { label: "Barangay", value: member.barangay },
       { label: "City", value: member.city },
       { label: "Province", value: member.province },
@@ -1383,6 +1976,66 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateSyncStatus();
   });
 
+  if (syncStatusBadge) {
+    syncStatusBadge.addEventListener("click", () => {
+      if (!syncStatusBadge.classList.contains("sync-badge-clickable")) return;
+      openPendingSyncModal();
+    });
+    syncStatusBadge.addEventListener("keydown", (event) => {
+      if (!syncStatusBadge.classList.contains("sync-badge-clickable")) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openPendingSyncModal();
+    });
+  }
+
+  if (syncStatusWrap) {
+    syncStatusWrap.addEventListener("click", (event) => {
+      const actionButton = event.target.closest("button[data-pending-action]");
+      if (actionButton) return;
+      if (!syncStatusWrap.classList.contains("sync-status-clickable")) return;
+      openPendingSyncModal();
+    });
+    syncStatusWrap.addEventListener("keydown", (event) => {
+      if (!syncStatusWrap.classList.contains("sync-status-clickable")) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openPendingSyncModal();
+    });
+  }
+
+  if (pendingSyncModalEl) {
+    pendingSyncModalEl.addEventListener("show.bs.modal", () => {
+      renderPendingSyncModal();
+    });
+  }
+
+  if (pendingSyncList) {
+    pendingSyncList.addEventListener("click", async (event) => {
+      const actionButton = event.target.closest("button[data-pending-action]");
+      if (!actionButton) return;
+      if (actionButton.disabled || pendingActionBusy) return;
+      const action = String(actionButton.dataset.pendingAction || "").trim();
+      const householdId = String(actionButton.dataset.householdId || "").trim();
+      if (!action || !householdId) return;
+
+      pendingActionBusy = true;
+      renderPendingSyncModal();
+      try {
+        if (action === "delete") {
+          await deletePendingRecord(householdId);
+          return;
+        }
+        if (action === "replace") {
+          await replacePendingRecord(householdId);
+        }
+      } finally {
+        pendingActionBusy = false;
+        renderPendingSyncModal();
+      }
+    });
+  }
+
   if (typeof localStorage.ready === "function") {
     await localStorage.ready();
   }
@@ -1499,13 +2152,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       saveConfirm.disabled = true;
       saveConfirm.textContent = isEditMode ? "Updating..." : "Saving...";
       let saved = false;
+      let reopenSaveModal = false;
       try {
         saveModal?.hide();
         saved = await saveRegistration();
+      } catch (error) {
+        reopenSaveModal = true;
+        throw error;
       } finally {
         saveConfirm.disabled = false;
         saveConfirm.textContent = originalText || (isEditMode ? "Update" : "Save");
-        if (!saved) {
+        if (!saved && reopenSaveModal) {
           saveModal?.show();
         }
       }

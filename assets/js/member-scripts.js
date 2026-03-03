@@ -1,5 +1,5 @@
 (async () => {
-  document.getElementById("year").textContent = "2026";
+  document.getElementById("year").textContent = String(new Date().getFullYear());
 
     const params = new URLSearchParams(window.location.search);
     const isHouseholdViewMode = params.get("mode") === "household-view";
@@ -22,7 +22,6 @@
       : window.localStorage;
     const memberForm = document.getElementById("memberForm");
     const sexSelect = document.getElementById("sex");
-    const pregnantWrap = document.getElementById("pregnantWrap");
     const birthdayInput = document.getElementById("birthday");
     const ageInput = document.getElementById("age");
     const pageTitle = document.querySelector(".page-header .title");
@@ -55,18 +54,32 @@
       return age < 0 ? "" : age;
     };
 
-    const updatePregnantVisibility = () => {
-      const isFemale = sexSelect.value === "Female";
-      pregnantWrap.style.display = isFemale ? "block" : "none";
-      if (!isFemale) {
-        const checked = pregnantWrap.querySelector("input:checked");
-        if (checked) checked.checked = false;
+    const normalizeZoneLabel = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      const compact = raw.replace(/\s+/g, " ");
+      const namedMatch = compact.match(/^(?:zone|purok)\s*([a-z0-9-]+)$/i);
+      if (namedMatch) {
+        const suffix = String(namedMatch[1] || "").trim();
+        if (!suffix) return "Zone";
+        if (/^\d+$/.test(suffix)) {
+          return `Zone ${Number.parseInt(suffix, 10)}`;
+        }
+        return `Zone ${suffix.toUpperCase()}`;
       }
+      if (/^\d+$/.test(compact)) {
+        return `Zone ${Number.parseInt(compact, 10)}`;
+      }
+      return compact;
     };
 
     const setValue = (id, value) => {
       const input = document.getElementById(id);
       if (!input || value === undefined || value === null) return;
+      if (id === "zone") {
+        input.value = normalizeZoneLabel(value);
+        return;
+      }
       input.value = value;
     };
 
@@ -157,11 +170,6 @@
       setValue("health_hospitalized_reason", member.health_hospitalized_reason);
 
       sexSelect.value = member.sex || "";
-      updatePregnantVisibility();
-      if (member.pregnant) {
-        const radio = document.querySelector(`input[name="pregnant"][value="${member.pregnant}"]`);
-        if (radio) radio.checked = true;
-      }
       ageInput.value = member.age || calculateAge(member.birthday);
     };
 
@@ -187,12 +195,21 @@
       }
     }
 
-    sexSelect.addEventListener("change", updatePregnantVisibility);
-    updatePregnantVisibility();
-
     birthdayInput.addEventListener("change", () => {
       ageInput.value = calculateAge(birthdayInput.value);
     });
+
+    const zoneInput = document.getElementById("zone");
+    if (zoneInput) {
+      const normalizeZoneInput = () => {
+        const normalized = normalizeZoneLabel(zoneInput.value);
+        if (zoneInput.value !== normalized) {
+          zoneInput.value = normalized;
+        }
+      };
+      zoneInput.addEventListener("change", normalizeZoneInput);
+      zoneInput.addEventListener("blur", normalizeZoneInput);
+    }
 
     const backToRegistration = async () => {
       await localStorage.removeItem(EDIT_KEY);
@@ -254,10 +271,9 @@
         height: document.getElementById("height").value,
         weight: document.getElementById("weight").value,
         blood_type: document.getElementById("blood_type").value.trim(),
-        pregnant: document.querySelector("input[name='pregnant']:checked")?.value || "",
         contact: document.getElementById("contact").value.trim(),
         address: document.getElementById("address").value.trim(),
-        zone: document.getElementById("zone").value.trim(),
+        zone: normalizeZoneLabel(document.getElementById("zone").value),
         barangay: document.getElementById("barangay").value.trim(),
         city: document.getElementById("city").value.trim(),
         province: document.getElementById("province").value.trim(),
@@ -319,7 +335,6 @@
       };
 
       if (memberData.sex !== "Female") {
-        memberData.pregnant = "";
         memberData.health_maternal_pregnant = "";
         memberData.health_months_pregnant = "";
         memberData.health_prenatal_care = "";
