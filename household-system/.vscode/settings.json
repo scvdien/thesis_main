@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "bootstrap/bootstrap-5.3.8-dist/css/*.min.css": "plaintext",
+    "**/bootstrap/bootstrap-5.3.8-dist/css/*.min.css": "plaintext"
+  }
+}
