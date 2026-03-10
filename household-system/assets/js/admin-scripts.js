@@ -310,16 +310,6 @@
         setChartSummary('chart_voters', (values.reduce((a,b)=>a+b,0) === 0) ? 'No data yet' : 'Registered vs Not Registered');
       })();
 
-      // blood
-      (function () {
-        const labels = ['A','B','AB','O'];
-        const b = (data && data.blood) ? data.blood : {};
-        const values = [b.A||0, b.B||0, b.AB||0, b.O||0].map(Number);
-        destroyIfExists('blood');
-        window._demographicCharts.blood = new Chart(document.getElementById('chart_blood').getContext('2d'), doughnutConfig(labels, values));
-        setChartSummary('chart_blood', (values.reduce((a,b)=>a+b,0) === 0) ? 'No data yet' : 'A / B / AB / O');
-      })();
-
       // pwd
       (function () {
         const labels = ['Yes','No'];

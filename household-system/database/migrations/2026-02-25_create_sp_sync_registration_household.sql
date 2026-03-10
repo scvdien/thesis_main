@@ -40,15 +40,6 @@ BEGIN
   DECLARE v_num_rooms INT;
   DECLARE v_member_count INT;
 
-  DECLARE v_health_illness_years INT;
-  DECLARE v_health_months_pregnant INT;
-  DECLARE v_health_child_sick_per_year INT;
-  DECLARE v_health_rhu_visits INT;
-
-  DECLARE v_chronic_json LONGTEXT;
-  DECLARE v_common_json LONGTEXT;
-  DECLARE v_disability_types_json LONGTEXT;
-
   DECLARE v_created_at DATETIME;
   DECLARE v_updated_at DATETIME;
 
@@ -148,58 +139,6 @@ BEGIN
 
   SET v_member_count = GREATEST(COALESCE(p_member_count, v_num_members, 0), 0);
 
-  SET v_text = TRIM(COALESCE(
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_illness_years')), ''),
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_illness_years')), ''),
-    ''
-  ));
-  SET v_health_illness_years = CASE WHEN v_text REGEXP '^[0-9]+$' THEN CAST(v_text AS UNSIGNED) ELSE NULL END;
-
-  SET v_text = TRIM(COALESCE(
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_months_pregnant')), ''),
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_months_pregnant')), ''),
-    ''
-  ));
-  SET v_health_months_pregnant = CASE WHEN v_text REGEXP '^[0-9]+$' THEN CAST(v_text AS UNSIGNED) ELSE NULL END;
-
-  SET v_text = TRIM(COALESCE(
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_child_sick_per_year')), ''),
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_child_sick_per_year')), ''),
-    ''
-  ));
-  SET v_health_child_sick_per_year = CASE WHEN v_text REGEXP '^[0-9]+$' THEN CAST(v_text AS UNSIGNED) ELSE NULL END;
-
-  SET v_text = TRIM(COALESCE(
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_rhu_visits')), ''),
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_rhu_visits')), ''),
-    ''
-  ));
-  SET v_health_rhu_visits = CASE WHEN v_text REGEXP '^[0-9]+$' THEN CAST(v_text AS UNSIGNED) ELSE NULL END;
-
-  SET v_chronic_json = COALESCE(
-    JSON_EXTRACT(v_head_json, '$.health_chronic_diseases'),
-    JSON_EXTRACT(v_record_head_json, '$.health_chronic_diseases'),
-    JSON_EXTRACT(v_head_json, '$.health_chronic_diseases_json'),
-    JSON_EXTRACT(v_record_head_json, '$.health_chronic_diseases_json'),
-    '[]'
-  );
-
-  SET v_common_json = COALESCE(
-    JSON_EXTRACT(v_head_json, '$.health_common_illnesses'),
-    JSON_EXTRACT(v_record_head_json, '$.health_common_illnesses'),
-    JSON_EXTRACT(v_head_json, '$.health_common_illnesses_json'),
-    JSON_EXTRACT(v_record_head_json, '$.health_common_illnesses_json'),
-    '[]'
-  );
-
-  SET v_disability_types_json = COALESCE(
-    JSON_EXTRACT(v_head_json, '$.health_disability_types'),
-    JSON_EXTRACT(v_record_head_json, '$.health_disability_types'),
-    JSON_EXTRACT(v_head_json, '$.health_disability_types_json'),
-    JSON_EXTRACT(v_record_head_json, '$.health_disability_types_json'),
-    '[]'
-  );
-
   SET v_created_at = COALESCE(p_created_at, p_updated_at, NOW());
   SET v_updated_at = COALESCE(p_updated_at, p_created_at, NOW());
 
@@ -215,14 +154,6 @@ BEGIN
     `head_sss`, `head_philhealth`, `head_gsis`, `head_tin`, `head_philid`, `head_driver_license`, `head_passport`,
     `num_members`, `relation_to_head`, `num_children`, `partner_name`,
     `house_type`, `ownership`, `num_rooms`, `toilet`, `electricity`, `water`, `internet`,
-    `health_current_illness`, `health_illness_type`, `health_illness_years`,
-    `health_chronic_diseases_json`, `health_common_illnesses_json`,
-    `health_maintenance_meds`, `health_medicine_name`, `health_medicine_frequency`, `health_medicine_source`,
-    `health_maternal_pregnant`, `health_months_pregnant`, `health_prenatal_care`,
-    `health_child_immunized`, `health_child_malnutrition`, `health_child_sick_per_year`,
-    `health_has_disability`, `health_disability_types_json`, `health_disability_regular_care`,
-    `health_smoker`, `health_alcohol_daily`, `health_malnutrition_present`, `health_clean_water`,
-    `health_rhu_visits`, `health_rhu_reason`, `health_has_philhealth`, `health_hospitalized_5yrs`, `health_hospitalized_reason`,
     `member_count`,
     `raw_head_json`, `raw_members_json`, `raw_record_json`,
     `created_by_user_id`, `updated_by_user_id`, `created_at`, `updated_at`
@@ -269,7 +200,6 @@ BEGIN
       NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.religion')), ''),
       ''
     ), 100),
-
     v_head_height,
     v_head_weight,
     LEFT(COALESCE(
@@ -479,121 +409,6 @@ BEGIN
       ''
     ), 80),
 
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_current_illness')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_current_illness')), ''),
-      ''
-    ), 80),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_illness_type')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_illness_type')), ''),
-      ''
-    ), 160),
-    v_health_illness_years,
-
-    v_chronic_json,
-    v_common_json,
-
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_maintenance_meds')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_maintenance_meds')), ''),
-      ''
-    ), 80),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_medicine_name')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_medicine_name')), ''),
-      ''
-    ), 160),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_medicine_frequency')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_medicine_frequency')), ''),
-      ''
-    ), 120),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_medicine_source')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_medicine_source')), ''),
-      ''
-    ), 120),
-
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_maternal_pregnant')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_maternal_pregnant')), ''),
-      ''
-    ), 40),
-    v_health_months_pregnant,
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_prenatal_care')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_prenatal_care')), ''),
-      ''
-    ), 80),
-
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_child_immunized')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_child_immunized')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_child_malnutrition')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_child_malnutrition')), ''),
-      ''
-    ), 40),
-    v_health_child_sick_per_year,
-
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_has_disability')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_has_disability')), ''),
-      ''
-    ), 40),
-    v_disability_types_json,
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_disability_regular_care')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_disability_regular_care')), ''),
-      ''
-    ), 80),
-
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_smoker')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_smoker')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_alcohol_daily')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_alcohol_daily')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_malnutrition_present')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_malnutrition_present')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_clean_water')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_clean_water')), ''),
-      ''
-    ), 40),
-
-    v_health_rhu_visits,
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_rhu_reason')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_rhu_reason')), ''),
-      ''
-    ), 180),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_has_philhealth')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_has_philhealth')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_hospitalized_5yrs')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_hospitalized_5yrs')), ''),
-      ''
-    ), 40),
-    LEFT(COALESCE(
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.health_hospitalized_reason')), ''),
-      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.health_hospitalized_reason')), ''),
-      ''
-    ), 180),
-
     v_member_count,
 
     COALESCE(NULLIF(p_head_data_json, ''), '{}'),
@@ -663,33 +478,6 @@ BEGIN
     `electricity` = VALUES(`electricity`),
     `water` = VALUES(`water`),
     `internet` = VALUES(`internet`),
-    `health_current_illness` = VALUES(`health_current_illness`),
-    `health_illness_type` = VALUES(`health_illness_type`),
-    `health_illness_years` = VALUES(`health_illness_years`),
-    `health_chronic_diseases_json` = VALUES(`health_chronic_diseases_json`),
-    `health_common_illnesses_json` = VALUES(`health_common_illnesses_json`),
-    `health_maintenance_meds` = VALUES(`health_maintenance_meds`),
-    `health_medicine_name` = VALUES(`health_medicine_name`),
-    `health_medicine_frequency` = VALUES(`health_medicine_frequency`),
-    `health_medicine_source` = VALUES(`health_medicine_source`),
-    `health_maternal_pregnant` = VALUES(`health_maternal_pregnant`),
-    `health_months_pregnant` = VALUES(`health_months_pregnant`),
-    `health_prenatal_care` = VALUES(`health_prenatal_care`),
-    `health_child_immunized` = VALUES(`health_child_immunized`),
-    `health_child_malnutrition` = VALUES(`health_child_malnutrition`),
-    `health_child_sick_per_year` = VALUES(`health_child_sick_per_year`),
-    `health_has_disability` = VALUES(`health_has_disability`),
-    `health_disability_types_json` = VALUES(`health_disability_types_json`),
-    `health_disability_regular_care` = VALUES(`health_disability_regular_care`),
-    `health_smoker` = VALUES(`health_smoker`),
-    `health_alcohol_daily` = VALUES(`health_alcohol_daily`),
-    `health_malnutrition_present` = VALUES(`health_malnutrition_present`),
-    `health_clean_water` = VALUES(`health_clean_water`),
-    `health_rhu_visits` = VALUES(`health_rhu_visits`),
-    `health_rhu_reason` = VALUES(`health_rhu_reason`),
-    `health_has_philhealth` = VALUES(`health_has_philhealth`),
-    `health_hospitalized_5yrs` = VALUES(`health_hospitalized_5yrs`),
-    `health_hospitalized_reason` = VALUES(`health_hospitalized_reason`),
     `member_count` = VALUES(`member_count`),
     `raw_head_json` = VALUES(`raw_head_json`),
     `raw_members_json` = VALUES(`raw_members_json`),

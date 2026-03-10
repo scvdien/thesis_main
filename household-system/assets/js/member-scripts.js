@@ -141,34 +141,6 @@
       setValue("relation_to_head", member.relation_to_head);
       setValue("num_children", member.num_children);
       setValue("partner_name", member.partner_name);
-      setValue("health_current_illness", member.health_current_illness);
-      setValue("health_illness_type", member.health_illness_type);
-      setValue("health_illness_years", member.health_illness_years);
-      setCheckedValues("health_chronic_diseases", member.health_chronic_diseases);
-      setCheckedValues("health_common_illnesses", member.health_common_illnesses);
-      setValue("health_maintenance_meds", member.health_maintenance_meds);
-      setValue("health_medicine_name", member.health_medicine_name);
-      setValue("health_medicine_frequency", member.health_medicine_frequency);
-      setValue("health_medicine_source", member.health_medicine_source);
-      setValue("health_maternal_pregnant", member.health_maternal_pregnant);
-      setValue("health_months_pregnant", member.health_months_pregnant);
-      setValue("health_prenatal_care", member.health_prenatal_care);
-      setValue("health_child_immunized", member.health_child_immunized);
-      setValue("health_child_malnutrition", member.health_child_malnutrition);
-      setValue("health_child_sick_per_year", member.health_child_sick_per_year);
-      setValue("health_has_disability", member.health_has_disability);
-      setCheckedValues("health_disability_types", member.health_disability_types);
-      setValue("health_disability_regular_care", member.health_disability_regular_care);
-      setValue("health_smoker", member.health_smoker);
-      setValue("health_alcohol_daily", member.health_alcohol_daily);
-      setValue("health_malnutrition_present", member.health_malnutrition_present);
-      setValue("health_clean_water", member.health_clean_water);
-      setValue("health_rhu_visits", member.health_rhu_visits);
-      setValue("health_rhu_reason", member.health_rhu_reason);
-      setValue("health_has_philhealth", member.health_has_philhealth);
-      setValue("health_hospitalized_5yrs", member.health_hospitalized_5yrs);
-      setValue("health_hospitalized_reason", member.health_hospitalized_reason);
-
       sexSelect.value = member.sex || "";
       ageInput.value = member.age || calculateAge(member.birthday);
     };
@@ -304,41 +276,8 @@
         num_members: document.getElementById("num_members").value,
         relation_to_head: document.getElementById("relation_to_head").value.trim(),
         num_children: document.getElementById("num_children").value,
-        partner_name: document.getElementById("partner_name").value.trim(),
-        health_current_illness: document.getElementById("health_current_illness").value,
-        health_illness_type: document.getElementById("health_illness_type").value.trim(),
-        health_illness_years: document.getElementById("health_illness_years").value,
-        health_chronic_diseases: getCheckedValues("health_chronic_diseases"),
-        health_common_illnesses: getCheckedValues("health_common_illnesses"),
-        health_maintenance_meds: document.getElementById("health_maintenance_meds").value,
-        health_medicine_name: document.getElementById("health_medicine_name").value.trim(),
-        health_medicine_frequency: document.getElementById("health_medicine_frequency").value,
-        health_medicine_source: document.getElementById("health_medicine_source").value,
-        health_maternal_pregnant: document.getElementById("health_maternal_pregnant").value,
-        health_months_pregnant: document.getElementById("health_months_pregnant").value,
-        health_prenatal_care: document.getElementById("health_prenatal_care").value,
-        health_child_immunized: document.getElementById("health_child_immunized").value,
-        health_child_malnutrition: document.getElementById("health_child_malnutrition").value,
-        health_child_sick_per_year: document.getElementById("health_child_sick_per_year").value,
-        health_has_disability: document.getElementById("health_has_disability").value,
-        health_disability_types: getCheckedValues("health_disability_types"),
-        health_disability_regular_care: document.getElementById("health_disability_regular_care").value,
-        health_smoker: document.getElementById("health_smoker").value,
-        health_alcohol_daily: document.getElementById("health_alcohol_daily").value,
-        health_malnutrition_present: document.getElementById("health_malnutrition_present").value,
-        health_clean_water: document.getElementById("health_clean_water").value,
-        health_rhu_visits: document.getElementById("health_rhu_visits").value,
-        health_rhu_reason: document.getElementById("health_rhu_reason").value.trim(),
-        health_has_philhealth: document.getElementById("health_has_philhealth").value,
-        health_hospitalized_5yrs: document.getElementById("health_hospitalized_5yrs").value,
-        health_hospitalized_reason: document.getElementById("health_hospitalized_reason").value.trim()
+        partner_name: document.getElementById("partner_name").value.trim()
       };
-
-      if (memberData.sex !== "Female") {
-        memberData.health_maternal_pregnant = "";
-        memberData.health_months_pregnant = "";
-        memberData.health_prenatal_care = "";
-      }
 
       const members = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "[]");
       if (isEditing && editIndex !== null && editIndex < members.length) {

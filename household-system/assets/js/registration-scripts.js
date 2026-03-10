@@ -42,6 +42,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const previewBtn = document.getElementById("previewBtn");
   const birthdayInput = document.getElementById("birthday");
   const ageInput = document.getElementById("age");
+  const sexInput = document.getElementById("sex");
+  const pregnantWrap = document.getElementById("pregnantWrap");
+  const pregnantRadios = Array.from(document.querySelectorAll('input[name="pregnant"]'));
   const numMembersInput = document.querySelector('input[name="num_members"]');
   const memberModal = memberModalEl ? new bootstrap.Modal(memberModalEl) : null;
   const addMemberBlockedEl = document.getElementById("addMemberBlockedModal");
@@ -322,7 +325,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (Object.prototype.hasOwnProperty.call(data, "zone")) {
       data.zone = normalizeZoneLabel(data.zone);
     }
+    if (data.sex !== "Female" && Object.prototype.hasOwnProperty.call(data, "pregnant")) {
+      data.pregnant = "";
+    }
     return data;
+  };
+
+  const updatePregnantVisibility = () => {
+    if (!pregnantWrap || !sexInput) return;
+    const show = sexInput.value === "Female";
+    pregnantWrap.style.display = show ? "" : "none";
+    if (!show) {
+      pregnantRadios.forEach((radio) => {
+        radio.checked = false;
+      });
+    }
   };
 
   const saveHeadData = () => {
@@ -361,6 +378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       el.value = value;
     });
+    updatePregnantVisibility();
   };
 
   const consumePreserveDraftFlag = () => {
@@ -1490,36 +1508,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { label: "Electricity?", value: valueOf("electricity") },
         { label: "Water Source", value: valueOf("water") },
         { label: "Internet Access?", value: valueOf("internet") }
-      ]),
-      buildSection("J. Health Information", [
-        { label: "Currently has illness?", value: valueOf("health_current_illness") },
-        { label: "Type of illness", value: valueOf("health_illness_type") },
-        { label: "Years with illness", value: valueOf("health_illness_years") },
-        { label: "Chronic diseases", value: listOf("health_chronic_diseases") },
-        { label: "Common/Recent illness", value: listOf("health_common_illnesses") },
-        { label: "Taking maintenance medicine?", value: valueOf("health_maintenance_meds") },
-        { label: "Medicine name", value: valueOf("health_medicine_name") },
-        { label: "Frequency per day", value: valueOf("health_medicine_frequency") },
-        { label: "Medicine source", value: valueOf("health_medicine_source") },
-        { label: "Maternal: Pregnant", value: valueOf("health_maternal_pregnant") },
-        { label: "Months pregnant", value: valueOf("health_months_pregnant") },
-        { label: "With prenatal care", value: valueOf("health_prenatal_care") },
-        { label: "Child: Fully immunized", value: valueOf("health_child_immunized") },
-        { label: "Child: Malnutrition", value: valueOf("health_child_malnutrition") },
-        { label: "Times sick per year", value: valueOf("health_child_sick_per_year") },
-        { label: "Has disability?", value: valueOf("health_has_disability") },
-        { label: "Disability types", value: listOf("health_disability_types") },
-        { label: "Needs regular medication or therapy", value: valueOf("health_disability_regular_care") },
-        { label: "Smoker in household", value: valueOf("health_smoker") },
-        { label: "Alcohol intake daily", value: valueOf("health_alcohol_daily") },
-        { label: "Malnutrition present", value: valueOf("health_malnutrition_present") },
-        { label: "Clean water source", value: valueOf("health_clean_water") },
-        { label: "RHU visits in past year", value: valueOf("health_rhu_visits") },
-        { label: "Common reason for visit", value: valueOf("health_rhu_reason") },
-        { label: "Has PhilHealth?", value: valueOf("health_has_philhealth") },
-        { label: "Hospitalized in last 5 years?", value: valueOf("health_hospitalized_5yrs") },
-        { label: "Reason for hospitalization", value: valueOf("health_hospitalized_reason") }
-      ], true)
+      ])
     ]
       .filter(Boolean)
       .join("");
@@ -1622,6 +1611,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderMembers();
     updateAddMemberState();
     updateAgeField();
+    updatePregnantVisibility();
   };
 
   const zoneInput = document.querySelector('input[name="zone"]');
@@ -1674,6 +1664,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     birthdayInput.addEventListener("change", updateAgeField);
   }
 
+  if (sexInput) {
+    sexInput.addEventListener("input", updatePregnantVisibility);
+    sexInput.addEventListener("change", updatePregnantVisibility);
+  }
+
   if (censusForm) {
     censusForm.addEventListener("input", saveHeadData);
     censusForm.addEventListener("change", saveHeadData);
@@ -1705,10 +1700,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (Array.isArray(value)) return value.join(", ");
       return value || "";
     };
-
-    const chronicList = listValue(member.health_chronic_diseases);
-    const commonList = listValue(member.health_common_illnesses);
-    const disabilityList = listValue(member.health_disability_types);
 
     const rows = [
       { label: "Name", value: `${member.first_name || ""} ${member.middle_name || ""} ${member.last_name || ""} ${member.extension_name || ""}` },
@@ -1755,34 +1746,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       { label: "Household Members", value: member.num_members },
       { label: "Relationship to Head", value: member.relation_to_head },
       { label: "Number of Children", value: member.num_children },
-      { label: "Marital Partner", value: member.partner_name },
-      { label: "Currently has illness", value: member.health_current_illness },
-      { label: "Type of illness", value: member.health_illness_type },
-      { label: "Years with illness", value: member.health_illness_years },
-      { label: "Chronic diseases", value: chronicList },
-      { label: "Common/Recent illness", value: commonList },
-      { label: "Taking maintenance medicine", value: member.health_maintenance_meds },
-      { label: "Medicine name", value: member.health_medicine_name },
-      { label: "Frequency per day", value: member.health_medicine_frequency },
-      { label: "Medicine source", value: member.health_medicine_source },
-      { label: "Maternal: Pregnant", value: member.health_maternal_pregnant },
-      { label: "Months pregnant", value: member.health_months_pregnant },
-      { label: "With prenatal care", value: member.health_prenatal_care },
-      { label: "Child: Fully immunized", value: member.health_child_immunized },
-      { label: "Child: Malnutrition", value: member.health_child_malnutrition },
-      { label: "Times sick per year", value: member.health_child_sick_per_year },
-      { label: "Has disability", value: member.health_has_disability },
-      { label: "Disability types", value: disabilityList },
-      { label: "Needs regular medication/therapy", value: member.health_disability_regular_care },
-      { label: "Smoker in household", value: member.health_smoker },
-      { label: "Alcohol intake daily", value: member.health_alcohol_daily },
-      { label: "Malnutrition present", value: member.health_malnutrition_present },
-      { label: "Clean water source", value: member.health_clean_water },
-      { label: "RHU visits (past year)", value: member.health_rhu_visits },
-      { label: "Common reason for visit", value: member.health_rhu_reason },
-      { label: "Has PhilHealth", value: member.health_has_philhealth },
-      { label: "Hospitalized in last 5 years", value: member.health_hospitalized_5yrs },
-      { label: "Reason for hospitalization", value: member.health_hospitalized_reason }
+      { label: "Marital Partner", value: member.partner_name }
     ];
 
     const list = rows

@@ -175,13 +175,16 @@
     el.textContent = String(value);
   };
 
+  const normalizeAvailableYears = (availableYears) => (
+    Array.isArray(availableYears)
+      ? availableYears.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item >= 2000 && item <= 2100)
+      : []
+  );
+
   const ensureYearOptions = (availableYears, selectedYear) => {
     if (!yearSelect) return;
 
-    const normalized = Array.isArray(availableYears)
-      ? availableYears.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item >= 2000 && item <= 2100)
-      : [];
-
+    const normalized = normalizeAvailableYears(availableYears);
     const fallback = [currentYear - 1, currentYear];
     const targetYear = Number(selectedYear) || currentYear;
     const years = Array.from(new Set([...normalized, ...fallback, targetYear])).sort((a, b) => a - b);
@@ -196,23 +199,63 @@
     yearSelect.value = String(targetYear);
   };
 
+  const hasMeaningfulDemographicData = (payload) => {
+    const totalPopulation = toNumber(payload?.population_summary?.total_population);
+    const ageTotals = sumValues(Object.values(payload?.age_brackets || {}));
+    const genderTotals = sumValues(Object.values(payload?.gender_distribution || {}));
+    const householdTotals = sumValues(Object.values(payload?.household_size_distribution || {}));
+
+    return totalPopulation > 0 || ageTotals > 0 || genderTotals > 0 || householdTotals > 0;
+  };
+
+  const pickFallbackYear = (availableYears, selectedYear) => {
+    const normalized = normalizeAvailableYears(availableYears).sort((a, b) => a - b);
+    const targetYear = Number(selectedYear) || currentYear;
+    const previousYears = normalized.filter((year) => year < targetYear);
+
+    if (previousYears.length > 0) {
+      return previousYears[previousYears.length - 1];
+    }
+
+    const otherYears = normalized.filter((year) => year !== targetYear);
+    return otherYears.length > 0 ? otherYears[otherYears.length - 1] : null;
+  };
+
   const syncPieCardLayout = (legend) => {
     if (!legend) return;
     const card = legend.closest(".card-box.chart-card--pie");
     if (!card) return;
 
-    // Edge can wrap legend text differently; compute card min-height from actual content.
+    // Let the card grow just enough to keep the pie legend readable.
+    const isMobile = window.matchMedia("(max-width: 768px)").matches;
     const chartWrap = card.querySelector(".chart-square-wrap");
     const titleEl = card.querySelector("h6");
     const chartHeight = chartWrap ? chartWrap.getBoundingClientRect().height : 0;
     const titleHeight = titleEl ? titleEl.getBoundingClientRect().height : 0;
     const legendHeight = legend.scrollHeight || legend.getBoundingClientRect().height || 0;
-    const computedMinHeight = Math.max(290, Math.ceil(titleHeight + chartHeight + legendHeight + 44));
+    const computedMinHeight = Math.max(
+      isMobile ? 300 : 320,
+      Math.ceil(titleHeight + chartHeight + legendHeight + (isMobile ? 52 : 56))
+    );
 
     card.style.height = "auto";
     card.style.minHeight = `${computedMinHeight}px`;
-    card.style.overflow = "visible";
+    card.style.maxHeight = "none";
+    card.style.overflow = "hidden";
   };
+
+  window.addEventListener("resize", () => {
+    const syncAllPieCards = () => {
+      document.querySelectorAll(".chart-legend").forEach((legend) => syncPieCardLayout(legend));
+    };
+
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(syncAllPieCards);
+      return;
+    }
+
+    syncAllPieCards();
+  });
 
   const renderLegend = (chart, legendId) => {
     const legend = document.getElementById(legendId);
@@ -276,9 +319,28 @@
       });
     }
 
-    const pieOptions = {
+    const arcDatasetDefaults = {
+      borderWidth: 0,
+      borderColor: "transparent",
+      hoverBorderWidth: 0,
+      hoverBorderColor: "transparent",
+      hoverOffset: 0,
+      offset: 0,
+      spacing: 0,
+    };
+
+    const arcChartOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: 6,
+      },
+      elements: {
+        arc: {
+          borderWidth: 0,
+          hoverBorderWidth: 0,
+        },
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -289,32 +351,44 @@
       },
     };
 
+    const doughnutOptions = {
+      ...arcChartOptions,
+      radius: "90%",
+      cutout: "58%",
+    };
+
+    const pieOptions = {
+      ...arcChartOptions,
+      radius: "90%",
+      cutout: 0,
+    };
+
     if (genderCanvas) {
       charts.gender = new Chart(genderCanvas, {
         type: "doughnut",
-        data: { labels: ["Male", "Female"], datasets: [{ data: [0, 0], backgroundColor: PALETTE.gender, borderWidth: 0 }] },
-        options: pieOptions,
+        data: { labels: ["Male", "Female"], datasets: [{ ...arcDatasetDefaults, data: [0, 0], backgroundColor: PALETTE.gender }] },
+        options: doughnutOptions,
       });
     }
     if (civilCanvas) {
       charts.civil = new Chart(civilCanvas, {
         type: "pie",
-        data: { labels: CIVIL_LABELS, datasets: [{ data: CIVIL_LABELS.map(() => 0), backgroundColor: PALETTE.civil, borderWidth: 0 }] },
+        data: { labels: CIVIL_LABELS, datasets: [{ ...arcDatasetDefaults, data: CIVIL_LABELS.map(() => 0), backgroundColor: PALETTE.civil }] },
         options: pieOptions,
       });
     }
     if (educationCanvas) {
       charts.education = new Chart(educationCanvas, {
         type: "doughnut",
-        data: { labels: [], datasets: [{ data: [], backgroundColor: PALETTE.education, borderWidth: 0 }] },
-        options: pieOptions,
+        data: { labels: [], datasets: [{ ...arcDatasetDefaults, data: [], backgroundColor: PALETTE.education }] },
+        options: doughnutOptions,
       });
     }
     if (employmentCanvas) {
       charts.employment = new Chart(employmentCanvas, {
         type: "doughnut",
-        data: { labels: [], datasets: [{ data: [], backgroundColor: PALETTE.employment, borderWidth: 0 }] },
-        options: pieOptions,
+        data: { labels: [], datasets: [{ ...arcDatasetDefaults, data: [], backgroundColor: PALETTE.employment }] },
+        options: doughnutOptions,
       });
     }
     if (householdCanvas) {
@@ -322,7 +396,7 @@
         type: "pie",
         data: {
           labels: HOUSEHOLD_SIZE_LABELS,
-          datasets: [{ data: HOUSEHOLD_SIZE_LABELS.map(() => 0), backgroundColor: PALETTE.household, borderWidth: 0 }],
+          datasets: [{ ...arcDatasetDefaults, data: HOUSEHOLD_SIZE_LABELS.map(() => 0), backgroundColor: PALETTE.household }],
         },
         options: pieOptions,
       });
@@ -445,7 +519,7 @@
   };
 
   let requestCounter = 0;
-  const loadDashboardData = async (year, showRefreshModal = false) => {
+  const loadDashboardData = async (year, showRefreshModal = false, allowEmptyYearFallback = false) => {
     const localRequestId = ++requestCounter;
     const selectedYear = Number(year) || currentYear;
 
@@ -455,6 +529,14 @@
 
       const payload = { ...defaultPayload(selectedYear), ...(response.data || {}) };
       const payloadYear = Number(payload.year) || selectedYear;
+      const fallbackYear = allowEmptyYearFallback && !hasMeaningfulDemographicData(payload)
+        ? pickFallbackYear(response?.meta?.available_years, payloadYear)
+        : null;
+
+      if (fallbackYear && fallbackYear !== payloadYear) {
+        await loadDashboardData(fallbackYear, showRefreshModal, false);
+        return;
+      }
 
       ensureYearOptions(response?.meta?.available_years, payloadYear);
       updateCards(payload);
@@ -488,5 +570,5 @@
 
   ensureYearOptions([], currentYear);
   initCharts();
-  loadDashboardData(currentYear, false);
+  loadDashboardData(currentYear, false, true);
 })();

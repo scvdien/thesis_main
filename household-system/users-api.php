@@ -35,6 +35,20 @@ function users_api_text(mixed $value, int $maxLength = 255): string
     return $text;
 }
 
+function users_api_uppercase_name(mixed $value, int $maxLength = 160): string
+{
+    $text = users_api_text($value, $maxLength);
+    if ($text === '') {
+        return '';
+    }
+
+    if (function_exists('mb_strtoupper')) {
+        return users_api_text(mb_strtoupper($text, 'UTF-8'), $maxLength);
+    }
+
+    return users_api_text(strtoupper($text), $maxLength);
+}
+
 function users_api_normalized_username(mixed $value): string
 {
     $username = users_api_text($value, 80);
@@ -497,7 +511,11 @@ function users_api_barangay_profile(PDO $pdo): array
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (is_array($row)) {
             foreach ($profile as $key => $defaultValue) {
-                $profile[$key] = users_api_text($row[$key] ?? '', 255);
+                $value = users_api_text($row[$key] ?? '', 255);
+                if ($key === 'captain_name' || $key === 'secretary_name') {
+                    $value = users_api_uppercase_name($value, 255);
+                }
+                $profile[$key] = $value;
             }
         }
     } catch (Throwable $exception) {
@@ -1601,8 +1619,8 @@ try {
 
         $barangayName = users_api_text($payload['barangay_name'] ?? '', 160);
         $barangayCode = users_api_text($payload['barangay_code'] ?? '', 80);
-        $captainName = users_api_text($payload['captain_name'] ?? '', 160);
-        $secretaryName = users_api_text($payload['secretary_name'] ?? '', 160);
+        $captainName = users_api_uppercase_name($payload['captain_name'] ?? '', 160);
+        $secretaryName = users_api_uppercase_name($payload['secretary_name'] ?? '', 160);
         $sealUpload = users_api_uploaded_official_seal();
         if (!is_array($sealUpload)) {
             $sealUpload = users_api_decode_official_seal_data($payload['official_seal_data'] ?? null);

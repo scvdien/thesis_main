@@ -123,8 +123,55 @@ function reg_normalize_zone_text(mixed $value): string
  * @param array<string, mixed> $person
  * @return array<string, mixed>
  */
+function reg_strip_health_fields(array $person): array
+{
+    $fields = [
+        'health_current_illness',
+        'health_illness_type',
+        'health_illness_years',
+        'health_chronic_diseases',
+        'health_common_illnesses',
+        'health_maintenance_meds',
+        'health_medicine_name',
+        'health_medicine_frequency',
+        'health_medicine_source',
+        'health_maternal_pregnant',
+        'health_months_pregnant',
+        'health_prenatal_care',
+        'health_child_immunized',
+        'health_child_malnutrition',
+        'health_child_sick_per_year',
+        'health_has_disability',
+        'health_disability_types',
+        'health_disability_regular_care',
+        'health_smoker',
+        'health_alcohol_daily',
+        'health_malnutrition_present',
+        'health_clean_water',
+        'health_rhu_visits',
+        'health_rhu_reason',
+        'health_has_philhealth',
+        'health_hospitalized_5yrs',
+        'health_hospitalized_reason',
+        'healthNotes',
+        '_hv_health_notes',
+    ];
+
+    foreach ($fields as $field) {
+        unset($person[$field]);
+    }
+
+    return $person;
+}
+
+/**
+ * @param array<string, mixed> $person
+ * @return array<string, mixed>
+ */
 function reg_normalize_person_text_fields(array $person): array
 {
+    $person = reg_strip_health_fields($person);
+
     $titleCaseFields = [
         'first_name',
         'middle_name',
@@ -154,11 +201,6 @@ function reg_normalize_person_text_fields(array $person): array
         'house_type',
         'toilet',
         'water',
-        'health_illness_type',
-        'health_medicine_name',
-        'health_medicine_source',
-        'health_rhu_reason',
-        'health_hospitalized_reason',
     ];
 
     foreach ($titleCaseFields as $field) {
@@ -166,22 +208,6 @@ function reg_normalize_person_text_fields(array $person): array
             continue;
         }
         $person[$field] = reg_title_case_text($person[$field]);
-    }
-
-    $titleCaseArrayFields = [
-        'health_chronic_diseases',
-        'health_common_illnesses',
-        'health_disability_types',
-    ];
-
-    foreach ($titleCaseArrayFields as $field) {
-        if (!array_key_exists($field, $person) || !is_array($person[$field])) {
-            continue;
-        }
-        $person[$field] = array_values(array_map(
-            static fn (mixed $item): string => reg_title_case_text($item),
-            $person[$field]
-        ));
     }
 
     return $person;
@@ -833,8 +859,11 @@ function reg_get_household(PDO $pdo, string $householdCode): ?array
     $record['zone'] = reg_normalize_zone_text($row['zone'] ?? ($record['zone'] ?? ''));
     $record['member_count'] = (int) ($row['member_count'] ?? ($record['member_count'] ?? 0));
     $record['source'] = (string) ($row['source'] ?? ($record['source'] ?? 'registration-module'));
-    $record['head'] = reg_json_decode_assoc((string) ($row['head_data_json'] ?? ''));
-    $record['members'] = reg_normalize_members(reg_json_decode_assoc((string) ($row['members_data_json'] ?? '')));
+    $record['head'] = reg_strip_health_fields(reg_json_decode_assoc((string) ($row['head_data_json'] ?? '')));
+    $record['members'] = array_map(
+        static fn (array $member): array => reg_strip_health_fields($member),
+        reg_normalize_members(reg_json_decode_assoc((string) ($row['members_data_json'] ?? '')))
+    );
     if (!is_array($record['members']) || count($record['members']) === 0) {
         $membersStmt = $pdo->prepare(
             'SELECT `member_data_json`
@@ -849,7 +878,7 @@ function reg_get_household(PDO $pdo, string $householdCode): ?array
             if (!is_array($memberRow)) {
                 continue;
             }
-            $member = reg_json_decode_assoc((string) ($memberRow['member_data_json'] ?? ''));
+            $member = reg_strip_health_fields(reg_json_decode_assoc((string) ($memberRow['member_data_json'] ?? '')));
             if ($member) {
                 $members[] = $member;
             }
@@ -919,7 +948,7 @@ function reg_list_members(PDO $pdo): array
             'age' => (string) ($row['age'] ?? ''),
             'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
-            'member' => reg_json_decode_assoc((string) ($row['member_data_json'] ?? '')),
+            'member' => reg_strip_health_fields(reg_json_decode_assoc((string) ($row['member_data_json'] ?? ''))),
         ], $rows),
         'count' => count($rows),
         'limit' => $limit,
@@ -952,7 +981,7 @@ function reg_get_member(PDO $pdo, string $residentCode): ?array
         'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
-        'member' => reg_json_decode_assoc((string) ($row['member_data_json'] ?? '')),
+        'member' => reg_strip_health_fields(reg_json_decode_assoc((string) ($row['member_data_json'] ?? ''))),
     ];
 }
 
@@ -965,7 +994,7 @@ function reg_list_residents(PDO $pdo): array
     $q = reg_text($_GET['q'] ?? '', 120);
 
     $sql = 'SELECT `resident_code`, `household_code`, `source_type`, `member_order`, `full_name`,
-                   `relation_to_head`, `sex`, `age`, `zone`, `updated_at`
+                   `relation_to_head`, `sex`, `age`, `zone`, `updated_at`, `resident_data_json`
             FROM `registration_residents`
             WHERE 1=1';
     $params = [];
@@ -988,18 +1017,31 @@ function reg_list_residents(PDO $pdo): array
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     return [
-        'items' => array_map(static fn(array $row): array => [
-            'resident_id' => (string) ($row['resident_code'] ?? ''),
-            'household_id' => (string) ($row['household_code'] ?? ''),
-            'source_type' => (string) ($row['source_type'] ?? ''),
-            'member_order' => (int) ($row['member_order'] ?? 0),
-            'full_name' => (string) ($row['full_name'] ?? ''),
-            'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
-            'sex' => (string) ($row['sex'] ?? ''),
-            'age' => (string) ($row['age'] ?? ''),
-            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
-            'updated_at' => (string) ($row['updated_at'] ?? ''),
-        ], $rows),
+        'items' => array_map(static function (array $row): array {
+            $resident = reg_json_decode_assoc((string) ($row['resident_data_json'] ?? ''));
+            $profile = is_array($resident['member'] ?? null)
+                ? $resident['member']
+                : (is_array($resident['head'] ?? null) ? $resident['head'] : $resident);
+            $profileRaw = is_array($profile) ? $profile : [];
+            $pwd = (string) ($profileRaw['pwd'] ?? ($profileRaw['health_has_disability'] ?? ''));
+            $pregnant = (string) ($profileRaw['pregnant'] ?? ($profileRaw['health_maternal_pregnant'] ?? ''));
+            $profile = reg_strip_health_fields($profileRaw);
+
+            return [
+                'resident_id' => (string) ($row['resident_code'] ?? ''),
+                'household_id' => (string) ($row['household_code'] ?? ''),
+                'source_type' => (string) ($row['source_type'] ?? ''),
+                'member_order' => (int) ($row['member_order'] ?? 0),
+                'full_name' => (string) ($row['full_name'] ?? ''),
+                'relation_to_head' => (string) ($row['relation_to_head'] ?? ''),
+                'sex' => (string) ($row['sex'] ?? ''),
+                'age' => (string) ($row['age'] ?? ''),
+                'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
+                'updated_at' => (string) ($row['updated_at'] ?? ''),
+                'pwd' => $pwd,
+                'pregnant' => $pregnant,
+            ];
+        }, $rows),
         'count' => count($rows),
         'limit' => $limit,
         'offset' => $offset,
@@ -1026,6 +1068,7 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
             ? $resident['member']
             : (is_array($resident['head'] ?? null) ? $resident['head'] : $resident);
         if (is_array($profile)) {
+            $profile = reg_strip_health_fields($profile);
             $profile['zone'] = reg_normalize_zone_text($profile['zone'] ?? ($row['zone'] ?? ''));
             if (is_array($resident['member'] ?? null)) {
                 $resident['member'] = $profile;

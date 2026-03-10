@@ -253,34 +253,6 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </div>
             </div>
 
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="hvHeadingFive">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#hvCollapseFive" aria-expanded="false" aria-controls="hvCollapseFive">
-                  Health Profile
-                </button>
-              </h2>
-              <div id="hvCollapseFive" class="accordion-collapse collapse" aria-labelledby="hvHeadingFive" data-bs-parent="#hvAccordion">
-                <div class="accordion-body">
-                  <div class="kv-grid">
-                    <div class="kv"><span class="k">Current Illness</span><span class="v" id="hvHealthCurrentIllness">-</span></div>
-                    <div class="kv"><span class="k">Illness Type</span><span class="v" id="hvHealthIllnessType">-</span></div>
-                    <div class="kv"><span class="k">Chronic Diseases</span><span class="v" id="hvHealthChronic">-</span></div>
-                    <div class="kv"><span class="k">Common Illness</span><span class="v" id="hvHealthCommon">-</span></div>
-                    <div class="kv"><span class="k">Maintenance Meds</span><span class="v" id="hvHealthMaintenance">-</span></div>
-                    <div class="kv"><span class="k">Medicine</span><span class="v" id="hvHealthMedicine">-</span></div>
-                    <div class="kv"><span class="k">Frequency</span><span class="v" id="hvHealthFrequency">-</span></div>
-                    <div class="kv"><span class="k">Source</span><span class="v" id="hvHealthSource">-</span></div>
-                    <div class="kv"><span class="k">Pregnant (Mother)</span><span class="v" id="hvHealthPregnant">-</span></div>
-                    <div class="kv"><span class="k">Months Pregnant</span><span class="v" id="hvHealthMonthsPregnant">-</span></div>
-                    <div class="kv"><span class="k">Prenatal Care</span><span class="v" id="hvHealthPrenatal">-</span></div>
-                    <div class="kv"><span class="k">Child Immunized</span><span class="v" id="hvHealthChildImmunized">-</span></div>
-                    <div class="kv"><span class="k">Child Malnutrition</span><span class="v" id="hvHealthChildMalnutrition">-</span></div>
-                    <div class="kv"><span class="k">Child Sick/Year</span><span class="v" id="hvHealthChildSick">-</span></div>
-                    <div class="kv"><span class="k">Has Disability</span><span class="v" id="hvHealthDisability">-</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -435,7 +407,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
             <div class="accordion-item">
               <h2 class="accordion-header" id="memberDetailsHealthHead">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsHealth" aria-expanded="false" aria-controls="memberDetailsHealth">
-                  Household and Health Profile
+                  Household Profile
                 </button>
               </h2>
               <div id="memberDetailsHealth" class="accordion-collapse collapse" aria-labelledby="memberDetailsHealthHead" data-bs-parent="#memberDetailsAccordion">
@@ -445,34 +417,6 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
                     <div class="member-detail-item"><span class="k">Relation to Head</span><span class="v" id="mdRelationToHead">-</span></div>
                     <div class="member-detail-item"><span class="k">No. of Children</span><span class="v" id="mdNumChildren">-</span></div>
                     <div class="member-detail-item"><span class="k">Partner Name</span><span class="v" id="mdPartnerName">-</span></div>
-                    <div class="member-detail-item"><span class="k">Current Illness</span><span class="v" id="mdHealthCurrentIllness">-</span></div>
-                    <div class="member-detail-item"><span class="k">Illness Type</span><span class="v" id="mdHealthIllnessType">-</span></div>
-                    <div class="member-detail-item"><span class="k">Illness Duration (Years)</span><span class="v" id="mdHealthIllnessYears">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Chronic Diseases</span><span class="v" id="mdHealthChronicDiseases">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Common Illnesses</span><span class="v" id="mdHealthCommonIllnesses">-</span></div>
-                    <div class="member-detail-item"><span class="k">Maintenance Meds</span><span class="v" id="mdHealthMaintenanceMeds">-</span></div>
-                    <div class="member-detail-item"><span class="k">Medicine Name</span><span class="v" id="mdHealthMedicineName">-</span></div>
-                    <div class="member-detail-item"><span class="k">Medicine Frequency</span><span class="v" id="mdHealthMedicineFrequency">-</span></div>
-                    <div class="member-detail-item"><span class="k">Medicine Source</span><span class="v" id="mdHealthMedicineSource">-</span></div>
-                    <div class="member-detail-item"><span class="k">Maternal Pregnant</span><span class="v" id="mdHealthMaternalPregnant">-</span></div>
-                    <div class="member-detail-item"><span class="k">Months Pregnant</span><span class="v" id="mdHealthMonthsPregnant">-</span></div>
-                    <div class="member-detail-item"><span class="k">Prenatal Care</span><span class="v" id="mdHealthPrenatalCare">-</span></div>
-                    <div class="member-detail-item"><span class="k">Child Immunized</span><span class="v" id="mdHealthChildImmunized">-</span></div>
-                    <div class="member-detail-item"><span class="k">Child Malnutrition</span><span class="v" id="mdHealthChildMalnutrition">-</span></div>
-                    <div class="member-detail-item"><span class="k">Child Sick/Year</span><span class="v" id="mdHealthChildSickPerYear">-</span></div>
-                    <div class="member-detail-item"><span class="k">Has Disability</span><span class="v" id="mdHealthHasDisability">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Disability Types</span><span class="v" id="mdHealthDisabilityTypes">-</span></div>
-                    <div class="member-detail-item"><span class="k">Regular Care</span><span class="v" id="mdHealthDisabilityRegularCare">-</span></div>
-                    <div class="member-detail-item"><span class="k">Smoker</span><span class="v" id="mdHealthSmoker">-</span></div>
-                    <div class="member-detail-item"><span class="k">Alcohol (Daily)</span><span class="v" id="mdHealthAlcoholDaily">-</span></div>
-                    <div class="member-detail-item"><span class="k">Malnutrition Present</span><span class="v" id="mdHealthMalnutritionPresent">-</span></div>
-                    <div class="member-detail-item"><span class="k">Access to Clean Water</span><span class="v" id="mdHealthCleanWater">-</span></div>
-                    <div class="member-detail-item"><span class="k">RHU Visits</span><span class="v" id="mdHealthRhuVisits">-</span></div>
-                    <div class="member-detail-item full"><span class="k">RHU Visit Reason</span><span class="v" id="mdHealthRhuReason">-</span></div>
-                    <div class="member-detail-item"><span class="k">Has PhilHealth</span><span class="v" id="mdHealthHasPhilhealth">-</span></div>
-                    <div class="member-detail-item"><span class="k">Hospitalized (5 yrs)</span><span class="v" id="mdHealthHospitalized5yrs">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Hospitalization Reason</span><span class="v" id="mdHealthHospitalizedReason">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Health Notes</span><span class="v" id="mdHealthNotes">-</span></div>
                   </div>
                 </div>
               </div>

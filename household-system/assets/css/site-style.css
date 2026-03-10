@@ -239,15 +239,22 @@ h1,h2,h3,h4,h5,h6{
 .chart-grid .card-box{
   display:flex;
   flex-direction:column;
-  gap:8px;
-  height:290px;
-  padding:14px;
+  gap:10px;
+  height:320px;
+  min-height:320px;
+  padding:16px;
   overflow:hidden;
 }
 .chart-grid .chart-card--pie{
   height:auto;
-  min-height:290px;
-  overflow:visible;
+  min-height:320px;
+  max-height:none;
+  overflow:hidden;
+  align-items:center;
+}
+.chart-card--pie h6{
+  width:100%;
+  text-align:center;
 }
 .chart-grid .card-box h6{margin:0;font-size:0.95rem;}
 .chart-grid canvas{
@@ -255,10 +262,12 @@ h1,h2,h3,h4,h5,h6{
   height:100% !important;
   flex:1;
   min-height:0;
+  max-height:232px;
 }
 .chart-card--pie .chart-square-wrap{
-  width:min(100%, 180px);
-  height:min(100%, 180px);
+  width:min(100%, 160px);
+  height:160px;
+  flex:0 0 160px;
   margin:0 auto;
 }
 .chart-card--pie .chart-square-wrap canvas{
@@ -270,15 +279,27 @@ h1,h2,h3,h4,h5,h6{
   display:flex;
   flex-wrap:wrap;
   justify-content:center;
-  gap:6px 12px;
+  align-content:flex-start;
+  align-items:center;
+  gap:8px 16px;
   font-size:0.85rem;
   color:var(--muted);
+  text-align:center;
+  width:100%;
+  min-height:36px;
+  max-height:96px;
+  overflow:auto;
+  padding-right:0;
 }
 .chart-legend .legend-item{
-  display:flex;
+  display:inline-flex;
   align-items:center;
-  gap:6px;
+  justify-content:center;
+  gap:7px;
+  flex:0 0 auto;
+  max-width:100%;
   white-space:nowrap;
+  line-height:1.2;
 }
 .chart-legend .legend-swatch{
   width:10px;
@@ -1677,18 +1698,28 @@ footer.footer {
 @media(max-width:768px){
   .stat-grid, .age-grid, .chart-grid{grid-template-columns:1fr;}
   .topbar{flex-direction: column; align-items: flex-start; gap:10px;}
-  .chart-grid .card-box{height:280px;}
+  .chart-grid .card-box{
+    height:300px;
+    min-height:300px;
+  }
   .chart-grid .chart-card--pie{
     height:auto;
-    min-height:280px;
+    min-height:300px;
+    max-height:none;
   }
   .chart-card--pie .chart-square-wrap{
     width:min(100%, 150px);
-    height:min(100%, 150px);
+    height:150px;
+    flex-basis:150px;
   }
   .chart-legend{
     font-size:0.8rem;
-    gap:4px 10px;
+    gap:6px 12px;
+    max-height:none;
+  }
+  .chart-legend .legend-item{
+    white-space:normal;
+    text-align:center;
   }
   .module{padding:14px;}
   .module-actions{width:100%;}

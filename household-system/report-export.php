@@ -37,9 +37,180 @@ function text($value, int $max = 2000): string
     return $v;
 }
 
+function signatoryText($value, int $max = 160): string
+{
+    $textValue = text($value, $max);
+    if ($textValue === '') {
+        return '';
+    }
+
+    if (function_exists('mb_strtoupper')) {
+        return text(mb_strtoupper($textValue, 'UTF-8'), $max);
+    }
+
+    return text(strtoupper($textValue), $max);
+}
+
 function esc($value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * @param mixed $headerLines
+ * @return list<string>
+ */
+function normalizeReportHeaderLines($headerLines): array
+{
+    if (!is_array($headerLines)) {
+        return [];
+    }
+
+    $normalized = [];
+    foreach ($headerLines as $line) {
+        $textLine = text($line, 200);
+        if ($textLine === '') {
+            continue;
+        }
+        $normalized[] = $textLine;
+    }
+
+    return $normalized;
+}
+
+/**
+ * @param mixed $table
+ * @return array{
+ *     title:string,
+ *     columns:list<string>,
+ *     show_header:bool,
+ *     rows:list<list<string>>
+ * }
+ */
+function normalizeReportTable($table): array
+{
+    $defaultColumns = ['Indicator', 'Count'];
+    if (!is_array($table)) {
+        return [
+            'title' => '',
+            'columns' => $defaultColumns,
+            'show_header' => true,
+            'rows' => [],
+        ];
+    }
+
+    $columns = [];
+    $rawColumns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : [];
+    foreach ($rawColumns as $column) {
+        $columnText = text($column, 120);
+        if ($columnText === '') {
+            continue;
+        }
+        $columns[] = $columnText;
+    }
+    if (!$columns) {
+        $columns = $defaultColumns;
+    }
+
+    $rows = [];
+    $rawRows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+    foreach ($rawRows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $cells = [];
+        foreach ($row as $cell) {
+            $cells[] = text($cell, 280);
+        }
+        $rows[] = $cells;
+    }
+
+    return [
+        'title' => text($table['title'] ?? '', 200),
+        'columns' => $columns,
+        'show_header' => !array_key_exists('show_header', $table) || $table['show_header'] !== false,
+        'rows' => $rows,
+    ];
+}
+
+/**
+ * @param mixed $sections
+ * @return list<array{
+ *     title:string,
+ *     tables:list<array{
+ *         title:string,
+ *         columns:list<string>,
+ *         show_header:bool,
+ *         rows:list<list<string>>
+ *     }>
+ * }>
+ */
+function normalizeReportSections($sections): array
+{
+    if (!is_array($sections)) {
+        return [];
+    }
+
+    $normalized = [];
+    foreach ($sections as $section) {
+        if (!is_array($section)) {
+            continue;
+        }
+
+        $tables = [];
+        $rawTables = is_array($section['tables'] ?? null) ? $section['tables'] : [];
+        foreach ($rawTables as $table) {
+            $tables[] = normalizeReportTable($table);
+        }
+
+        $normalized[] = [
+            'title' => text($section['title'] ?? '', 200),
+            'tables' => $tables,
+        ];
+    }
+
+    return $normalized;
+}
+
+/**
+ * @param mixed $metaBlock
+ * @return list<array{label:string,value:string}>
+ */
+function normalizeReportMetaBlock($metaBlock): array
+{
+    if (!is_array($metaBlock)) {
+        return [];
+    }
+
+    $normalized = [];
+    foreach ($metaBlock as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+
+        $label = text($entry['label'] ?? '', 120);
+        $value = text($entry['value'] ?? '', 260);
+        if ($label === '' && $value === '') {
+            continue;
+        }
+
+        $normalized[] = [
+            'label' => $label,
+            'value' => $value,
+        ];
+    }
+
+    return $normalized;
+}
+
+/**
+ * @param mixed $value
+ * @return array<string, mixed>
+ */
+function normalizeAssocArray($value): array
+{
+    return is_array($value) ? $value : [];
 }
 
 function toPdfText($value): string
@@ -71,6 +242,14 @@ function parseSelectedYear($value): int
         }
     }
     return $current;
+}
+
+/**
+ * @param array<string, mixed> $report
+ */
+function reportYearValue(array $report): int
+{
+    return parseSelectedYear($report['year'] ?? null);
 }
 
 function envValue(array $keys, string $default = ''): string
@@ -581,13 +760,19 @@ function drawFpdfWatermark(FPDF $pdf, string $watermarkImagePath): void
 
     $watermarkX = ($pdf->GetPageWidth() - $drawWidth) / 2.0;
     $watermarkY = ($pdf->GetPageHeight() - $drawHeight) / 2.0;
-    if (method_exists($pdf, 'SetAlpha')) {
-        $pdf->SetAlpha(0.10);
-    }
+    applyFpdfAlpha($pdf, 0.10);
     $pdf->Image($watermarkImagePath, $watermarkX, $watermarkY, $drawWidth, $drawHeight);
-    if (method_exists($pdf, 'SetAlpha')) {
-        $pdf->SetAlpha(1.0);
+    applyFpdfAlpha($pdf, 1.0);
+}
+
+function applyFpdfAlpha(FPDF $pdf, float $alpha, string $blendMode = 'Normal'): void
+{
+    $callable = [$pdf, 'SetAlpha'];
+    if (!is_callable($callable)) {
+        return;
     }
+
+    $callable($alpha, $blendMode);
 }
 
 /**
@@ -646,18 +831,21 @@ function drawFpdfSignatureFooter(
 
 /**
  * @param array<string, string> $profile
- * @return array<string, array<string, string>>
+ * @return array{
+ *     prepared: array{label:string,name:string,title:string},
+ *     approved: array{label:string,name:string,title:string}
+ * }
  */
 function annualSignatories(array $profile): array
 {
-    $preparedName = text($profile['secretary_name'] ?? '', 160);
-    $approvedName = text($profile['captain_name'] ?? '', 160);
+    $preparedName = signatoryText($profile['secretary_name'] ?? '', 160);
+    $approvedName = signatoryText($profile['captain_name'] ?? '', 160);
 
     if ($preparedName === '') {
-        $preparedName = envValue(['BARANGAY_SECRETARY_NAME'], '');
+        $preparedName = signatoryText(envValue(['BARANGAY_SECRETARY_NAME'], ''), 160);
     }
     if ($approvedName === '') {
-        $approvedName = envValue(['BARANGAY_CAPTAIN_NAME'], '');
+        $approvedName = signatoryText(envValue(['BARANGAY_CAPTAIN_NAME'], ''), 160);
     }
     if ($preparedName === '') {
         $preparedName = 'Not specified';
@@ -679,15 +867,15 @@ function annualSignatories(array $profile): array
  */
 function reportFooterData(array $profile, array $report): array
 {
-    $captain = text($profile['captain_name'] ?? '', 160);
-    $secretary = text($profile['secretary_name'] ?? '', 160);
+    $captain = signatoryText($profile['captain_name'] ?? '', 160);
+    $secretary = signatoryText($profile['secretary_name'] ?? '', 160);
     if ($captain === '' || $secretary === '') {
         $signatories = annualSignatories($profile);
         if ($captain === '') {
-            $captain = text(($signatories['approved']['name'] ?? ''), 160);
+            $captain = signatoryText(($signatories['approved']['name'] ?? ''), 160);
         }
         if ($secretary === '') {
-            $secretary = text(($signatories['prepared']['name'] ?? ''), 160);
+            $secretary = signatoryText(($signatories['prepared']['name'] ?? ''), 160);
         }
     }
     if ($captain === '') {
@@ -698,7 +886,7 @@ function reportFooterData(array $profile, array $report): array
     }
 
     $dateGenerated = '';
-    $metaBlock = is_array($report['meta_block'] ?? null) ? $report['meta_block'] : [];
+    $metaBlock = normalizeReportMetaBlock($report['meta_block'] ?? null);
     foreach ($metaBlock as $entry) {
         $label = strtolower(text($entry['label'] ?? '', 80));
         if ($label !== 'date generated') {
@@ -800,6 +988,10 @@ function payloadFloat(array $source, array $keys, float $default = 0.0): float
     return $default;
 }
 
+/**
+ * @param mixed $map
+ * @return array<string, int>
+ */
 function mapCountsFromPayload($map): array
 {
     $result = [];
@@ -817,6 +1009,10 @@ function mapCountsFromPayload($map): array
     return $result;
 }
 
+/**
+ * @param array<string, int|float|string|null> $source
+ * @param list<string> $keys
+ */
 function mapCountValue(array $source, array $keys): int
 {
     if (!$source) {
@@ -835,21 +1031,64 @@ function mapCountValue(array $source, array $keys): int
     return 0;
 }
 
+/**
+ * @param array<string, string> $profile
+ * @param array{
+ *     employment?: mixed,
+ *     education?: mixed,
+ *     marital?: mixed,
+ *     toilet?: mixed,
+ *     water?: mixed,
+ *     electricity?: mixed,
+ *     ownership?: mixed,
+ *     age_brackets?: mixed,
+ *     ages?: mixed,
+ *     other_indicators?: mixed,
+ *     population?: mixed,
+ *     male?: mixed,
+ *     female?: mixed,
+ *     households?: mixed,
+ *     avg_household?: mixed
+ * } $metrics
+ * @return array{
+ *     year:int,
+ *     title:string,
+ *     header_lines:list<string>,
+ *     sections:list<array{
+ *         title:string,
+ *         tables:list<array{
+ *             title:string,
+ *             columns:list<string>,
+ *             show_header:bool,
+ *             rows:list<list<string>>
+ *         }>
+ *     }>,
+ *     meta_block:list<array{label:string,value:string}>
+ * }
+ */
 function buildOfficeReportData(int $year, array $profile, array $metrics): array
 {
-    $employment = is_array($metrics['employment'] ?? null) ? $metrics['employment'] : [];
-    $education = is_array($metrics['education'] ?? null) ? $metrics['education'] : [];
-    $marital = is_array($metrics['marital'] ?? null) ? $metrics['marital'] : [];
-    $toilet = is_array($metrics['toilet'] ?? null) ? $metrics['toilet'] : [];
-    $water = is_array($metrics['water'] ?? null) ? $metrics['water'] : [];
-    $electricity = is_array($metrics['electricity'] ?? null) ? $metrics['electricity'] : [];
-    $ownership = is_array($metrics['ownership'] ?? null) ? $metrics['ownership'] : [];
-    $deathsByCause = is_array($metrics['deaths_by_cause'] ?? null) ? $metrics['deaths_by_cause'] : [];
-    $ageBrackets = is_array($metrics['age_brackets'] ?? null) ? $metrics['age_brackets'] : [];
+    /** @var array<string, int> $employment */
+    $employment = mapCountsFromPayload($metrics['employment'] ?? null);
+    /** @var array<string, int> $education */
+    $education = mapCountsFromPayload($metrics['education'] ?? null);
+    /** @var array<string, int> $marital */
+    $marital = mapCountsFromPayload($metrics['marital'] ?? null);
+    /** @var array<string, int> $toilet */
+    $toilet = mapCountsFromPayload($metrics['toilet'] ?? null);
+    /** @var array<string, int> $water */
+    $water = mapCountsFromPayload($metrics['water'] ?? null);
+    /** @var array<string, int> $electricity */
+    $electricity = mapCountsFromPayload($metrics['electricity'] ?? null);
+    /** @var array<string, int> $ownership */
+    $ownership = mapCountsFromPayload($metrics['ownership'] ?? null);
+    /** @var array<string, int> $ageBrackets */
+    $ageBrackets = mapCountsFromPayload($metrics['age_brackets'] ?? null);
     if (!$ageBrackets) {
-        $ageBrackets = is_array($metrics['ages'] ?? null) ? $metrics['ages'] : [];
+        $ageBrackets = mapCountsFromPayload($metrics['ages'] ?? null);
     }
-    $otherIndicators = is_array($metrics['other_indicators'] ?? null) ? $metrics['other_indicators'] : [];
+    /** @var array<string, int> $otherIndicators */
+    $otherIndicators = mapCountsFromPayload($metrics['other_indicators'] ?? null);
 
     $province = text($profile['province_name'] ?? '', 120);
     if ($province === '') {
@@ -870,10 +1109,12 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
     $households = max(0, toInt($metrics['households'] ?? 0));
     $avgHousehold = max(0.0, toFloat($metrics['avg_household'] ?? 0.0));
 
+    /** @var Closure(): list<string> $noDataRow */
     $noDataRow = static function (): array {
         return [REPORT_NO_DATA_MESSAGE, '-'];
     };
 
+    /** @var Closure(array<string, int>): (array{label:string,count:int}|null) $topEntry */
     $topEntry = static function (array $counts): ?array {
         $clean = [];
         foreach ($counts as $label => $value) {
@@ -895,6 +1136,7 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         return null;
     };
 
+    /** @var Closure(array<string, int>, int): list<list<string>> $fixedRows */
     $fixedRows = static function (array $counts, int $denominator) use ($noDataRow): array {
         $rows = [];
         $hasData = false;
@@ -911,6 +1153,7 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         return $hasData ? $rows : [$noDataRow()];
     };
 
+    /** @var Closure(array<string, int>, int): list<list<string>> $dynamicRows */
     $dynamicRows = static function (array $counts, int $denominator) use ($noDataRow): array {
         $clean = [];
         foreach ($counts as $label => $value) {
@@ -938,6 +1181,7 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         return $hasData ? $rows : [$noDataRow()];
     };
 
+    /** @var Closure(array<string, int>, int): int $distributionTotal */
     $distributionTotal = static function (array $counts, int $fallback): int {
         if ($fallback > 0) {
             return $fallback;
@@ -949,6 +1193,7 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         return max(0, $sum);
     };
 
+    /** @var array<string, int> $ageCounts */
     $ageCounts = [
         '0-5' => mapCountValue($ageBrackets, ['0-5']),
         '6-10' => mapCountValue($ageBrackets, ['6-10']),
@@ -962,12 +1207,14 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         '71+' => mapCountValue($ageBrackets, ['71+']),
     ];
 
+    /** @var array<string, int> $employmentCounts */
     $employmentCounts = [
         'Employed' => mapCountValue($employment, ['Employed', 'employed']),
         'Unemployed' => mapCountValue($employment, ['Unemployed', 'unemployed']),
         'Self-Employed' => mapCountValue($employment, ['Self-Employed', 'self employed', 'self-employed']),
     ];
 
+    /** @var array<string, int> $educationCounts */
     $educationCounts = [
         'No Schooling' => mapCountValue($education, ['No Schooling', 'no schooling']),
         'Elementary' => mapCountValue($education, ['Elementary', 'elementary']),
@@ -976,6 +1223,7 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         'Vocational' => mapCountValue($education, ['Vocational', 'vocational']),
     ];
 
+    /** @var array<string, int> $civilStatusCounts */
     $civilStatusCounts = [
         'Single' => mapCountValue($marital, ['Single', 'single']),
         'Married' => mapCountValue($marital, ['Married', 'married']),
@@ -984,16 +1232,11 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         'Other' => mapCountValue($marital, ['Other', 'other']),
     ];
 
+    /** @var array<string, int> $socialIndicatorCounts */
     $socialIndicatorCounts = [
         'Persons with Disability (PWD)' => mapCountValue($otherIndicators, ['PWD', 'pwd']),
         'Senior Citizens' => mapCountValue($otherIndicators, ['Senior Citizens', 'senior citizens', 'senior_citizens']),
         'Solo Parents' => mapCountValue($otherIndicators, ['Solo Parents', 'solo parents', 'solo_parents']),
-    ];
-
-    $healthCounts = [
-        'Pregnant Women' => max(0, toInt($metrics['pregnant_women'] ?? 0)),
-        'Malnourished Children' => max(0, toInt($metrics['malnourished_children'] ?? 0)),
-        'Persons with Illness' => max(0, toInt($metrics['persons_with_illness'] ?? 0)),
     ];
 
     $ageLeader = $topEntry($ageCounts);
@@ -1032,179 +1275,213 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
     }
 
     $signatories = annualSignatories($profile);
-    $prepared = is_array($signatories['prepared'] ?? null) ? $signatories['prepared'] : [];
-    $reviewed = is_array($signatories['approved'] ?? null) ? $signatories['approved'] : [];
+    $prepared = $signatories['prepared'];
+    $reviewed = $signatories['approved'];
     $preparedBy = text(($prepared['name'] ?? 'Not specified') . ' - ' . ($prepared['title'] ?? 'Barangay Secretary'), 220);
     $reviewedBy = text(($reviewed['name'] ?? 'Not specified') . ' - ' . ($reviewed['title'] ?? 'Punong Barangay'), 220);
 
     $standardColumns = ['Indicator', 'Count'];
+    /** @var list<string> $headerLines */
+    $headerLines = [
+        'Republic of the Philippines',
+        'Province of ' . $province,
+        'Municipality of ' . $city,
+        'BARANGAY ' . strtoupper($barangay),
+    ];
+
+    /** @var list<list<string>> $populationProfileRows */
+    $populationProfileRows = [
+        ['Total Population', nfmt($population)],
+        ['Male Population', nfmt($male)],
+        ['Female Population', nfmt($female)],
+        ['Total Households', nfmt($households)],
+        ['Average Household Size', nfmt($avgHousehold, 2)],
+    ];
+
+    /** @var list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}> $executiveTables */
+    $executiveTables = [
+        [
+            'title' => 'Key Metrics',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $executiveRows,
+        ],
+        [
+            'title' => 'Highlights',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $highlightRows,
+        ],
+    ];
+
+    /** @var list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}> $sectionsPopulationTables */
+    $sectionsPopulationTables = [
+        [
+            'title' => '',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $populationProfileRows,
+        ],
+    ];
+
+    /** @var list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}> $ageTables */
+    $ageTables = [[
+        'title' => '',
+        'columns' => $standardColumns,
+        'show_header' => true,
+        'rows' => $fixedRows($ageCounts, $population),
+    ]];
+
+    /** @var list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}> $socioeconomicTables */
+    $socioeconomicTables = [
+        [
+            'title' => 'Employment Status',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $fixedRows($employmentCounts, $population),
+        ],
+        [
+            'title' => 'Educational Attainment',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $fixedRows($educationCounts, $population),
+        ],
+        [
+            'title' => 'Civil Status',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $fixedRows($civilStatusCounts, $population),
+        ],
+        [
+            'title' => 'Social Indicators',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $fixedRows($socialIndicatorCounts, $population),
+        ],
+    ];
+
+    /** @var list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}> $housingTables */
+    $housingTables = [
+        [
+            'title' => 'Toilet Type',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $dynamicRows($toilet, $distributionTotal($toilet, $households)),
+        ],
+        [
+            'title' => 'Water Source',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $dynamicRows($water, $distributionTotal($water, $households)),
+        ],
+        [
+            'title' => 'Electricity Source',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $dynamicRows($electricity, $distributionTotal($electricity, $households)),
+        ],
+        [
+            'title' => 'Housing Ownership',
+            'columns' => $standardColumns,
+            'show_header' => true,
+            'rows' => $dynamicRows($ownership, $distributionTotal($ownership, $households)),
+        ],
+    ];
+
+    /** @var list<array{title:string,tables:list<array{title:string,columns:list<string>,show_header:bool,rows:list<list<string>>}>}> $sections */
+    $sections = [
+        [
+            'title' => 'A. Executive Summary',
+            'tables' => $executiveTables,
+        ],
+        [
+            'title' => 'B. Population and Household Profile',
+            'tables' => $sectionsPopulationTables,
+        ],
+        [
+            'title' => 'C. Age Group Distribution',
+            'tables' => $ageTables,
+        ],
+        [
+            'title' => 'D. Socioeconomic Profile',
+            'tables' => $socioeconomicTables,
+        ],
+        [
+            'title' => 'E. Housing and Utilities',
+            'tables' => $housingTables,
+        ],
+    ];
+
+    /** @var list<array{label:string,value:string}> $metaBlock */
+    $metaBlock = [
+        ['label' => 'Prepared by', 'value' => $preparedBy],
+        ['label' => 'Reviewed by', 'value' => $reviewedBy],
+        ['label' => 'Date Generated', 'value' => date('F j, Y g:i A')],
+        ['label' => 'Data Source', 'value' => REPORT_DATA_SOURCE],
+    ];
 
     return [
         'year' => $year,
         'title' => 'OFFICE OF THE PUNONG BARANGAY',
-        'header_lines' => [
-            'Republic of the Philippines',
-            'Province of ' . $province,
-            'Municipality of ' . $city,
-            'BARANGAY ' . strtoupper($barangay),
-        ],
-        'sections' => [
-            [
-                'title' => 'A. Executive Summary',
-                'tables' => [
-                    [
-                        'title' => 'Key Metrics',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $executiveRows,
-                    ],
-                    [
-                        'title' => 'Highlights',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $highlightRows,
-                    ],
-                ],
-            ],
-            [
-                'title' => 'B. Population and Household Profile',
-                'tables' => [
-                    [
-                        'title' => null,
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => [
-                            ['Total Population', nfmt($population)],
-                            ['Male Population', nfmt($male)],
-                            ['Female Population', nfmt($female)],
-                            ['Total Households', nfmt($households)],
-                            ['Average Household Size', nfmt($avgHousehold, 2)],
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'title' => 'C. Age Group Distribution',
-                'tables' => [[
-                    'title' => null,
-                    'columns' => $standardColumns,
-                    'show_header' => true,
-                    'rows' => $fixedRows($ageCounts, $population),
-                ]],
-            ],
-            [
-                'title' => 'D. Socioeconomic Profile',
-                'tables' => [
-                    [
-                        'title' => 'Employment Status',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $fixedRows($employmentCounts, $population),
-                    ],
-                    [
-                        'title' => 'Educational Attainment',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $fixedRows($educationCounts, $population),
-                    ],
-                    [
-                        'title' => 'Civil Status',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $fixedRows($civilStatusCounts, $population),
-                    ],
-                    [
-                        'title' => 'Social Indicators',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $fixedRows($socialIndicatorCounts, $population),
-                    ],
-                ],
-            ],
-            [
-                'title' => 'E. Housing and Utilities',
-                'tables' => [
-                    [
-                        'title' => 'Toilet Type',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $dynamicRows($toilet, $distributionTotal($toilet, $households)),
-                    ],
-                    [
-                        'title' => 'Water Source',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $dynamicRows($water, $distributionTotal($water, $households)),
-                    ],
-                    [
-                        'title' => 'Electricity Source',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $dynamicRows($electricity, $distributionTotal($electricity, $households)),
-                    ],
-                    [
-                        'title' => 'Housing Ownership',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $dynamicRows($ownership, $distributionTotal($ownership, $households)),
-                    ],
-                ],
-            ],
-            [
-                'title' => 'F. Health Risk Indicators',
-                'tables' => [
-                    [
-                        'title' => 'Health Indicators',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $fixedRows($healthCounts, $population),
-                    ],
-                    [
-                        'title' => 'Deaths by Cause',
-                        'columns' => $standardColumns,
-                        'show_header' => true,
-                        'rows' => $dynamicRows($deathsByCause, $distributionTotal($deathsByCause, 0)),
-                    ],
-                ],
-            ],
-        ],
-        'meta_block' => [
-            ['label' => 'Prepared by', 'value' => $preparedBy],
-            ['label' => 'Reviewed by', 'value' => $reviewedBy],
-            ['label' => 'Date Generated', 'value' => date('F j, Y g:i A')],
-            ['label' => 'Data Source', 'value' => REPORT_DATA_SOURCE],
-        ],
+        'header_lines' => $headerLines,
+        'sections' => $sections,
+        'meta_block' => $metaBlock,
     ];
 }
 
 /**
+ * @param array<string, mixed> $analytics
  * @param array<string, string> $profile
+ * @return array{
+ *     year:int,
+ *     title:string,
+ *     header_lines:list<string>,
+ *     sections:list<array{
+ *         title:string,
+ *         tables:list<array{
+ *             title:string,
+ *             columns:list<string>,
+ *             show_header:bool,
+ *             rows:list<list<string>>
+ *         }>
+ *     }>,
+ *     meta_block:list<array{label:string,value:string}>
+ * }|null
  */
 function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $profile): ?array
 {
-    $populationSummary = is_array($analytics['population_summary'] ?? null) ? $analytics['population_summary'] : [];
-    $ageBrackets = is_array($analytics['age_brackets'] ?? null) ? $analytics['age_brackets'] : [];
-    $ageDistribution = is_array($analytics['age_group_distribution'] ?? null) ? $analytics['age_group_distribution'] : [];
-    $socioEconomic = is_array($analytics['socio_economic'] ?? null) ? $analytics['socio_economic'] : [];
-    $housingUtilities = is_array($analytics['housing_utilities'] ?? null) ? $analytics['housing_utilities'] : [];
-    $healthRisk = is_array($analytics['health_risk'] ?? null) ? $analytics['health_risk'] : [];
-
-    $hasAnalytics = !empty($populationSummary) || !empty($ageBrackets) || !empty($ageDistribution) || !empty($socioEconomic) || !empty($housingUtilities) || !empty($healthRisk);
+    /** @var array<string, mixed> $populationSummary */
+    $populationSummary = normalizeAssocArray($analytics['population_summary'] ?? null);
+    /** @var array<string, int> $ageBrackets */
+    $ageBrackets = mapCountsFromPayload($analytics['age_brackets'] ?? null);
+    /** @var array<string, int> $ageDistribution */
+    $ageDistribution = mapCountsFromPayload($analytics['age_group_distribution'] ?? null);
+    /** @var array<string, mixed> $socioEconomic */
+    $socioEconomic = normalizeAssocArray($analytics['socio_economic'] ?? null);
+    /** @var array<string, mixed> $housingUtilities */
+    $housingUtilities = normalizeAssocArray($analytics['housing_utilities'] ?? null);
+    $hasAnalytics = !empty($populationSummary) || !empty($ageBrackets) || !empty($ageDistribution) || !empty($socioEconomic) || !empty($housingUtilities);
     if (!$hasAnalytics) {
         return null;
     }
 
+    /** @var array<string, int> $employment */
     $employment = mapCountsFromPayload($socioEconomic['employment_status'] ?? null);
+    /** @var array<string, int> $education */
     $education = mapCountsFromPayload($socioEconomic['educational_attainment'] ?? null);
+    /** @var array<string, int> $civilStatus */
     $civilStatus = mapCountsFromPayload($analytics['civil_status_distribution'] ?? null);
-    $otherIndicators = is_array($socioEconomic['other_indicators'] ?? null) ? $socioEconomic['other_indicators'] : [];
+    /** @var array<string, int> $otherIndicators */
+    $otherIndicators = mapCountsFromPayload($socioEconomic['other_indicators'] ?? null);
 
+    /** @var array<string, int> $toilet */
     $toilet = mapCountsFromPayload($housingUtilities['toilet_type'] ?? null);
+    /** @var array<string, int> $water */
     $water = mapCountsFromPayload($housingUtilities['water_source'] ?? null);
+    /** @var array<string, int> $electricity */
     $electricity = mapCountsFromPayload($housingUtilities['electricity_source'] ?? null);
+    /** @var array<string, int> $ownership */
     $ownership = mapCountsFromPayload($housingUtilities['housing_ownership'] ?? null);
-
-    $deathsByCause = mapCountsFromPayload($healthRisk['deaths_by_cause'] ?? null);
 
     $population = payloadCount($populationSummary, ['total_population', 'total', 'population'], 0);
     $male = payloadCount($populationSummary, ['male'], 0);
@@ -1212,7 +1489,25 @@ function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $
     $households = payloadCount($populationSummary, ['households', 'total_households'], 0);
     $avgHousehold = payloadFloat($populationSummary, ['average_household_size', 'avg_household_size'], 0.0);
 
-    return buildOfficeReportData($year, $profile, [
+    /** @var array{
+     *     population:int,
+     *     male:int,
+     *     female:int,
+     *     households:int,
+     *     avg_household:float,
+     *     age_brackets:array<string,int>,
+     *     ages:array<string,int>,
+     *     employment:array<string,int>,
+     *     education:array<string,int>,
+     *     marital:array<string,int>,
+     *     other_indicators:array<string,int>,
+     *     toilet:array<string,int>,
+     *     water:array<string,int>,
+     *     electricity:array<string,int>,
+     *     ownership:array<string,int>
+     * } $metricsPayload
+     */
+    $metricsPayload = [
         'population' => $population,
         'male' => $male,
         'female' => $female,
@@ -1249,11 +1544,9 @@ function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $
         'water' => $water,
         'electricity' => $electricity,
         'ownership' => $ownership,
-        'pregnant_women' => payloadCount($healthRisk, ['pregnant_women', 'pregnantWomen'], 0),
-        'malnourished_children' => payloadCount($healthRisk, ['malnourished_children', 'malnourishedChildren'], 0),
-        'persons_with_illness' => payloadCount($healthRisk, ['persons_with_illness', 'personsWithIllness'], 0),
-        'deaths_by_cause' => $deathsByCause,
-    ]);
+    ];
+
+    return buildOfficeReportData($year, $profile, $metricsPayload);
 }
 
 function pdfLineCount(FPDF $pdf, float $width, string $text): int
@@ -1374,6 +1667,10 @@ function reportTableColumnWidths(int $columnCount, float $usableWidth = 184.0): 
     return $widths;
 }
 
+/**
+ * @param array<string, mixed> $report
+ * @param array<string, string> $profile
+ */
 function renderReportWithFpdf(array $report, string $officialSealPath = '', array $profile = []): string
 {
     if (!class_exists('FPDF')) {
@@ -1388,7 +1685,7 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
     if (!class_exists('ReportFpdf', false)) {
         class ReportFpdf extends FPDF
         {
-            /** @var array<int, array<string, mixed>> */
+            /** @var array<int, array{params: array{ca: float, CA: float, BM: string}, n?: int}> */
             protected $extgstates = [];
 
             public function SetAlpha(float $alpha, string $blendMode = 'Normal'): void
@@ -1403,7 +1700,7 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
             }
 
             /**
-             * @param array<string, mixed> $params
+             * @param array{ca: float, CA: float, BM: string} $params
              */
             protected function addExtGState(array $params): int
             {
@@ -1464,6 +1761,9 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
     $watermarkPath = $watermarkAsset['path'] ?? '';
     $watermarkIsTemp = !empty($watermarkAsset['is_temp']);
     $footerData = reportFooterData($profile, $report);
+    $headerLines = normalizeReportHeaderLines($report['header_lines'] ?? null);
+    $reportTitle = text($report['title'] ?? '', 220);
+    $sections = normalizeReportSections($report['sections'] ?? null);
 
     $scales = [1.0, 0.94, 0.88, 0.82, 0.76, 0.70, 0.64, 0.58, 0.52];
     $binary = '';
@@ -1520,7 +1820,7 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
             }
 
             $pdf->SetY($headerY);
-            foreach ($report['header_lines'] as $line) {
+            foreach ($headerLines as $line) {
                 $pdf->SetFont('Times', '', $headerFontSize);
                 $pdf->Cell(0, $headerLineHeight, toPdfText($line), 0, 1, 'C');
             }
@@ -1532,12 +1832,12 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
 
             $pdf->Ln($afterHeaderGap);
             $pdf->SetFont('Times', 'B', $titleFontSize);
-            $pdf->Cell(0, $titleHeight, toPdfText($report['title']), 0, 1, 'C');
+            $pdf->Cell(0, $titleHeight, toPdfText($reportTitle), 0, 1, 'C');
             $lineY = $pdf->GetY();
             $pdf->Line($underlineLeft, $lineY, $underlineRight, $lineY);
             $pdf->Ln($afterTitleGap);
 
-            foreach ($report['sections'] as $section) {
+            foreach ($sections as $section) {
                 ensurePdfSpace($pdf, $sectionHeadingCheck, $watermarkPath, $bottomPadding);
                 $pdf->SetFont('Times', 'B', $sectionFontSize);
                 $pdf->SetX($tableLeftX);
@@ -1549,12 +1849,9 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
                         $pdf->SetX($tableLeftX);
                         $pdf->Cell($tableWidth, $tableTitleHeight, toPdfText($table['title']), 0, 1, 'L');
                     }
-                    $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
-                    if (!$columns) {
-                        $columns = ['Indicator', 'Count'];
-                    }
+                    $columns = $table['columns'];
                     $widths = reportTableColumnWidths(count($columns), $tableWidth);
-                    $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+                    $showHeader = $table['show_header'];
                     if ($showHeader) {
                         $pdf->SetFont('Times', 'B', $tableHeaderFont);
                         $headerCells = [];
@@ -1631,9 +1928,16 @@ function renderReportWithFpdf(array $report, string $officialSealPath = '', arra
     return $binary;
 }
 
+/**
+ * @param array<string, mixed> $report
+ * @param array<string, string> $profile
+ */
 function buildPdfHtml(array $report, array $profile, string $sealDataUri = ''): string
 {
     $footerData = reportFooterData($profile, $report);
+    $headerLines = normalizeReportHeaderLines($report['header_lines'] ?? null);
+    $reportTitle = text($report['title'] ?? '', 220);
+    $sections = normalizeReportSections($report['sections'] ?? null);
     $html = '<!doctype html><html><head><meta charset="utf-8"><style>';
     $html .= '@page{size:letter;margin:0.45in;}';
     $html .= 'body{font-family:"Times New Roman",serif;font-size:10.5px;color:#101010;margin:0;}';
@@ -1659,21 +1963,18 @@ function buildPdfHtml(array $report, array $profile, string $sealDataUri = ''): 
     if ($sealDataUri !== '') {
         $html .= '<div class="watermark"><img src="' . esc($sealDataUri) . '" alt=""></div>';
     }
-    foreach ($report['header_lines'] as $line) {
+    foreach ($headerLines as $line) {
         $html .= '<p class="line center">' . esc($line) . '</p>';
     }
-    $html .= '<p class="title center">' . esc($report['title']) . '</p>';
-    foreach ($report['sections'] as $section) {
+    $html .= '<p class="title center">' . esc($reportTitle) . '</p>';
+    foreach ($sections as $section) {
         $html .= '<div class="section"><p class="section-title">' . esc($section['title']) . '</p>';
         foreach ($section['tables'] as $table) {
             if (!empty($table['title'])) {
                 $html .= '<p class="table-title">' . esc($table['title']) . '</p>';
             }
-            $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
-            if (!$columns) {
-                $columns = ['Indicator', 'Count'];
-            }
-            $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+            $columns = $table['columns'];
+            $showHeader = $table['show_header'];
             $html .= '<table>';
             if ($showHeader) {
                 $html .= '<thead><tr>';
@@ -1711,6 +2012,7 @@ function buildPdfHtml(array $report, array $profile, string $sealDataUri = ''): 
 }
 
 /**
+ * @param array<string, mixed> $report
  * @param array<string, string> $profile
  */
 function outputPdf(array $report, array $profile): void
@@ -1735,7 +2037,7 @@ function outputPdf(array $report, array $profile): void
     if (!is_string($binary) || $binary === '') {
         respondWithError(500, 'Failed to generate PDF output.');
     }
-    $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'pdf');
+    $filename = reportFileName($profile, reportYearValue($report), 'pdf');
     clearOutputBuffers();
     header('Content-Type: application/pdf');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -1756,19 +2058,25 @@ function sheetColumnLetter(int $columnIndex): string
     return $label;
 }
 
+/**
+ * @param array{
+ *     title:string,
+ *     columns:list<string>,
+ *     show_header:bool,
+ *     rows:list<list<string>>
+ * } $table
+ */
 function renderSheetTable($sheet, int &$row, array $table, string $alignmentClass, string $borderClass): void
 {
-    $columns = is_array($table['columns'] ?? null) ? array_values($table['columns']) : ['Indicator', 'Count'];
-    if (!$columns) {
-        $columns = ['Indicator', 'Count'];
-    }
+    $table = normalizeReportTable($table);
+    $columns = $table['columns'];
     $columnCount = max(1, count($columns));
     $startColumn = 1;
     $endColumn = $startColumn + $columnCount - 1;
     $startLetter = sheetColumnLetter($startColumn);
     $endLetter = sheetColumnLetter($endColumn);
 
-    if (!empty($table['title'])) {
+    if ($table['title'] !== '') {
         $sheet->setCellValue("{$startLetter}{$row}", $table['title']);
         $sheet->mergeCells("{$startLetter}{$row}:{$endLetter}{$row}");
         $sheet->getStyle("{$startLetter}{$row}:{$endLetter}{$row}")->getFont()->setBold(true)->setSize(10);
@@ -1777,7 +2085,7 @@ function renderSheetTable($sheet, int &$row, array $table, string $alignmentClas
     }
 
     $tableStart = $row;
-    $showHeader = !array_key_exists('show_header', $table) || $table['show_header'] !== false;
+    $showHeader = $table['show_header'];
     if ($showHeader) {
         foreach ($columns as $index => $columnLabel) {
             $columnLetter = sheetColumnLetter($startColumn + $index);
@@ -1788,8 +2096,7 @@ function renderSheetTable($sheet, int &$row, array $table, string $alignmentClas
         $row++;
     }
 
-    $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
-    foreach ($rows as $entry) {
+    foreach ($table['rows'] as $entry) {
         foreach ($columns as $index => $columnLabel) {
             $columnLetter = sheetColumnLetter($startColumn + $index);
             $sheet->setCellValue("{$columnLetter}{$row}", text($entry[$index] ?? '-', 260));
@@ -1809,6 +2116,7 @@ function renderSheetTable($sheet, int &$row, array $table, string $alignmentClas
 }
 
 /**
+ * @param array<string, mixed> $report
  * @param array<string, string> $profile
  */
 function outputSpreadsheet(
@@ -1830,6 +2138,10 @@ function outputSpreadsheet(
     $borderClass = 'PhpOffice\\PhpSpreadsheet\\Style\\Border';
     $drawingClass = 'PhpOffice\\PhpSpreadsheet\\Worksheet\\Drawing';
     $pageSetupClass = 'PhpOffice\\PhpSpreadsheet\\Worksheet\\PageSetup';
+    $headerLines = normalizeReportHeaderLines($report['header_lines'] ?? null);
+    $reportTitle = text($report['title'] ?? '', 220);
+    $sections = normalizeReportSections($report['sections'] ?? null);
+    $metaBlock = normalizeReportMetaBlock($report['meta_block'] ?? null);
 
     $row = 1;
     if (class_exists($drawingClass)) {
@@ -1856,7 +2168,7 @@ function outputSpreadsheet(
         }
     }
 
-    foreach ($report['header_lines'] as $line) {
+    foreach ($headerLines as $line) {
         $sheet->setCellValue("A{$row}", $line);
         $sheet->mergeCells("A{$row}:C{$row}");
         $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
@@ -1865,14 +2177,14 @@ function outputSpreadsheet(
     }
 
     $row += 1;
-    $sheet->setCellValue("A{$row}", $report['title']);
+    $sheet->setCellValue("A{$row}", $reportTitle);
     $sheet->mergeCells("A{$row}:C{$row}");
     $sheet->getStyle("A{$row}:C{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
     $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(14)->setName('Times New Roman');
     $sheet->getStyle("A{$row}:C{$row}")->getBorders()->getBottom()->setBorderStyle($borderClass::BORDER_MEDIUM);
     $row += 1;
 
-    foreach ($report['sections'] as $section) {
+    foreach ($sections as $section) {
         $sheet->setCellValue("A{$row}", $section['title']);
         $sheet->mergeCells("A{$row}:C{$row}");
         $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(12)->setName('Times New Roman');
@@ -1883,8 +2195,7 @@ function outputSpreadsheet(
         }
     }
 
-    $metaBlock = is_array($report['meta_block'] ?? null) ? $report['meta_block'] : [];
-    if ($metaBlock) {
+    if (count($metaBlock) > 0) {
         $sheet->setCellValue("A{$row}", 'Report Certification and Metadata');
         $sheet->mergeCells("A{$row}:C{$row}");
         $sheet->getStyle("A{$row}:C{$row}")->getFont()->setBold(true)->setSize(11)->setName('Times New Roman');
@@ -1892,8 +2203,8 @@ function outputSpreadsheet(
         $row++;
 
         foreach ($metaBlock as $entry) {
-            $label = text($entry['label'] ?? '', 120);
-            $value = text($entry['value'] ?? '', 260);
+            $label = $entry['label'];
+            $value = $entry['value'];
             if ($label === '' && $value === '') {
                 continue;
             }
@@ -1922,7 +2233,7 @@ function outputSpreadsheet(
     $sheet->getPageSetup()->setPrintArea('A1:C' . max(1, $row));
 
     $writer = new PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-    $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'xlsx');
+    $filename = reportFileName($profile, reportYearValue($report), 'xlsx');
     if ($sendDownloadHeaders) {
         clearOutputBuffers();
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2043,7 +2354,7 @@ if ($format === 'xlsx' && PHP_VERSION_ID < 80300) {
         $externalError = '';
         $generatedFile = exportSpreadsheetUsingExternalPhp($report, $profile, $excelPhpBinary, $externalError);
         if (is_string($generatedFile) && is_file($generatedFile)) {
-            $filename = reportFileName($profile, (int) ($report['year'] ?? (int) date('Y')), 'xlsx');
+            $filename = reportFileName($profile, reportYearValue($report), 'xlsx');
             clearOutputBuffers();
             header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             header('Content-Disposition: attachment; filename="' . $filename . '"');

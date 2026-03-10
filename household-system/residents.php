@@ -41,6 +41,7 @@ if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
 $systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-scripts.js') ?: time());
 ?>
 
 <!doctype html>
@@ -272,7 +273,7 @@ $systemLabel = trim($brandFooterLabel . ' Household Information Management Syste
             <div class="accordion-item">
               <h2 class="accordion-header" id="residentDetailsHouseholdHead">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#residentDetailsHousehold" aria-expanded="false" aria-controls="residentDetailsHousehold">
-                  Household and Health Profile
+                  Household Profile
                 </button>
               </h2>
               <div id="residentDetailsHousehold" class="accordion-collapse collapse" aria-labelledby="residentDetailsHouseholdHead" data-bs-parent="#residentDetailsAccordion">
@@ -282,33 +283,6 @@ $systemLabel = trim($brandFooterLabel . ' Household Information Management Syste
                     <div class="resident-detail-item"><span class="k">Relation to Head</span><span class="v" id="rdRelationToHead">-</span></div>
                     <div class="resident-detail-item"><span class="k">No. of Children</span><span class="v" id="rdNumChildren">-</span></div>
                     <div class="resident-detail-item"><span class="k">Partner Name</span><span class="v" id="rdPartnerName">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Current Illness</span><span class="v" id="rdHealthCurrentIllness">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Illness Type</span><span class="v" id="rdHealthIllnessType">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Illness Duration (Years)</span><span class="v" id="rdHealthIllnessYears">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">Chronic Diseases</span><span class="v" id="rdHealthChronicDiseases">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">Common Illnesses</span><span class="v" id="rdHealthCommonIllnesses">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Maintenance Meds</span><span class="v" id="rdHealthMaintenanceMeds">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Medicine Name</span><span class="v" id="rdHealthMedicineName">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Medicine Frequency</span><span class="v" id="rdHealthMedicineFrequency">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Medicine Source</span><span class="v" id="rdHealthMedicineSource">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Maternal Pregnant</span><span class="v" id="rdHealthMaternalPregnant">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Months Pregnant</span><span class="v" id="rdHealthMonthsPregnant">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Prenatal Care</span><span class="v" id="rdHealthPrenatalCare">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Child Immunized</span><span class="v" id="rdHealthChildImmunized">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Child Malnutrition</span><span class="v" id="rdHealthChildMalnutrition">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Child Sick/Year</span><span class="v" id="rdHealthChildSickPerYear">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Has Disability</span><span class="v" id="rdHealthHasDisability">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">Disability Types</span><span class="v" id="rdHealthDisabilityTypes">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Regular Care</span><span class="v" id="rdHealthDisabilityRegularCare">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Smoker</span><span class="v" id="rdHealthSmoker">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Alcohol (Daily)</span><span class="v" id="rdHealthAlcoholDaily">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Malnutrition Present</span><span class="v" id="rdHealthMalnutritionPresent">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Access to Clean Water</span><span class="v" id="rdHealthCleanWater">-</span></div>
-                    <div class="resident-detail-item"><span class="k">RHU Visits</span><span class="v" id="rdHealthRhuVisits">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">RHU Visit Reason</span><span class="v" id="rdHealthRhuReason">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Has PhilHealth</span><span class="v" id="rdHealthHasPhilhealth">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Hospitalized (5 yrs)</span><span class="v" id="rdHealthHospitalized5yrs">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">Hospitalization Reason</span><span class="v" id="rdHealthHospitalizedReason">-</span></div>
                   </div>
                 </div>
               </div>
@@ -385,7 +359,7 @@ $systemLabel = trim($brandFooterLabel . ' Household Information Management Syste
   <!-- Bootstrap JS bundle -->
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/responsive-table-scripts.js"></script>
-  <script src="assets/js/residents-scripts.js"></script>
+  <script src="assets/js/residents-scripts.js?v=<?= htmlspecialchars($residentsScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 
 </body>
 </html>

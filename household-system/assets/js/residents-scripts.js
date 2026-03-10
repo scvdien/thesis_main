@@ -118,6 +118,11 @@ const toYesNoOrDash = (value, fallback = '-') => {
   return normalized;
 };
 
+const isAffirmativeValue = (value) => {
+  const normalized = normalizeText(value).toLowerCase();
+  return normalized === 'yes' || normalized === 'true' || normalized === '1';
+};
+
 const joinNameParts = (source) => {
   if (!source || typeof source !== 'object') return '';
   const parts = [
@@ -412,11 +417,37 @@ const renderResidentsTable = () => {
   setVisibleCount(filteredRows.length);
 };
 
-const fetchResidents = async () => {
+const normalizeResidentListItem = (item) => {
+  const ageText = normalizeText(item?.age);
+  const ageNumber = Number.parseInt(ageText, 10);
+  const memberOrderRaw = Number.parseInt(normalizeText(item?.member_order), 10);
+  const memberOrder = Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0;
+  const sourceType = normalizeText(item?.source_type).toLowerCase();
+  const pwdValue = normalizeText(item?.pwd);
+  const pregnantValue = normalizeText(item?.pregnant);
+
+  return {
+    resident_id: normalizeText(item?.resident_id),
+    household_id: normalizeText(item?.household_id),
+    source_type: sourceType || (memberOrder === 0 ? 'head' : 'member'),
+    member_order: memberOrder,
+    full_name: normalizeText(item?.full_name),
+    relation_to_head: normalizeText(item?.relation_to_head),
+    sex: normalizeText(item?.sex),
+    age: ageText,
+    zone: normalizeZoneLabel(item?.zone),
+    updated_at: normalizeText(item?.updated_at),
+    isSenior: Number.isInteger(ageNumber) && ageNumber >= 60,
+    isPwd: isAffirmativeValue(pwdValue),
+    isPregnant: isAffirmativeValue(pregnantValue)
+  };
+};
+
+const fetchResidentsPage = async (offset = 0) => {
   const params = new URLSearchParams({
     action: 'list_residents',
     limit: String(RESIDENT_FETCH_LIMIT),
-    offset: '0'
+    offset: String(Math.max(0, Number.parseInt(String(offset), 10) || 0))
   });
   const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
     method: 'GET',
@@ -438,30 +469,26 @@ const fetchResidents = async () => {
     throw new Error(message);
   }
 
-  const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
-  return items.map((item) => {
-    const ageText = normalizeText(item?.age);
-    const ageNumber = Number.parseInt(ageText, 10);
-    const memberOrderRaw = Number.parseInt(normalizeText(item?.member_order), 10);
-    const memberOrder = Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0;
-    const sourceType = normalizeText(item?.source_type).toLowerCase();
-    return {
-      resident_id: normalizeText(item?.resident_id),
-      household_id: normalizeText(item?.household_id),
-      source_type: sourceType || (memberOrder === 0 ? 'head' : 'member'),
-      member_order: memberOrder,
-      full_name: normalizeText(item?.full_name),
-      relation_to_head: normalizeText(item?.relation_to_head),
-      sex: normalizeText(item?.sex),
-      age: ageText,
-      zone: normalizeZoneLabel(item?.zone),
-      updated_at: normalizeText(item?.updated_at),
-      source_type: normalizeText(item?.source_type),
-      isSenior: Number.isInteger(ageNumber) && ageNumber >= 60,
-      isPwd: false,
-      isPregnant: false
-    };
-  });
+  return Array.isArray(payload?.data?.items) ? payload.data.items : [];
+};
+
+const fetchResidents = async () => {
+  const rows = [];
+  let offset = 0;
+  let pageCount = 0;
+
+  while (pageCount < 50) {
+    const items = await fetchResidentsPage(offset);
+    rows.push(...items.map(normalizeResidentListItem));
+    pageCount += 1;
+
+    if (items.length < RESIDENT_FETCH_LIMIT) {
+      break;
+    }
+    offset += RESIDENT_FETCH_LIMIT;
+  }
+
+  return rows;
 };
 
 async function loadResidents() {
@@ -593,34 +620,7 @@ const buildResidentDefaults = (rowData = {}) => {
     passport: '-',
     num_members: '-',
     num_children: '-',
-    partner_name: '-',
-    health_current_illness: '-',
-    health_illness_type: '-',
-    health_illness_years: '-',
-    health_chronic_diseases: [],
-    health_common_illnesses: [],
-    health_maintenance_meds: '-',
-    health_medicine_name: '-',
-    health_medicine_frequency: '-',
-    health_medicine_source: '-',
-    health_maternal_pregnant: '-',
-    health_months_pregnant: '-',
-    health_prenatal_care: '-',
-    health_child_immunized: '-',
-    health_child_malnutrition: '-',
-    health_child_sick_per_year: '-',
-    health_has_disability: '-',
-    health_disability_types: [],
-    health_disability_regular_care: '-',
-    health_smoker: '-',
-    health_alcohol_daily: '-',
-    health_malnutrition_present: '-',
-    health_clean_water: '-',
-    health_rhu_visits: '-',
-    health_rhu_reason: '-',
-    health_has_philhealth: '-',
-    health_hospitalized_5yrs: '-',
-    health_hospitalized_reason: '-'
+    partner_name: '-'
   };
 };
 
@@ -690,10 +690,7 @@ const normalizeResidentDetails = (rowData, payload) => {
     pwd: toYesNoOrDash(profile.pwd, defaults.pwd),
     ip: toYesNoOrDash(profile.ip, defaults.ip),
     four_ps: toYesNoOrDash(profile.four_ps, defaults.four_ps),
-    voter: toYesNoOrDash(profile.voter, defaults.voter),
-    health_chronic_diseases: Array.isArray(profile.health_chronic_diseases) ? profile.health_chronic_diseases : defaults.health_chronic_diseases,
-    health_common_illnesses: Array.isArray(profile.health_common_illnesses) ? profile.health_common_illnesses : defaults.health_common_illnesses,
-    health_disability_types: Array.isArray(profile.health_disability_types) ? profile.health_disability_types : defaults.health_disability_types
+    voter: toYesNoOrDash(profile.voter, defaults.voter)
   };
 
   return details;
@@ -942,40 +939,13 @@ const populateResidentModal = (details, loadErrorMessage = '') => {
     ['rdNumMembers', 'num_members'],
     ['rdRelationToHead', 'relation_to_head'],
     ['rdNumChildren', 'num_children'],
-    ['rdPartnerName', 'partner_name'],
-    ['rdHealthCurrentIllness', 'health_current_illness'],
-    ['rdHealthIllnessType', 'health_illness_type'],
-    ['rdHealthIllnessYears', 'health_illness_years'],
-    ['rdHealthMaintenanceMeds', 'health_maintenance_meds'],
-    ['rdHealthMedicineName', 'health_medicine_name'],
-    ['rdHealthMedicineFrequency', 'health_medicine_frequency'],
-    ['rdHealthMedicineSource', 'health_medicine_source'],
-    ['rdHealthMaternalPregnant', 'health_maternal_pregnant'],
-    ['rdHealthMonthsPregnant', 'health_months_pregnant'],
-    ['rdHealthPrenatalCare', 'health_prenatal_care'],
-    ['rdHealthChildImmunized', 'health_child_immunized'],
-    ['rdHealthChildMalnutrition', 'health_child_malnutrition'],
-    ['rdHealthChildSickPerYear', 'health_child_sick_per_year'],
-    ['rdHealthHasDisability', 'health_has_disability'],
-    ['rdHealthDisabilityRegularCare', 'health_disability_regular_care'],
-    ['rdHealthSmoker', 'health_smoker'],
-    ['rdHealthAlcoholDaily', 'health_alcohol_daily'],
-    ['rdHealthMalnutritionPresent', 'health_malnutrition_present'],
-    ['rdHealthCleanWater', 'health_clean_water'],
-    ['rdHealthRhuVisits', 'health_rhu_visits'],
-    ['rdHealthRhuReason', 'health_rhu_reason'],
-    ['rdHealthHasPhilhealth', 'health_has_philhealth'],
-    ['rdHealthHospitalized5yrs', 'health_hospitalized_5yrs'],
-    ['rdHealthHospitalizedReason', 'health_hospitalized_reason']
+    ['rdPartnerName', 'partner_name']
   ];
 
   fieldMap.forEach(([elementId, key]) => {
     setResidentText(elementId, details[key]);
   });
 
-  setResidentText('rdHealthChronicDiseases', toResidentListText(details.health_chronic_diseases));
-  setResidentText('rdHealthCommonIllnesses', toResidentListText(details.health_common_illnesses));
-  setResidentText('rdHealthDisabilityTypes', toResidentListText(details.health_disability_types));
 };
 
 const openResidentDetails = async (residentId, row) => {

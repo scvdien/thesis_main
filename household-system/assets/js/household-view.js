@@ -184,7 +184,6 @@ const toMemberFormData = (member = {}, record = {}) => {
     existingFormData.barangay = existingFormData.barangay || record.head?.barangay || '';
     existingFormData.city = existingFormData.city || record.head?.city || '';
     existingFormData.province = existingFormData.province || record.head?.province || '';
-    existingFormData._hv_health_notes = existingFormData._hv_health_notes || (profile.healthNotes === '-' ? '' : profile.healthNotes);
     return existingFormData;
   }
 
@@ -238,35 +237,7 @@ const toMemberFormData = (member = {}, record = {}) => {
     num_members: record.household?.numMembers || record.members?.length || '',
     relation_to_head: profile.relation === '-' ? '' : profile.relation,
     num_children: record.household?.numChildren || '',
-    partner_name: record.household?.partnerName || '',
-    health_current_illness: '',
-    health_illness_type: '',
-    health_illness_years: '',
-    health_chronic_diseases: [],
-    health_common_illnesses: [],
-    health_maintenance_meds: '',
-    health_medicine_name: '',
-    health_medicine_frequency: '',
-    health_medicine_source: '',
-    health_maternal_pregnant: '',
-    health_months_pregnant: '',
-    health_prenatal_care: '',
-    health_child_immunized: '',
-    health_child_malnutrition: '',
-    health_child_sick_per_year: '',
-    health_has_disability: '',
-    health_disability_types: [],
-    health_disability_regular_care: '',
-    health_smoker: '',
-    health_alcohol_daily: '',
-    health_malnutrition_present: '',
-    health_clean_water: '',
-    health_rhu_visits: '',
-    health_rhu_reason: '',
-    health_has_philhealth: '',
-    health_hospitalized_5yrs: '',
-    health_hospitalized_reason: '',
-    _hv_health_notes: profile.healthNotes === '-' ? '' : profile.healthNotes
+    partner_name: record.household?.partnerName || ''
   };
 };
 
@@ -289,7 +260,6 @@ const fromMemberFormData = (memberData = {}) => {
     education: normalized.education || '-',
     occupation: normalized.occupation || '-',
     address: normalized.address || '-',
-    healthNotes: normalized._hv_health_notes || normalized.health_illness_type || '-',
     formData: normalized
   };
 };
@@ -342,7 +312,6 @@ const mapMemberFormToViewRow = (memberData = {}, fallbackRelation = 'Member') =>
     education: toTextOrEmpty(formData.education) || '-',
     occupation: toTextOrEmpty(formData.occupation) || '-',
     address: toTextOrEmpty(formData.address) || '-',
-    healthNotes: toTextOrEmpty(formData.health_illness_type) || '-',
     formData
   };
 };
@@ -446,23 +415,6 @@ const mapApiHouseholdToViewRecord = (payload) => {
       electricity: head.electricity,
       water: head.water,
       internet: head.internet
-    },
-    health: {
-      currentIllness: head.health_current_illness,
-      illnessType: head.health_illness_type,
-      chronic: toListFromValue(head.health_chronic_diseases),
-      common: toListFromValue(head.health_common_illnesses),
-      maintenance: head.health_maintenance_meds,
-      medicine: head.health_medicine_name,
-      frequency: head.health_medicine_frequency,
-      source: head.health_medicine_source,
-      pregnant: head.health_maternal_pregnant,
-      monthsPregnant: head.health_months_pregnant,
-      prenatal: head.health_prenatal_care,
-      childImmunized: head.health_child_immunized,
-      childMalnutrition: head.health_child_malnutrition,
-      childSick: head.health_child_sick_per_year,
-      disability: head.health_has_disability
     },
     members: allMembers
   };
@@ -806,22 +758,6 @@ const hydratePage = (record) => {
   setText('hvHouseWater', housing.water);
   setText('hvHouseInternet', housing.internet);
 
-  setText('hvHealthCurrentIllness', health.currentIllness);
-  setText('hvHealthIllnessType', health.illnessType);
-  setText('hvHealthChronic', joinList(health.chronic));
-  setText('hvHealthCommon', joinList(health.common));
-  setText('hvHealthMaintenance', health.maintenance);
-  setText('hvHealthMedicine', health.medicine);
-  setText('hvHealthFrequency', health.frequency);
-  setText('hvHealthSource', health.source);
-  setText('hvHealthPregnant', health.pregnant);
-  setText('hvHealthMonthsPregnant', health.monthsPregnant);
-  setText('hvHealthPrenatal', health.prenatal);
-  setText('hvHealthChildImmunized', health.childImmunized);
-  setText('hvHealthChildMalnutrition', health.childMalnutrition);
-  setText('hvHealthChildSick', health.childSick);
-  setText('hvHealthDisability', health.disability);
-
   renderMembersTable(members);
 };
 
@@ -835,7 +771,6 @@ const openMemberDetails = (memberIndex) => {
   const fullName = buildFullName(memberData, member.name || '-');
   const residentId = toTextOrEmpty(memberData.resident_id || memberData.resident_code || member.resident_id || member.resident_code) || '-';
   const householdId = toTextOrEmpty(currentDisplayHouseholdId || currentRecord.id || memberData.household_id || memberData.household_code) || '-';
-  const healthNotes = toTextOrEmpty(memberData._hv_health_notes || member.healthNotes) || memberData.health_illness_type;
 
   setText('mdName', fullName);
   setText('mdRelation', `Relation: ${relation} | Resident ID: ${residentId} | Household: ${householdId}`);
@@ -888,34 +823,6 @@ const openMemberDetails = (memberIndex) => {
   setText('mdRelationToHead', memberData.relation_to_head || relation);
   setText('mdNumChildren', memberData.num_children);
   setText('mdPartnerName', memberData.partner_name);
-  setText('mdHealthCurrentIllness', memberData.health_current_illness);
-  setText('mdHealthIllnessType', memberData.health_illness_type);
-  setText('mdHealthIllnessYears', memberData.health_illness_years);
-  setText('mdHealthNotes', healthNotes);
-  setText('mdHealthChronicDiseases', toListText(memberData.health_chronic_diseases));
-  setText('mdHealthCommonIllnesses', toListText(memberData.health_common_illnesses));
-  setText('mdHealthMaintenanceMeds', memberData.health_maintenance_meds);
-  setText('mdHealthMedicineName', memberData.health_medicine_name);
-  setText('mdHealthMedicineFrequency', memberData.health_medicine_frequency);
-  setText('mdHealthMedicineSource', memberData.health_medicine_source);
-  setText('mdHealthMaternalPregnant', memberData.health_maternal_pregnant);
-  setText('mdHealthMonthsPregnant', memberData.health_months_pregnant);
-  setText('mdHealthPrenatalCare', memberData.health_prenatal_care);
-  setText('mdHealthChildImmunized', memberData.health_child_immunized);
-  setText('mdHealthChildMalnutrition', memberData.health_child_malnutrition);
-  setText('mdHealthChildSickPerYear', memberData.health_child_sick_per_year);
-  setText('mdHealthHasDisability', memberData.health_has_disability);
-  setText('mdHealthDisabilityTypes', toListText(memberData.health_disability_types));
-  setText('mdHealthDisabilityRegularCare', memberData.health_disability_regular_care);
-  setText('mdHealthSmoker', memberData.health_smoker);
-  setText('mdHealthAlcoholDaily', memberData.health_alcohol_daily);
-  setText('mdHealthMalnutritionPresent', memberData.health_malnutrition_present);
-  setText('mdHealthCleanWater', memberData.health_clean_water);
-  setText('mdHealthRhuVisits', memberData.health_rhu_visits);
-  setText('mdHealthRhuReason', memberData.health_rhu_reason);
-  setText('mdHealthHasPhilhealth', memberData.health_has_philhealth);
-  setText('mdHealthHospitalized5yrs', memberData.health_hospitalized_5yrs);
-  setText('mdHealthHospitalizedReason', memberData.health_hospitalized_reason);
 
   memberDetailsModal?.show();
 };
