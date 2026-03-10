@@ -144,6 +144,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
   <footer class="footer text-muted">
     &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
+  </div>
 
   <!-- HOUSEHOLD DETAILS MODAL -->
   <div class="modal fade" id="householdModal" tabindex="-1" aria-hidden="true">
@@ -180,7 +181,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
             </div>
 
             <div class="hh-card">
-              <div class="section-head"><span class="label mb-0">Contact & Address</span></div>
+              <div class="section-head"><span class="label mb-0">Contact &amp; Address</span></div>
               <div class="hh-kv-grid">
                 <div class="kv"><div class="k">Contact</div><div class="v" id="hhHeadContact">-</div></div>
                 <div class="kv"><div class="k">Address</div><div class="v" id="hhHeadAddress">-</div></div>
@@ -225,7 +226,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
             </div>
 
             <div class="hh-card two-col">
-              <div class="section-head"><span class="label mb-0">Voter & IDs</span></div>
+              <div class="section-head"><span class="label mb-0">Voter &amp; IDs</span></div>
               <div class="hh-kv-grid">
                 <div class="kv"><div class="k">Registered Voter</div><div class="v" id="hhHeadVoter">-</div></div>
                 <div class="kv"><div class="k">Precinct</div><div class="v" id="hhHeadPrecinct">-</div></div>
@@ -250,7 +251,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
             </div>
 
             <div class="hh-card two-col">
-              <div class="section-head"><span class="label mb-0">Housing & Utilities</span></div>
+              <div class="section-head"><span class="label mb-0">Housing &amp; Utilities</span></div>
               <div class="hh-kv-grid">
                 <div class="kv"><div class="k">Ownership</div><div class="v" id="hhHouseOwnership">-</div></div>
                 <div class="kv"><div class="k">House Type</div><div class="v" id="hhHouseType">-</div></div>
