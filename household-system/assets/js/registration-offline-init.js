@@ -24,6 +24,18 @@
     url: window.location.href
   });
 
+  const warmRegistrationRoutes = () => Promise.allSettled([
+    cacheCurrentRoute(),
+    postToWorker({
+      type: "CACHE_CURRENT_ROUTE",
+      url: new URL("registration.php", window.location.href).toString()
+    }),
+    postToWorker({
+      type: "CACHE_CURRENT_ROUTE",
+      url: new URL("member.php", window.location.href).toString()
+    })
+  ]);
+
   window.clearRegistrationOfflineCaches = async function clearRegistrationOfflineCaches() {
     try {
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -55,12 +67,12 @@
     if (waitingWorker) {
       waitingWorker.postMessage({ type: "SKIP_WAITING" });
     }
-    return cacheCurrentRoute();
+    return warmRegistrationRoutes();
   }).catch(() => {
     // Ignore registration failures when the browser does not allow service workers.
   });
 
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    void cacheCurrentRoute();
+    void warmRegistrationRoutes();
   });
 })();

@@ -28,7 +28,7 @@ $brandSidebarLabel = $brandLabel;
 if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
   $brandSidebarLabel = trim($brandLabel . ' ' . $brandCity);
 }
-$systemLabel = trim($brandSidebarLabel . ' Household Information Management System');
+$systemLabel = trim($brandSidebarLabel . ' Online Household Information Management System');
 $footerBarangayLabel = $brandLabel;
 if (stripos($footerBarangayLabel, 'barangay') !== 0) {
   $footerBarangayLabel = trim('Barangay ' . $footerBarangayLabel);
@@ -37,9 +37,11 @@ $footerLocationLabel = $footerBarangayLabel;
 if ($brandCity !== '' && stripos($footerLocationLabel, $brandCity) === false) {
   $footerLocationLabel = trim($footerLocationLabel . ', ' . $brandCity);
 }
-$footerSystemLabel = trim($footerLocationLabel . ' Household Information Management System');
+$footerSystemLabel = trim($footerLocationLabel . ' Online Household Information Management System');
 $editHouseholdId = trim((string) ($_GET['edit'] ?? ''));
 $isRegistrationEditMode = $editHouseholdId !== '';
+$registrationReturnSource = strtolower(trim((string) ($_GET['from'] ?? '')));
+$isHouseholdEditReturn = $isRegistrationEditMode && $registrationReturnSource === 'household-view';
 $registrationRequiresCredentialUpdate = $authRole === AUTH_ROLE_STAFF && !empty($authUser['requires_credential_update']);
 $registrationCurrentUsername = (string) ($authUser['username'] ?? '');
 $registrationCsrfToken = auth_csrf_token();
@@ -142,7 +144,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         <div class="content-meta">
           <div class="content-meta-actions">
             <button type="button" class="btn btn-outline-primary btn-sm" id="loadExistingBtn">
-              <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? 'Back to Registration' : 'Load Existing Household' ?>
+              <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? ($isHouseholdEditReturn ? 'Back to Household' : 'Back to Registration') : 'Load Existing Household' ?>
             </button>
           </div>
         </div>
@@ -360,7 +362,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 
     <footer class="footer page-footer py-3 text-center">
       <div class="footer-inner">
-        <p class="mb-1 fw-semibold"><?= htmlspecialchars($footerSystemLabel, ENT_QUOTES, 'UTF-8') ?></p>
+        <p class="mb-1 fw-semibold"><?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?></p>
         <p class="mb-0 small">&copy; <span id="year"></span> <?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></p>
       </div>
     </footer>

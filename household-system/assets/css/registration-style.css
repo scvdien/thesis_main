@@ -1741,21 +1741,33 @@ footer.page-footer{
 @media (max-width: 768px){
   .sidebar{
     position:fixed;
-    top:0;
-    left:0;
-    height:100vh;
-    width:min(56vw, 240px);
+    top:8px;
+    left:8px;
+    bottom:8px;
+    height:auto;
+    max-height:calc(100dvh - 16px);
+    width:min(76vw, 300px);
+    max-width:calc(100vw - 24px);
     transform:translateX(-110%);
     transition:transform 0.25s ease;
     z-index:1050;
-    padding:12px;
-    gap:8px;
+    padding:10px 12px 12px;
+    gap:6px;
     flex-direction:column;
     align-items:stretch;
     flex-wrap:nowrap;
+    justify-content:flex-start;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
   }
   .sidebar-brand{
-    gap:6px;
+    flex:0 0 auto;
+    gap:4px;
+  }
+  .sidebar-section{
+    flex:0 0 auto;
   }
   .sidebar .brand-logo{
     width:36px;
@@ -1772,9 +1784,10 @@ footer.page-footer{
     gap:6px;
   }
   .sidebar-members{
-    gap:4px;
+    gap:2px;
   }
   .sidebar-add-btn{
+    margin-top:4px;
     padding:4px 8px;
   }
   .sidebar-member-list{
@@ -1785,20 +1798,22 @@ footer.page-footer{
   }
   .sidebar-nav-section{
     order:2;
-    margin-top:4px;
+    margin-top:0;
   }
   .sidebar-members{
     order:3;
-    margin-top:6px;
+    margin-top:0;
   }
   .sidebar-footer{
     order:4;
+    flex:0 0 auto;
   }
   body.sidebar-open .sidebar{
     transform:translateX(0);
   }
   .sidebar-brand{
-    flex:1 1 100%;
+    flex:0 0 auto;
+    width:100%;
   }
   .sidebar-nav{
     flex-direction:column;
@@ -1814,16 +1829,19 @@ footer.page-footer{
     border-radius:10px;
   }
   .sidebar-section{
-    gap:4px;
+    gap:2px;
   }
   .sidebar-member-list{
-    max-height:20vh;
+    max-height:none;
+    overflow:visible;
+    padding-right:0;
   }
   .sidebar-quick .quick-card{
     padding:8px;
   }
   .sidebar-footer{
-    gap:8px;
+    margin-top:auto;
+    gap:6px;
   }
   .sidebar-quick{
     display:block;
@@ -1921,11 +1939,14 @@ footer.page-footer{
 
 @media (max-width: 420px){
   .sidebar{
-    width:min(68vw, 240px);
-  }
-  .sidebar{
-    padding:12px;
-    gap:10px;
+    width:min(82vw, 286px);
+    max-width:calc(100vw - 16px);
+    top:6px;
+    left:6px;
+    bottom:6px;
+    max-height:calc(100dvh - 12px);
+    padding:10px 12px 12px;
+    gap:6px;
   }
   .sidebar-nav a{
     padding:6px 8px;
@@ -1959,7 +1980,12 @@ footer.page-footer{
 
 @media (max-width: 360px){
   .sidebar{
-    width:94vw;
+    width:min(86vw, 276px);
+    max-width:calc(100vw - 12px);
+    top:4px;
+    left:4px;
+    bottom:4px;
+    max-height:calc(100dvh - 8px);
   }
   .content-title{
     font-size:1.05rem;

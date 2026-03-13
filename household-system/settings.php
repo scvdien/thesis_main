@@ -40,7 +40,7 @@ if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
 if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
-$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$systemLabel = trim($brandFooterLabel . ' Online Household Information Management System');
 $settingsCsrfToken = auth_csrf_token();
 $requiresCredentialUpdate = !empty($authUser['requires_credential_update']);
 $adminCredentialLock = $authRole === AUTH_ROLE_ADMIN && $requiresCredentialUpdate;
@@ -507,7 +507,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <div class="audit-toolbar" role="search" aria-label="Activity log filters">
                 <div class="audit-search-pill">
-                  <input type="text" class="form-control" id="settingsAuditSearchInput" placeholder="Search action, user, or record">
+                  <input type="text" class="form-control" id="settingsAuditSearchInput" placeholder="Search action, user, record, or device">
                   <span class="audit-search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
                 </div>
                 <div class="audit-quick-row">
@@ -534,16 +534,18 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                       <th>User</th>
                       <th>Action</th>
                       <th>Result</th>
+                      <th>Record ID</th>
                       <th>Details</th>
-                      <th>IP Address</th>
+                      <th>Public IP Address</th>
+                      <th>Device / Browser</th>
                     </tr>
                   </thead>
                   <tbody id="settingsAuditTableBody">
                     <tr id="settingsAuditLoadingRow">
-                      <td colspan="6" class="text-center text-muted">Loading activity logs...</td>
+                      <td colspan="8" class="text-center text-muted">Loading activity logs...</td>
                     </tr>
                     <tr id="settingsAuditEmptyRow" class="d-none">
-                      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+                      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -643,7 +645,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODERN LOGOUT MODAL -->

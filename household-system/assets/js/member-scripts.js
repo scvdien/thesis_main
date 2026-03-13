@@ -26,7 +26,18 @@
     const birthdayInput = document.getElementById("birthday");
     const ageInput = document.getElementById("age");
     const pageTitle = document.querySelector(".page-header .title");
+    const backBtn = document.getElementById("backBtn");
+    const cancelBtn = document.getElementById("cancelBtn");
     const submitBtn = memberForm.querySelector('button[type="submit"]');
+
+    if (isHouseholdViewMode) {
+      if (backBtn) {
+        backBtn.innerHTML = '<i class="bi bi-arrow-left"></i> Back to Household';
+      }
+      if (cancelBtn) {
+        cancelBtn.innerHTML = '<i class="bi bi-arrow-left"></i> Back to Household';
+      }
+    }
 
     const getHouseholdViewContext = () => {
       try {
@@ -209,8 +220,8 @@
       window.location.href = `registration.php${next.toString() ? `?${next.toString()}` : ""}#members`;
     };
 
-    document.getElementById("backBtn").addEventListener("click", () => { void backToRegistration(); });
-    document.getElementById("cancelBtn").addEventListener("click", () => { void backToRegistration(); });
+    backBtn?.addEventListener("click", () => { void backToRegistration(); });
+    cancelBtn?.addEventListener("click", () => { void backToRegistration(); });
 
     memberForm.addEventListener("submit", async (event) => {
       event.preventDefault();

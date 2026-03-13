@@ -40,7 +40,7 @@ if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
 if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
-$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$systemLabel = trim($brandFooterLabel . ' Online Household Information Management System');
 $dashboardStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scripts.js') ?: time());
 ?>
@@ -189,7 +189,7 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODERN REFRESH MODAL -->

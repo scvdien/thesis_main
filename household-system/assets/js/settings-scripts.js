@@ -2026,7 +2026,9 @@ const rerenderSettingsPanels = () => {
   renderBarangayProfileState();
   renderBackupRestoreState();
   renderSettingsRolloverState();
-  syncStaffViewModal();
+  if (typeof syncStaffViewModal === 'function') {
+    syncStaffViewModal();
+  }
 };
 
 const toPositiveInteger = (value) => {
@@ -2337,6 +2339,39 @@ const formatSettingsAuditIpAddress = (value) => {
   return ip;
 };
 
+const formatSettingsAuditTitleLabel = (value) => normalizeText(value)
+  .replace(/_/g, ' ')
+  .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatSettingsAuditRecordDisplay = (recordId, recordType) => {
+  const id = normalizeText(recordId);
+  const type = formatSettingsAuditTitleLabel(recordType);
+  if (id) {
+    return {
+      text: id,
+      title: type ? `${type}: ${id}` : id
+    };
+  }
+  if (type) {
+    return {
+      text: type,
+      title: type
+    };
+  }
+  return {
+    text: '-',
+    title: ''
+  };
+};
+
+const formatSettingsAuditDeviceBrowserDisplay = (summary, userAgent) => {
+  const display = normalizeText(summary) || (normalizeText(userAgent) ? 'Unknown device/browser' : '-');
+  return {
+    text: display,
+    title: normalizeText(userAgent) || display
+  };
+};
+
 const setActiveSettingsAuditPill = (buttons, attributeName, nextValue) => {
   const targetValue = normalizeText(nextValue).toLowerCase() || 'all';
   let hasMatch = false;
@@ -2402,10 +2437,10 @@ const renderSettingsAuditLoadingState = () => {
   setSettingsAuditRecordCount(0);
   settingsAuditTableBody.innerHTML = `
     <tr id="settingsAuditLoadingRow">
-      <td colspan="6" class="text-center text-muted">Loading activity logs...</td>
+      <td colspan="8" class="text-center text-muted">Loading activity logs...</td>
     </tr>
     <tr id="settingsAuditEmptyRow" class="d-none">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
 };
@@ -2415,10 +2450,10 @@ const renderSettingsAuditErrorState = (message) => {
   const safeMessage = escapeHtml(message || 'Unable to load activity logs.');
   settingsAuditTableBody.innerHTML = `
     <tr id="settingsAuditErrorRow">
-      <td colspan="6" class="text-center text-danger">${safeMessage}</td>
+      <td colspan="8" class="text-center text-danger">${safeMessage}</td>
     </tr>
     <tr id="settingsAuditEmptyRow" class="d-none">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
   setSettingsAuditRecordCount(0);
@@ -2502,17 +2537,20 @@ const renderSettingsAuditTable = () => {
       : (roleLabel || '-');
     const actionBadge = buildSettingsAuditActionBadge(item.action_type, item.action_key);
     const resultBadge = buildSettingsAuditResultBadge(item.action_type, item.action_key, item.details);
+    const recordDisplay = formatSettingsAuditRecordDisplay(item.record_id, item.record_type);
     const details = normalizeText(item.details) || '-';
-    const ipAddress = formatSettingsAuditIpAddress(item.ip_address);
-
+    const ipAddress = formatSettingsAuditIpAddress(item.public_ip_address || item.ip_address);
+    const deviceBrowser = formatSettingsAuditDeviceBrowserDisplay(item.device_browser, item.user_agent);
     return `
       <tr>
         <td>${escapeHtml(createdAt)}</td>
         <td>${escapeHtml(userLabel)}</td>
         <td>${actionBadge}</td>
         <td>${resultBadge}</td>
-        <td>${escapeHtml(details)}</td>
+        <td class="audit-record-id-cell"><span class="audit-record-id-text" title="${escapeHtml(recordDisplay.title)}">${escapeHtml(recordDisplay.text)}</span></td>
+        <td class="audit-details-cell">${escapeHtml(details)}</td>
         <td class="audit-ip-cell"><span class="audit-ip-text" title="${escapeHtml(ipAddress)}">${escapeHtml(ipAddress)}</span></td>
+        <td class="audit-device-cell"><span class="audit-device-text" title="${escapeHtml(deviceBrowser.title)}">${escapeHtml(deviceBrowser.text)}</span></td>
       </tr>
     `;
   }).join('');
@@ -2520,7 +2558,7 @@ const renderSettingsAuditTable = () => {
   settingsAuditTableBody.innerHTML = `
     ${rowsHtml}
     <tr id="settingsAuditEmptyRow" class="${sortedItems.length === 0 ? '' : 'd-none'}">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
 };

@@ -48,6 +48,11 @@ function auth_env(array $keys, string $default = ''): string
     return $default;
 }
 
+function auth_footer_system_name(): string
+{
+    return 'Barangay Cabarian Ligao City: Online Household Information Management System';
+}
+
 function auth_start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -645,6 +650,38 @@ function auth_bootstrap_audit_trail_table(PDO $pdo): void
             KEY `idx_audit_trail_actor_role` (`actor_role`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
+    auth_ensure_audit_trail_columns($pdo);
+}
+
+function auth_audit_logs_has_column(PDO $pdo, string $column): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table_name
+           AND COLUMN_NAME = :column_name
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'table_name' => 'audit_trail_logs',
+        'column_name' => $column,
+    ]);
+    return (bool) $stmt->fetchColumn();
+}
+
+function auth_ensure_audit_trail_columns(PDO $pdo): void
+{
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    if (auth_audit_logs_has_column($pdo, 'session_id')) {
+        $pdo->exec('ALTER TABLE `audit_trail_logs` DROP COLUMN `session_id`');
+    }
+
+    $ensured = true;
 }
 
 function auth_audit_text(mixed $value, int $maxLength = 255): string
@@ -670,6 +707,66 @@ function auth_request_ip(): string
         }
     }
     return auth_audit_text((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 64);
+}
+
+function auth_audit_user_agent_platform(string $userAgent): string
+{
+    $value = strtolower(trim($userAgent));
+    if ($value === '') {
+        return '';
+    }
+
+    return match (true) {
+        str_contains($value, 'iphone') => 'iPhone',
+        str_contains($value, 'ipad') => 'iPad',
+        str_contains($value, 'android') => 'Android',
+        str_contains($value, 'windows nt 10.0') => 'Windows 10/11',
+        str_contains($value, 'windows nt 6.3') => 'Windows 8.1',
+        str_contains($value, 'windows nt 6.2') => 'Windows 8',
+        str_contains($value, 'windows nt 6.1') => 'Windows 7',
+        str_contains($value, 'windows') => 'Windows',
+        str_contains($value, 'mac os x') || str_contains($value, 'macintosh') => 'macOS',
+        str_contains($value, 'cros') => 'ChromeOS',
+        str_contains($value, 'linux') => 'Linux',
+        default => '',
+    };
+}
+
+function auth_audit_user_agent_browser(string $userAgent): string
+{
+    $value = strtolower(trim($userAgent));
+    if ($value === '') {
+        return '';
+    }
+
+    return match (true) {
+        str_contains($value, 'edg/') => 'Microsoft Edge',
+        str_contains($value, 'opr/') || str_contains($value, 'opera') => 'Opera',
+        str_contains($value, 'samsungbrowser/') => 'Samsung Internet',
+        str_contains($value, 'firefox/') => 'Firefox',
+        str_contains($value, 'chrome/') && !str_contains($value, 'edg/') && !str_contains($value, 'opr/') => 'Chrome',
+        str_contains($value, 'safari/') && str_contains($value, 'version/') && !str_contains($value, 'chrome/') => 'Safari',
+        str_contains($value, 'trident/') || str_contains($value, 'msie') => 'Internet Explorer',
+        default => '',
+    };
+}
+
+function auth_audit_user_agent_summary(string $userAgent): string
+{
+    $browser = auth_audit_user_agent_browser($userAgent);
+    $platform = auth_audit_user_agent_platform($userAgent);
+
+    if ($browser !== '' && $platform !== '') {
+        return $browser . ' on ' . $platform;
+    }
+    if ($browser !== '') {
+        return $browser;
+    }
+    if ($platform !== '') {
+        return $platform;
+    }
+
+    return trim($userAgent) !== '' ? 'Unknown device/browser' : '';
 }
 
 /**
@@ -714,8 +811,8 @@ function auth_audit_log(array $entry): void
              (`actor_user_id`, `actor_username`, `actor_role`, `action_key`, `action_type`, `module_name`,
               `record_type`, `record_id`, `details`, `metadata_json`, `ip_address`, `user_agent`)
              VALUES
-             (:actor_user_id, :actor_username, :actor_role, :action_key, :action_type, :module_name,
-              :record_type, :record_id, :details, :metadata_json, :ip_address, :user_agent)'
+              (:actor_user_id, :actor_username, :actor_role, :action_key, :action_type, :module_name,
+               :record_type, :record_id, :details, :metadata_json, :ip_address, :user_agent)'
         );
         $stmt->execute([
             'actor_user_id' => $actorUserId > 0 ? $actorUserId : null,

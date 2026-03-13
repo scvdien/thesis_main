@@ -134,6 +134,39 @@ const formatIpAddress = (value) => {
   return ip;
 };
 
+const toTitleLabel = (value) => normalizeText(value)
+  .replace(/_/g, ' ')
+  .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatRecordDisplay = (recordId, recordType) => {
+  const id = normalizeText(recordId);
+  const type = toTitleLabel(recordType);
+  if (id) {
+    return {
+      text: id,
+      title: type ? `${type}: ${id}` : id
+    };
+  }
+  if (type) {
+    return {
+      text: type,
+      title: type
+    };
+  }
+  return {
+    text: '-',
+    title: ''
+  };
+};
+
+const formatDeviceBrowserDisplay = (summary, userAgent) => {
+  const display = normalizeText(summary) || (normalizeText(userAgent) ? 'Unknown device/browser' : '-');
+  return {
+    text: display,
+    title: normalizeText(userAgent) || display
+  };
+};
+
 const setAuditRecordCount = (count) => {
   if (!auditRecordCount) return;
   const numericCount = Number(count);
@@ -216,10 +249,10 @@ const renderLoadingState = () => {
   setAuditRecordCount(0);
   auditTableBody.innerHTML = `
     <tr id="auditLoadingRow">
-      <td colspan="6" class="text-center text-muted">Loading activity logs...</td>
+      <td colspan="8" class="text-center text-muted">Loading activity logs...</td>
     </tr>
     <tr id="auditEmptyRow" class="d-none">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
 };
@@ -230,10 +263,10 @@ const renderErrorState = (message) => {
   const safeMessage = escapeHtml(message || 'Unable to load activity logs.');
   auditTableBody.innerHTML = `
     <tr id="auditErrorRow">
-      <td colspan="6" class="text-center text-danger">${safeMessage}</td>
+      <td colspan="8" class="text-center text-danger">${safeMessage}</td>
     </tr>
     <tr id="auditEmptyRow" class="d-none">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
 };
@@ -298,17 +331,20 @@ const renderAuditTable = () => {
       : (roleLabel || '-');
     const actionBadge = buildActionBadge(item.action_type, item.action_key);
     const resultBadge = buildResultBadge(item.action_type, item.action_key, item.details);
+    const recordDisplay = formatRecordDisplay(item.record_id, item.record_type);
     const details = normalizeText(item.details) || '-';
-    const ipAddress = formatIpAddress(item.ip_address);
-
+    const ipAddress = formatIpAddress(item.public_ip_address || item.ip_address);
+    const deviceBrowser = formatDeviceBrowserDisplay(item.device_browser, item.user_agent);
     return `
       <tr>
         <td>${escapeHtml(createdAt)}</td>
         <td>${escapeHtml(userLabel)}</td>
         <td>${actionBadge}</td>
         <td>${resultBadge}</td>
-        <td>${escapeHtml(details)}</td>
+        <td class="audit-record-id-cell"><span class="audit-record-id-text" title="${escapeHtml(recordDisplay.title)}">${escapeHtml(recordDisplay.text)}</span></td>
+        <td class="audit-details-cell">${escapeHtml(details)}</td>
         <td class="audit-ip-cell"><span class="audit-ip-text" title="${escapeHtml(ipAddress)}">${escapeHtml(ipAddress)}</span></td>
+        <td class="audit-device-cell"><span class="audit-device-text" title="${escapeHtml(deviceBrowser.title)}">${escapeHtml(deviceBrowser.text)}</span></td>
       </tr>
     `;
   }).join('');
@@ -316,7 +352,7 @@ const renderAuditTable = () => {
   auditTableBody.innerHTML = `
     ${rowsHtml}
     <tr id="auditEmptyRow" class="${sortedItems.length === 0 ? '' : 'd-none'}">
-      <td colspan="6" class="text-center text-muted">No activity logs found.</td>
+      <td colspan="8" class="text-center text-muted">No activity logs found.</td>
     </tr>
   `;
 };

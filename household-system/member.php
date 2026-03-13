@@ -27,7 +27,9 @@ $brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
 if (stripos($brandLabel, 'barangay') !== 0) {
   $brandLabel = trim('Barangay ' . $brandLabel);
 }
-$systemLabel = trim($brandLabel . ($brandCity !== '' ? ' ' . $brandCity : '') . ' Household Information Management System');
+$memberMode = strtolower(trim((string) ($_GET['mode'] ?? '')));
+$isHouseholdViewMode = $memberMode === 'household-view';
+$systemLabel = trim($brandLabel . ($brandCity !== '' ? ' ' . $brandCity : '') . ' Online Household Information Management System');
 $memberOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts.js') ?: time());
 ?>
@@ -60,7 +62,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
         </div>
         <div class="header-actions">
           <button type="button" class="btn btn-light btn-sm" id="backBtn">
-            <i class="bi bi-arrow-left"></i> Back to Registration
+            <i class="bi bi-arrow-left"></i> <?= $isHouseholdViewMode ? 'Back to Household' : 'Back to Registration' ?>
           </button>
         </div>
       </div>
@@ -211,7 +213,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
 
       <div class="action-bar">
         <div class="d-flex justify-content-end gap-2">
-          <button type="button" class="btn btn-outline-primary" id="cancelBtn"><i class="bi bi-arrow-left"></i> Back</button>
+          <button type="button" class="btn btn-outline-primary" id="cancelBtn"><i class="bi bi-arrow-left"></i> <?= $isHouseholdViewMode ? 'Back to Household' : 'Back' ?></button>
           <button type="reset" class="btn btn-secondary" id="clearBtn"><i class="bi bi-x-circle"></i> Clear</button>
           <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Member</button>
         </div>
@@ -221,7 +223,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
 
   <footer class="footer page-footer py-3 text-center mt-4">
     <div class="page-wrap">
-      <p class="mb-1 fw-semibold"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></p>
+      <p class="mb-1 fw-semibold"><?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?></p>
       <p class="mb-0 small">&copy; <span id="year"></span> <?= htmlspecialchars(trim($brandLabel . ($brandCity !== '' ? ', ' . $brandCity : '')), ENT_QUOTES, 'UTF-8') ?></p>
     </div>
   </footer>

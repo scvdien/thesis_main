@@ -87,6 +87,8 @@ if (stripos($brandLabel, 'barangay') !== 0) {
     $brandLabel = trim('Barangay ' . $brandLabel);
 }
 $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
+$loginStyleVersion = @filemtime(__DIR__ . '/assets/css/login-style.css');
+$loginStyleHref = 'assets/css/login-style.css' . ($loginStyleVersion ? '?v=' . rawurlencode((string) $loginStyleVersion) : '');
 ?>
 <!doctype html>
 <html lang="en">
@@ -97,7 +99,7 @@ $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
 
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/login-style.css">
+  <link rel="stylesheet" href="<?= htmlspecialchars($loginStyleHref, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body>
   <div class="page">
@@ -111,8 +113,9 @@ $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
           <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
           <div class="brand-copy">
             <div class="brand-title"><?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?></div>
-            <div class="brand-sub">Household Information Management System</div>
+            <div class="brand-sub">Online Household Information Management System</div>
           </div>
+          <img class="brand-mark-secondary" src="assets/img/ligao-city-logo.png" alt="<?= htmlspecialchars($accessAreaLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
         </div>
         <p class="brand-desc">
           Secure access for authorized personnel of <?= htmlspecialchars($accessAreaLabel, ENT_QUOTES, 'UTF-8') ?>. Manage resident
@@ -203,7 +206,7 @@ $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
   </div>
 
   <footer>
-    &copy; <?php echo date('Y'); ?> <?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved
+    &copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved
   </footer>
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>

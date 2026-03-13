@@ -7,7 +7,7 @@ if (PHP_SAPI !== 'cli') {
     auth_require_api(['captain', 'admin', 'secretary']);
 }
 const REPORT_NO_DATA_MESSAGE = 'No reported cases for the selected reporting year.';
-const REPORT_DATA_SOURCE = 'Household Information Management System (HIMS) analytics database';
+const REPORT_DATA_SOURCE = 'Online Household Information Management System (HIMS) analytics database';
 
 function respondWithError(int $statusCode, string $message): void
 {

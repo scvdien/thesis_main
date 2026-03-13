@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-03-13-v1";
+const CACHE_VERSION = "2026-03-13-v2";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
@@ -77,24 +77,48 @@ const cachePageResponse = async (request, response) => {
   }
 };
 
+const getRegistrationPageCandidates = (request) => {
+  const requestUrl = getUrl(request);
+  const candidates = [request, request.url];
+  const canonicalUrl = new URL(requestUrl.toString());
+  canonicalUrl.search = "";
+  canonicalUrl.hash = "";
+  if (!candidates.includes(canonicalUrl.toString())) {
+    candidates.push(canonicalUrl.toString());
+  }
+  return candidates;
+};
+
+const findCachedRegistrationPage = async (request) => {
+  const candidates = getRegistrationPageCandidates(request);
+  const pageCache = await caches.open(PAGE_CACHE_NAME);
+  for (const candidate of candidates) {
+    const cached = await pageCache.match(candidate);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  const staticCache = await caches.open(STATIC_CACHE_NAME);
+  for (const candidate of candidates) {
+    const cached = await staticCache.match(candidate);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  return null;
+};
+
 const handleRegistrationNavigation = async (request) => {
   try {
     const response = await fetch(request);
     await cachePageResponse(request, response.clone());
     return response;
   } catch (error) {
-    const pageCache = await caches.open(PAGE_CACHE_NAME);
-    const cachedExact = await pageCache.match(request);
-    if (cachedExact) {
-      return cachedExact;
-    }
-
-    const fallbackUrl = new URL(request.url);
-    fallbackUrl.search = "";
-    fallbackUrl.hash = "";
-    const cachedBase = await pageCache.match(fallbackUrl.toString());
-    if (cachedBase) {
-      return cachedBase;
+    const cachedPage = await findCachedRegistrationPage(request);
+    if (cachedPage) {
+      return cachedPage;
     }
 
     const staticCache = await caches.open(STATIC_CACHE_NAME);

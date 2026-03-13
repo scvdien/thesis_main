@@ -1022,7 +1022,18 @@ const main = async () => {
       } catch (error) {
         // Continue to edit page even if draft seeding fails.
       }
-      window.location.href = `registration.php?edit=${currentRecord.id}`;
+      const nextUrl = new URL('registration.php', window.location.href);
+      nextUrl.searchParams.set('edit', currentRecord.id);
+      nextUrl.searchParams.set('from', 'household-view');
+      nextUrl.searchParams.set('return_id', currentRecord.id);
+      const targetYear = normalizeYearValue(pageParams.get('year') || currentDisplayYear);
+      if (targetYear) {
+        nextUrl.searchParams.set('year', targetYear);
+      }
+      if (resolvedRole) {
+        nextUrl.searchParams.set('role', resolvedRole);
+      }
+      window.location.href = nextUrl.toString();
     });
   }
 

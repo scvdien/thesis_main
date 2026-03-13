@@ -40,7 +40,7 @@ if ($brandCity !== '' && stripos($brandSidebarLabel, $brandCity) === false) {
 if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
-$systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$systemLabel = trim($brandFooterLabel . ' Online Household Information Management System');
 $adminDashboardStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/admin-style.css') ?: time());
 $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-dashboard-scripts.js') ?: time());
 ?>
@@ -188,7 +188,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- MODALS (same as captain dashboard) -->

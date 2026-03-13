@@ -52,6 +52,8 @@ function audit_api_build_item(array $row): array
 
     $actorRole = auth_normalize_role((string) ($row['actor_role'] ?? ''));
     $actorRole = $actorRole !== '' ? $actorRole : audit_api_text((string) ($row['actor_role'] ?? ''), 20);
+    $userAgent = (string) ($row['user_agent'] ?? '');
+    $publicIpAddress = (string) ($row['ip_address'] ?? '');
 
     return [
         'id' => (int) ($row['id'] ?? 0),
@@ -68,8 +70,10 @@ function audit_api_build_item(array $row): array
         'record_type' => (string) ($row['record_type'] ?? ''),
         'record_id' => (string) ($row['record_id'] ?? ''),
         'details' => (string) ($row['details'] ?? ''),
-        'ip_address' => (string) ($row['ip_address'] ?? ''),
-        'user_agent' => (string) ($row['user_agent'] ?? ''),
+        'ip_address' => $publicIpAddress,
+        'public_ip_address' => $publicIpAddress,
+        'user_agent' => $userAgent,
+        'device_browser' => auth_audit_user_agent_summary($userAgent),
         'metadata' => $metadata,
     ];
 }
@@ -96,6 +100,7 @@ function audit_api_filter_sql(array $filters): array
             OR LOWER(`record_id`) LIKE :q_record_id
             OR LOWER(`record_type`) LIKE :q_record_type
             OR LOWER(`module_name`) LIKE :q_module_name
+            OR LOWER(`user_agent`) LIKE :q_user_agent
         )';
         $params['q_action_key'] = $likeQuery;
         $params['q_action_key_words'] = $likeQuery;
@@ -106,6 +111,7 @@ function audit_api_filter_sql(array $filters): array
         $params['q_record_id'] = $likeQuery;
         $params['q_record_type'] = $likeQuery;
         $params['q_module_name'] = $likeQuery;
+        $params['q_user_agent'] = $likeQuery;
     }
 
     $actionType = strtolower(audit_api_text($filters['action_type'] ?? '', 40));

@@ -4,6 +4,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const editHouseholdId = (urlParams.get("edit") || "").trim();
   const isEditMode = editHouseholdId.length > 0;
+  const editReturnSource = (urlParams.get("from") || "").trim().toLowerCase();
+  const editReturnId = (urlParams.get("return_id") || editHouseholdId).trim();
   const isValidRecordYear = (year) => Number.isInteger(year) && year >= 2000 && year <= 2100;
   const requestedRecordYear = Number.parseInt((urlParams.get("year") || "").trim(), 10);
   const editYearMatch = editHouseholdId.match(/^HH-(\d{4})-/i);
@@ -19,6 +21,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
   const LAST_SYNC_KEY = "household_registration_last_sync_at";
   const LAST_SYNC_ERROR_KEY = "household_registration_last_sync_error";
+  const PRESENCE_ENDPOINT = "auth-presence.php";
+  const CONNECTIVITY_PROBE_TTL_MS = 15000;
+  const LOCALHOST_NAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+  const isLocalhostOrigin = LOCALHOST_NAMES.has(window.location.hostname);
+  const CONNECTIVITY_REFRESH_INTERVAL_MS = isLocalhostOrigin ? 3000 : 8000;
   const localStorage = window.createIndexedStorageProxy
     ? window.createIndexedStorageProxy([
         MEMBERS_KEY,
@@ -116,6 +123,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const syncToastTitle = document.getElementById("syncToastTitle");
   const syncToastBody = document.getElementById("syncToastBody");
   const syncToastIcon = document.getElementById("syncToastIcon");
+  const currentRole = String(document.body.dataset.role || "").trim().toLowerCase();
   const syncToast = syncToastEl
     ? bootstrap.Toast.getOrCreateInstance(syncToastEl, { autohide: false })
     : null;
@@ -140,6 +148,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   let staffCredentialSaveBusy = false;
   const LOAD_HOUSEHOLD_MIN_QUERY_LENGTH = 2;
 
+  const buildEditModeReturnUrl = () => {
+    if (editReturnSource === "household-view") {
+      const nextUrl = new URL("household-view.php", window.location.href);
+      if (editReturnId) {
+        nextUrl.searchParams.set("id", editReturnId);
+      }
+      if (targetRecordYear) {
+        nextUrl.searchParams.set("year", String(targetRecordYear));
+      }
+      if (currentRole) {
+        nextUrl.searchParams.set("role", currentRole);
+      }
+      return nextUrl.toString();
+    }
+
+    const nextUrl = new URL("registration.php", window.location.href);
+    nextUrl.searchParams.set("year", String(targetRecordYear));
+    return nextUrl.toString();
+  };
+
   if (isEditMode) {
     document.title = "Update Household";
     if (contentTitle) contentTitle.textContent = "Update Household";
@@ -154,7 +182,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (saveModalDescription) saveModalDescription.textContent = "Ready to update this household record?";
     if (saveConfirm) saveConfirm.textContent = "Update";
     if (loadExistingBtn) {
-      loadExistingBtn.innerHTML = '<i class="bi bi-arrow-left"></i> Back to Registration';
+      loadExistingBtn.innerHTML = editReturnSource === "household-view"
+        ? '<i class="bi bi-arrow-left"></i> Back to Household'
+        : '<i class="bi bi-arrow-left"></i> Back to Registration';
     }
   } else if (targetRecordYear !== new Date().getFullYear()) {
     if (contentSubtitle) {
@@ -165,10 +195,97 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  let serverReachable = window.navigator.onLine ? true : null;
+  let connectivityProbePromise = null;
+  let lastConnectivityProbeAt = 0;
+
+  const isAppOnline = () => {
+    if (isLocalhostOrigin) {
+      return window.navigator.onLine !== false;
+    }
+    if (window.navigator.onLine === true) return true;
+    if (serverReachable === true) return true;
+    if (serverReachable === false) return false;
+    return window.navigator.onLine !== false;
+  };
+
+  const syncConnectivityState = async ({ force = false } = {}) => {
+    if (isLocalhostOrigin) {
+      serverReachable = null;
+      lastConnectivityProbeAt = Date.now();
+      return isAppOnline();
+    }
+
+    const now = Date.now();
+    if (!force && lastConnectivityProbeAt > 0 && (now - lastConnectivityProbeAt) < CONNECTIVITY_PROBE_TTL_MS) {
+      return isAppOnline();
+    }
+    if (connectivityProbePromise) {
+      return connectivityProbePromise;
+    }
+
+    connectivityProbePromise = (async () => {
+      try {
+        const response = await fetch(`${PRESENCE_ENDPOINT}?_=${now}`, {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest"
+          }
+        });
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+        serverReachable = Boolean(
+          response.ok
+          && payload
+          && payload.success === true
+          && String(payload.status || "").trim().toLowerCase() === "online"
+        );
+      } catch {
+        serverReachable = false;
+      } finally {
+        lastConnectivityProbeAt = Date.now();
+        connectivityProbePromise = null;
+      }
+      return isAppOnline();
+    })();
+
+    return connectivityProbePromise;
+  };
+
+  const updateLoadExistingButtonVisibility = () => {
+    if (!loadExistingBtn) return;
+
+    const shouldHideLoadExisting = !isEditMode && !isAppOnline();
+    loadExistingBtn.classList.toggle("d-none", shouldHideLoadExisting);
+    loadExistingBtn.setAttribute("aria-hidden", shouldHideLoadExisting ? "true" : "false");
+
+    if (shouldHideLoadExisting && loadHouseholdModalEl?.classList.contains("show")) {
+      loadHouseholdModal?.hide();
+    }
+  };
+
   const setSidebarOpen = (open) => {
     document.body.classList.toggle("sidebar-open", open);
     if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", String(open));
     if (sidebarOverlay) sidebarOverlay.setAttribute("aria-hidden", String(!open));
+
+    if (!open) {
+      return;
+    }
+
+    void syncConnectivityState({ force: true }).then(() => {
+      updateSyncStatus();
+      updateLoadExistingButtonVisibility();
+      if (isAppOnline()) {
+        flushSyncQueue({ showSuccessState: true });
+      }
+    });
   };
 
   if (editMemberBtn) {
@@ -986,7 +1103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const updateSyncStatus = () => {
     const pendingCount = getSyncQueue().length;
-    const isOffline = !window.navigator.onLine;
+    const isOffline = !isAppOnline();
     const lastSyncedAt = getLastSyncedAt();
     const lastSyncError = getLastSyncError();
     const suffix = pendingCount === 1 ? "" : "s";
@@ -1075,6 +1192,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (offlinePendingLine) {
       offlinePendingLine.classList.toggle("d-none", !isOffline);
     }
+    updateLoadExistingButtonVisibility();
     if (pendingSyncModalEl && pendingSyncModalEl.classList.contains("show")) {
       renderPendingSyncModal();
     }
@@ -1124,7 +1242,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const flushSyncQueue = async ({ showFeedback = false, showSuccessState = false } = {}) => {
     if (syncInProgress) return;
 
-    if (!window.navigator.onLine) {
+    if (!isAppOnline()) {
+      await syncConnectivityState({ force: true });
+    }
+
+    if (!isAppOnline()) {
       updateSyncStatus();
       if (showFeedback) {
         showSyncToast("You are offline. Pending households will sync automatically once online.", "warning", "Offline");
@@ -1299,7 +1421,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const duplicateHint = duplicateHouseholdId
         ? `Existing record: ${duplicateHouseholdId}`
         : "";
-      const duplicateMessage = window.navigator.onLine
+      const duplicateMessage = isAppOnline()
         ? (duplicateHouseholdId
           ? `Duplicate found: ${duplicateHouseholdId}. Use Load Existing Household to re-encode changes or delete this pending record.`
           : "Duplicate found. Use Load Existing Household to re-encode changes or delete this pending record.")
@@ -1437,7 +1559,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       return false;
     }
 
-    if (!isEditMode && !window.navigator.onLine) {
+    await syncConnectivityState({ force: true });
+
+    if (!isEditMode && !isAppOnline()) {
       const duplicatePending = findDuplicatePendingSyncRecord(record);
       if (duplicatePending) {
         const duplicateId = String(duplicatePending?.household_id || "").trim();
@@ -1477,7 +1601,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     let queuedByError = false;
     let syncErrorMessage = "";
 
-    if (window.navigator.onLine) {
+    if (isAppOnline()) {
       syncInProgress = true;
       updateSyncStatus();
       try {
@@ -1571,7 +1695,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderMembers();
     }
 
-    if (window.navigator.onLine && !queuedByError) {
+    if (isAppOnline() && !queuedByError) {
       await flushSyncQueue({ showSuccessState: true });
     }
 
@@ -2513,15 +2637,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  window.addEventListener("online", () => {
+  window.addEventListener("online", async () => {
     clearSyncSuccessState();
+    serverReachable = true;
+    updateSyncStatus();
+    updateLoadExistingButtonVisibility();
+    await syncConnectivityState({ force: true });
+    updateSyncStatus();
     flushSyncQueue({ showSuccessState: true });
   });
 
-  window.addEventListener("offline", () => {
+  window.addEventListener("offline", async () => {
     clearSyncSuccessState();
+    await syncConnectivityState({ force: true });
     updateSyncStatus();
   });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    void syncConnectivityState({ force: true }).then(() => {
+      updateSyncStatus();
+    });
+  });
+
+  window.addEventListener("focus", () => {
+    void syncConnectivityState({ force: true }).then(() => {
+      updateSyncStatus();
+    });
+  });
+
+  window.setInterval(() => {
+    if (document.hidden) {
+      return;
+    }
+
+    void syncConnectivityState({ force: true }).then(() => {
+      updateSyncStatus();
+      updateLoadExistingButtonVisibility();
+    });
+  }, CONNECTIVITY_REFRESH_INTERVAL_MS);
 
   if (syncStatusBadge) {
     syncStatusBadge.addEventListener("click", () => {
@@ -2581,11 +2735,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (loadExistingBtn) {
-    loadExistingBtn.addEventListener("click", () => {
+    loadExistingBtn.addEventListener("click", async () => {
       if (isEditMode) {
-        const nextUrl = new URL("registration.php", window.location.href);
-        nextUrl.searchParams.set("year", String(targetRecordYear));
-        window.location.href = nextUrl.toString();
+        window.location.href = buildEditModeReturnUrl();
+        return;
+      }
+      await syncConnectivityState({ force: true });
+      if (!isAppOnline()) {
+        updateLoadExistingButtonVisibility();
         return;
       }
       if (loadHouseholdSearch) {
@@ -2674,8 +2831,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateAgeField();
   renderMembers();
   updateAddMemberState();
+  await syncConnectivityState({ force: true });
   updateSyncStatus();
-  if (window.navigator.onLine) {
+  if (isAppOnline()) {
     flushSyncQueue({ showSuccessState: true });
   }
 

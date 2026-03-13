@@ -145,7 +145,7 @@ if ($brandSidebarLabel === '') {
 
   <!-- FOOTER -->
   <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars($footerLabel, ENT_QUOTES, 'UTF-8') ?> Household Information Management System. All rights reserved.
+    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
   </footer>
 
   <!-- REPORT DETAILS MODAL -->
