@@ -39,14 +39,16 @@
 
 .resident-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 14px;
+  align-items: start;
 }
 
 .resident-detail-item {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .resident-detail-item .k {
@@ -65,10 +67,25 @@
   padding: 8px 10px;
   font-weight: 600;
   color: #1b2a3a;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .resident-detail-item.full {
   grid-column: 1 / -1;
+}
+
+@media (max-width: 992px) {
+  .resident-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .resident-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 #residentDetailsModal .resident-modal-footer {
@@ -113,12 +130,6 @@
   min-width: 140px;
   padding: 10px 24px;
   font-size: 1rem;
-}
-
-@media (max-width: 768px) {
-  .resident-detail-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 576px) {

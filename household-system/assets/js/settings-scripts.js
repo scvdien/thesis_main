@@ -53,6 +53,29 @@ if (isAdminRole) {
   document.querySelectorAll('[data-role="admin-only"]').forEach((el) => el.remove());
 }
 
+const serverRequiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || '').toLowerCase() === 'true';
+const lockAdminCredentialUpdateFlow = isAdminRole && serverRequiresCredentialUpdate;
+if (lockAdminCredentialUpdateFlow) {
+  document.querySelectorAll('.settings-nav a[href^="#"]').forEach((link) => {
+    if (link.getAttribute('href') !== '#admin-credentials') {
+      link.remove();
+    }
+  });
+  document.querySelectorAll('.settings-panel').forEach((panel) => {
+    if (panel.id !== 'admin-credentials') {
+      panel.remove();
+    }
+  });
+  document.querySelectorAll('.settings-nav-group').forEach((group) => {
+    if (!group.querySelector('a[href^="#"]')) {
+      group.remove();
+    }
+  });
+  if (history.replaceState) {
+    history.replaceState(null, '', `${window.location.pathname}${window.location.search}#admin-credentials`);
+  }
+}
+
 const footerYear = document.getElementById('year');
 if (footerYear) {
   footerYear.textContent = String(new Date().getFullYear());
@@ -127,15 +150,18 @@ const adminAccountPanel = document.getElementById('admin-account');
 const ADMIN_ACCOUNT_PASSWORD_RULE = /^.{8,}$/;
 const ADMIN_CREDENTIALS_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
 const STAFF_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
+const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
 const STAFF_ACCOUNT_LIMIT = 5;
 const USERS_API_ENDPOINT = 'users-api.php';
+const SETTINGS_ROLLOVER_API_ENDPOINT = 'registration-sync.php';
+const SETTINGS_ROLLOVER_FETCH_LIMIT = 500;
 const SETTINGS_AUDIT_API_ENDPOINT = 'audit-trail-api.php';
 const SETTINGS_AUDIT_FETCH_LIMIT = 200;
 const ACTIVE_USERS_REFRESH_INTERVAL_MS = 30000;
 const BARANGAY_PROFILE_SEAL_MAX_SIZE_BYTES = 2 * 1024 * 1024;
 const BARANGAY_PROFILE_SEAL_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const BACKUP_RESTORE_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-const BACKUP_RESTORE_PRIORITY_NOTICE = 'Run Backup first before restoring. Restoring will overwrite current data.';
+const BACKUP_RESTORE_PRIORITY_NOTICE = 'Run Backup first before restoring. Restoring will overwrite current household and resident records.';
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
 const settingsState = {
@@ -144,7 +170,19 @@ const settingsState = {
   staffAccounts: [],
   activeUsers: [],
   barangayProfile: null,
-  backupStatus: null
+  backupStatus: null,
+  backupYearOptions: []
+};
+const backupSelectionState = {
+  mode: 'all',
+  year: ''
+};
+
+const settingsRolloverState = {
+  rows: [],
+  statuses: [],
+  loading: false,
+  error: ''
 };
 
 const settingsAuditState = {
@@ -160,6 +198,10 @@ let isSettingsMutating = false;
 let isActiveUsersRefreshing = false;
 let activeUsersRefreshTimer = null;
 let isBackupActionBusy = false;
+let isSettingsRolloverBusy = false;
+let settingsRolloverBusyAction = '';
+let pendingSettingsRolloverRequest = null;
+let pendingSettingsRolloverResetRequest = null;
 
 const adminAccountCreateFullName = document.getElementById('adminAccountCreateFullName');
 const adminAccountCreateUsername = document.getElementById('adminAccountCreateUsername');
@@ -191,6 +233,24 @@ const staffDeleteConfirmModal =
   staffDeleteConfirmModalEl && window.bootstrap && window.bootstrap.Modal
     ? new window.bootstrap.Modal(staffDeleteConfirmModalEl)
     : null;
+const staffResetConfirmModalEl = document.getElementById('staffResetConfirmModal');
+const staffResetConfirmText = document.getElementById('staffResetConfirmText');
+const staffResetConfirmBtn = document.getElementById('staffResetConfirmBtn');
+const staffResetConfirmModal =
+  staffResetConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(staffResetConfirmModalEl)
+    : null;
+const staffResetCredentialsModalEl = document.getElementById('staffResetCredentialsModal');
+const staffResetFullName = document.getElementById('staffResetFullName');
+const staffResetUsername = document.getElementById('staffResetUsername');
+const staffResetPassword = document.getElementById('staffResetPassword');
+const staffResetPasswordConfirm = document.getElementById('staffResetPasswordConfirm');
+const staffResetNotice = document.getElementById('staffResetNotice');
+const staffResetBtn = document.getElementById('staffResetBtn');
+const staffResetCredentialsModal =
+  staffResetCredentialsModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(staffResetCredentialsModalEl)
+    : null;
 const backupRestoreConfirmModalEl = document.getElementById('backupRestoreConfirmModal');
 const backupRestoreConfirmText = document.getElementById('backupRestoreConfirmText');
 const backupRestoreConfirmBtn = document.getElementById('backupRestoreConfirmBtn');
@@ -200,21 +260,8 @@ const backupRestoreConfirmModal =
     : null;
 let resolveBackupRestoreConfirm = null;
 let pendingDeleteStaffId = '';
-const staffViewModalEl = document.getElementById('staffViewModal');
-const staffViewName = document.getElementById('staffViewName');
-const staffViewMeta = document.getElementById('staffViewMeta');
-const staffViewStatusBadge = document.getElementById('staffViewStatusBadge');
-const staffViewUsername = document.getElementById('staffViewUsername');
-const staffViewContact = document.getElementById('staffViewContact');
-const staffViewPasswordValue = document.getElementById('staffViewPasswordValue');
-const staffViewPasswordToggleBtn = document.getElementById('staffViewPasswordToggleBtn');
-const staffViewToggleBtn = document.getElementById('staffViewToggleBtn');
-const staffViewDeleteBtn = document.getElementById('staffViewDeleteBtn');
-const staffViewModal =
-  staffViewModalEl && window.bootstrap && window.bootstrap.Modal
-    ? new window.bootstrap.Modal(staffViewModalEl)
-    : null;
-let activeStaffViewId = '';
+let pendingStaffResetId = '';
+let activeStaffResetId = '';
 
 const adminAccountDeactivateToggle = document.getElementById('adminAccountDeactivateToggle');
 
@@ -265,13 +312,95 @@ const backupRestorePanel = document.getElementById('backup-restore');
 const backupHealthBadge = document.getElementById('backupHealthBadge');
 const backupScheduleSelect = document.getElementById('backupScheduleSelect');
 const backupStorageLocationSelect = document.getElementById('backupStorageLocationSelect');
+const backupCoverageSelect = document.getElementById('backupCoverageSelect');
+const backupYearSelect = document.getElementById('backupYearSelect');
 const backupLastBackupInput = document.getElementById('backupLastBackup');
 const backupSizeDisplayInput = document.getElementById('backupSizeDisplay');
 const backupRestoreFileInput = document.getElementById('backupRestoreFile');
+const backupRestoreFileChooseBtn = document.getElementById('backupRestoreFileChooseBtn');
+const backupRestoreFileName = document.getElementById('backupRestoreFileName');
+const backupRestorePreview = document.getElementById('backupRestorePreview');
+const backupPreviewTriggerFile = document.getElementById('backupPreviewTriggerFile');
+const backupPreviewTriggerBadge = document.getElementById('backupPreviewTriggerBadge');
+const backupPreviewOpenBtn = document.getElementById('backupPreviewOpenBtn');
+const backupPreviewModalEl = document.getElementById('backupPreviewModal');
+const backupPreviewModal =
+  backupPreviewModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(backupPreviewModalEl)
+    : null;
+const backupPreviewFileName = document.getElementById('backupPreviewFileName');
+const backupPreviewBadge = document.getElementById('backupPreviewBadge');
+const backupPreviewMessage = document.getElementById('backupPreviewMessage');
+const backupPreviewCreatedAt = document.getElementById('backupPreviewCreatedAt');
+const backupPreviewYears = document.getElementById('backupPreviewYears');
+const backupPreviewTables = document.getElementById('backupPreviewTables');
+const backupPreviewRows = document.getElementById('backupPreviewRows');
+const backupPreviewHouseholds = document.getElementById('backupPreviewHouseholds');
+const backupPreviewRollovers = document.getElementById('backupPreviewRollovers');
+const backupPreviewIncludedTables = document.getElementById('backupPreviewIncludedTables');
 const backupRestoreNotice = document.getElementById('backupRestoreNotice');
 const backupRunBtn = document.getElementById('backupRunBtn');
 const backupDownloadBtn = document.getElementById('backupDownloadBtn');
 const backupRestoreBtn = document.getElementById('backupRestoreBtn');
+const BACKUP_RESTORE_SUPPORTED_TABLES = [
+  'households',
+  'household_members',
+  'registration_households',
+  'registration_members',
+  'registration_residents',
+  'registration_year_rollovers'
+];
+const backupRestorePreviewState = {
+  loading: false,
+  valid: false,
+  error: '',
+  fileName: '',
+  meta: null
+};
+let backupRestorePreviewRequestId = 0;
+const settingsRolloverPanel = document.getElementById('rollover-years');
+const settingsRolloverStatusBadge = document.getElementById('settingsRolloverStatusBadge');
+const settingsRolloverYearSelect = document.getElementById('settingsRolloverYearSelect');
+const settingsRolloverSourceYearInput = document.getElementById('settingsRolloverSourceYear');
+const settingsRolloverSourceCountInput = document.getElementById('settingsRolloverSourceCount');
+const settingsRolloverTargetCountInput = document.getElementById('settingsRolloverTargetCount');
+const settingsRolloverNotice = document.getElementById('settingsRolloverNotice');
+const settingsRolloverResetBtn = document.getElementById('settingsRolloverResetBtn');
+const settingsRolloverActionBtn = document.getElementById('settingsRolloverActionBtn');
+const settingsRolloverConfirmModalEl = document.getElementById('settingsRolloverConfirmModal');
+const settingsRolloverConfirmMessage = document.getElementById('settingsRolloverConfirmMessage');
+const settingsRolloverConfirmDetails = document.getElementById('settingsRolloverConfirmDetails');
+const settingsRolloverConfirmBtn = document.getElementById('settingsRolloverConfirmBtn');
+const settingsRolloverConfirmModal =
+  settingsRolloverConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(settingsRolloverConfirmModalEl)
+    : null;
+if (settingsRolloverConfirmModalEl) {
+  settingsRolloverConfirmModalEl.addEventListener('hidden.bs.modal', () => {
+    pendingSettingsRolloverRequest = null;
+    if (settingsRolloverConfirmBtn) {
+      settingsRolloverConfirmBtn.disabled = false;
+      settingsRolloverConfirmBtn.innerHTML = 'Confirm Rollover';
+    }
+  });
+}
+const settingsRolloverResetConfirmModalEl = document.getElementById('settingsRolloverResetConfirmModal');
+const settingsRolloverResetConfirmMessage = document.getElementById('settingsRolloverResetConfirmMessage');
+const settingsRolloverResetConfirmDetails = document.getElementById('settingsRolloverResetConfirmDetails');
+const settingsRolloverResetConfirmBtn = document.getElementById('settingsRolloverResetConfirmBtn');
+const settingsRolloverResetConfirmModal =
+  settingsRolloverResetConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(settingsRolloverResetConfirmModalEl)
+    : null;
+if (settingsRolloverResetConfirmModalEl) {
+  settingsRolloverResetConfirmModalEl.addEventListener('hidden.bs.modal', () => {
+    pendingSettingsRolloverResetRequest = null;
+    if (settingsRolloverResetConfirmBtn) {
+      settingsRolloverResetConfirmBtn.disabled = false;
+      settingsRolloverResetConfirmBtn.innerHTML = 'Reset Rollover';
+    }
+  });
+}
 const settingsAuditSearchInput = document.getElementById('settingsAuditSearchInput');
 const settingsAuditActionPills = document.querySelectorAll('.audit-quick-pill[data-settings-audit-action]');
 const settingsAuditUserFilter = document.getElementById('settingsAuditUserFilter');
@@ -340,7 +469,7 @@ const normalizeStaffAccount = (account) => {
     fullName,
     username,
     contactNumber: String(account.contactNumber || '').trim(),
-    passwordVisible: String(account.passwordVisible || '').trim(),
+    requiresCredentialUpdate: account.requiresCredentialUpdate === true,
     role: String(account.roleLabel || account.role || 'Registration Staff').trim() || 'Registration Staff',
     module: String(account.module || 'Registration Module').trim() || 'Registration Module',
     status: String(account.status || 'active').toLowerCase() === 'deactivated' ? 'deactivated' : 'active',
@@ -402,12 +531,21 @@ const normalizeBackupStatus = (status) => {
   };
 };
 
+const normalizeBackupYearOptions = (years) => {
+  if (!Array.isArray(years)) return [];
+  const normalized = years
+    .map((value) => Number.parseInt(String(value ?? '').trim(), 10))
+    .filter((value) => Number.isInteger(value) && value >= 2000 && value <= 2100);
+  return Array.from(new Set(normalized)).sort((a, b) => b - a);
+};
+
 const readCurrentUser = () => settingsState.currentUser;
 const readAdminAccount = () => settingsState.adminAccount;
 const readStaffAccounts = () => (Array.isArray(settingsState.staffAccounts) ? settingsState.staffAccounts.slice() : []);
 const readActiveUsers = () => (Array.isArray(settingsState.activeUsers) ? settingsState.activeUsers.slice() : []);
 const readBarangayProfile = () => settingsState.barangayProfile;
 const readBackupStatus = () => settingsState.backupStatus;
+const readBackupYearOptions = () => (Array.isArray(settingsState.backupYearOptions) ? settingsState.backupYearOptions.slice() : []);
 
 const hasValidAdminAccount = (account) => !!(account && account.id && account.username && account.fullName);
 
@@ -419,6 +557,7 @@ const applySettingsPayload = (payload) => {
     settingsState.activeUsers = [];
     settingsState.barangayProfile = null;
     settingsState.backupStatus = null;
+    settingsState.backupYearOptions = [];
     return;
   }
   settingsState.currentUser = normalizeCurrentUser(payload.current_user);
@@ -429,6 +568,7 @@ const applySettingsPayload = (payload) => {
   settingsState.activeUsers = activeRows.map(normalizeActiveUser).filter(Boolean);
   settingsState.barangayProfile = normalizeBarangayProfile(payload.barangay_profile);
   settingsState.backupStatus = normalizeBackupStatus(payload.backup_status);
+  settingsState.backupYearOptions = normalizeBackupYearOptions(payload.backup_year_options);
 };
 
 const usersApiFetch = async (method = 'GET', payload = null) => {
@@ -660,8 +800,13 @@ const setAdminCredentialsNotice = (message, tone = 'muted') => {
 
 const setStaffAccountNotice = (message, tone = 'muted') => {
   if (!staffAccountNotice) return;
-  staffAccountNotice.textContent = message;
+  const nextMessage = String(message || '').trim();
+  staffAccountNotice.textContent = nextMessage;
   staffAccountNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  staffAccountNotice.classList.toggle('d-none', nextMessage === '');
+  if (nextMessage === '') {
+    return;
+  }
   if (tone === 'success') {
     staffAccountNotice.classList.add('text-success');
     return;
@@ -671,6 +816,21 @@ const setStaffAccountNotice = (message, tone = 'muted') => {
     return;
   }
   staffAccountNotice.classList.add('text-muted');
+};
+
+const setStaffResetNotice = (message, tone = 'muted') => {
+  if (!staffResetNotice) return;
+  staffResetNotice.textContent = message;
+  staffResetNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  if (tone === 'success') {
+    staffResetNotice.classList.add('text-success');
+    return;
+  }
+  if (tone === 'danger') {
+    staffResetNotice.classList.add('text-danger');
+    return;
+  }
+  staffResetNotice.classList.add('text-muted');
 };
 
 const setBarangayProfileNotice = (message, tone = 'muted') => {
@@ -722,6 +882,7 @@ const setAdminAccountStatusBadge = (status) => {
 const validateAdminAccountPassword = (value) => ADMIN_ACCOUNT_PASSWORD_RULE.test(String(value || ''));
 const validateAdminCredentialsPassword = (value) => ADMIN_CREDENTIALS_PASSWORD_RULE.test(String(value || ''));
 const validateStaffPassword = (value) => STAFF_PASSWORD_RULE.test(String(value || ''));
+const validateUsername = (value) => USERNAME_RULE.test(String(value || '').trim());
 const normalizeText = (value) => String(value ?? '').trim();
 const escapeHtml = (value) => String(value || '')
   .replace(/&/g, '&amp;')
@@ -742,11 +903,6 @@ const basenameFromPath = (value) => {
   } catch (error) {
     return fileName;
   }
-};
-
-const maskPassword = (password) => {
-  const length = Math.max(String(password || '').length, 8);
-  return '*'.repeat(length);
 };
 
 const formatActiveUserSeenAt = (value) => {
@@ -783,13 +939,16 @@ const formatBackupDateTime = (value) => {
   if (!normalized) return 'Not available';
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return normalized;
-  return parsed.toLocaleString('en-US', {
+  const datePart = parsed.toLocaleDateString('en-US', {
     month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const timePart = parsed.toLocaleTimeString('en-US', {
+    hour: 'numeric',
     minute: '2-digit'
   });
+  return `${datePart}, ${timePart}`;
 };
 
 const formatBackupSize = (value) => {
@@ -804,6 +963,244 @@ const formatBackupSize = (value) => {
   }
   const rounded = unitIndex === 0 ? String(Math.trunc(normalized)) : normalized.toFixed(2).replace(/\.?0+$/, '');
   return `${rounded} ${units[unitIndex]}`;
+};
+
+const getSelectedBackupCoverageMode = () => (backupSelectionState.mode === 'year' ? 'year' : 'all');
+
+const getSelectedBackupYear = () => {
+  const parsed = Number.parseInt(String(backupSelectionState.year || '').trim(), 10);
+  return Number.isInteger(parsed) && parsed >= 2000 && parsed <= 2100 ? parsed : 0;
+};
+
+const syncBackupSelectionStateFromControls = () => {
+  if (backupCoverageSelect) {
+    backupSelectionState.mode = backupCoverageSelect.value === 'year' ? 'year' : 'all';
+  }
+  if (backupYearSelect) {
+    backupSelectionState.year = normalizeText(backupYearSelect.value);
+  }
+};
+
+const ensureBackupYearOptions = (years) => {
+  if (!backupYearSelect) return;
+
+  const currentValue = Number.parseInt(String(backupSelectionState.year || backupYearSelect.value || '').trim(), 10);
+  if (!years.length) {
+    backupYearSelect.innerHTML = '<option value="">No years available</option>';
+    backupYearSelect.value = '';
+    backupSelectionState.year = '';
+    return;
+  }
+
+  const resolvedYear = Number.isInteger(currentValue) && years.includes(currentValue)
+    ? currentValue
+    : years[0];
+
+  backupYearSelect.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join('');
+  backupYearSelect.value = String(resolvedYear);
+  backupSelectionState.year = String(resolvedYear);
+};
+
+const describeBackupScopeSelection = () => {
+  const mode = getSelectedBackupCoverageMode();
+  const year = getSelectedBackupYear();
+  if (mode === 'year' && year > 0) {
+    return `year ${year}`;
+  }
+  return 'all years';
+};
+
+const buildBackupRunRequestPayload = () => {
+  const mode = getSelectedBackupCoverageMode();
+  const year = getSelectedBackupYear();
+  if (mode === 'year') {
+    if (year <= 0) {
+      throw new Error('Select a valid backup year first.');
+    }
+    return {
+      action: 'run_backup',
+      backup_scope: 'selected_year',
+      backup_year: year
+    };
+  }
+
+  return {
+    action: 'run_backup',
+    backup_scope: 'all_years'
+  };
+};
+
+const formatCountLabel = (value, noun) => {
+  const count = Number(value);
+  const safeCount = Number.isFinite(count) && count >= 0 ? Math.trunc(count) : 0;
+  const label = safeCount === 1 ? noun : `${noun}s`;
+  return `${safeCount.toLocaleString('en-US')} ${label}`;
+};
+
+const resetBackupRestorePreviewState = () => {
+  backupRestorePreviewState.loading = false;
+  backupRestorePreviewState.valid = false;
+  backupRestorePreviewState.error = '';
+  backupRestorePreviewState.fileName = '';
+  backupRestorePreviewState.meta = null;
+};
+
+const cancelBackupRestorePreview = () => {
+  backupRestorePreviewRequestId += 1;
+  resetBackupRestorePreviewState();
+  backupPreviewModal?.hide();
+};
+
+const setBackupPreviewText = (element, value, fallback = '-') => {
+  if (!element) return;
+  const normalized = normalizeText(value);
+  element.textContent = normalized || fallback;
+};
+
+const formatBackupPreviewTableLabel = (tableName) => normalizeText(tableName)
+  .split('_')
+  .filter(Boolean)
+  .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+  .join(' ');
+
+const renderBackupPreviewPillList = (container, values, formatter = null, emptyLabel = 'None') => {
+  if (!container) return;
+  container.innerHTML = '';
+
+  const items = Array.isArray(values)
+    ? values.map((value) => normalizeText(value)).filter(Boolean)
+    : [];
+
+  if (!items.length) {
+    const empty = document.createElement('span');
+    empty.className = 'backup-preview-pill-empty';
+    empty.textContent = emptyLabel;
+    container.appendChild(empty);
+    return;
+  }
+
+  items.forEach((value) => {
+    const pill = document.createElement('span');
+    pill.className = 'backup-preview-pill';
+    pill.textContent = typeof formatter === 'function' ? formatter(value) : value;
+    container.appendChild(pill);
+  });
+};
+
+const parseBackupPreviewYear = (value) => {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2100) return 0;
+  return parsed;
+};
+
+const getBackupPreviewTableRows = (payload, tableName) => {
+  const tablesNode = payload && typeof payload === 'object' ? payload.tables : null;
+  if (!tablesNode || typeof tablesNode !== 'object') return [];
+  const tableNode = tablesNode[tableName];
+  if (!tableNode || typeof tableNode !== 'object' || !Array.isArray(tableNode.rows)) return [];
+  return tableNode.rows.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+};
+
+const getBackupPreviewTableRowCount = (payload, tableName) => {
+  const rows = getBackupPreviewTableRows(payload, tableName);
+  if (rows.length) return rows.length;
+  const tablesNode = payload && typeof payload === 'object' ? payload.tables : null;
+  if (!tablesNode || typeof tablesNode !== 'object') return 0;
+  const tableNode = tablesNode[tableName];
+  const parsed = Number.parseInt(String(tableNode?.row_count ?? ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const summarizeBackupPreview = (payload, fileName) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Selected file is not a valid backup document.');
+  }
+
+  const tablesNode = payload.tables;
+  if (!tablesNode || typeof tablesNode !== 'object' || Array.isArray(tablesNode)) {
+    throw new Error('Selected file does not contain backup table data.');
+  }
+
+  const includedTables = Object.keys(tablesNode)
+    .filter((name) => BACKUP_RESTORE_SUPPORTED_TABLES.includes(String(name || '').trim()));
+  if (!includedTables.length) {
+    throw new Error('Selected file does not contain restorable household tables.');
+  }
+
+  const yearSet = new Set();
+  const addYear = (value) => {
+    const parsed = parseBackupPreviewYear(value);
+    if (parsed > 0) yearSet.add(parsed);
+  };
+
+  ['households', 'registration_households'].forEach((tableName) => {
+    getBackupPreviewTableRows(payload, tableName).forEach((row) => {
+      addYear(row?.record_year);
+      addYear(extractSettingsRolloverHouseholdYear(row?.household_code));
+      addYear(extractSettingsRolloverHouseholdYear(row?.household_id));
+    });
+  });
+
+  const rolloverSet = new Set();
+  getBackupPreviewTableRows(payload, 'registration_year_rollovers').forEach((row) => {
+    const sourceYear = parseBackupPreviewYear(row?.source_year);
+    const targetYear = parseBackupPreviewYear(row?.target_year);
+    if (sourceYear > 0 && targetYear > 0) {
+      rolloverSet.add(`${sourceYear}->${targetYear}`);
+    }
+  });
+
+  const years = Array.from(yearSet).sort((a, b) => a - b);
+  const rollovers = Array.from(rolloverSet).sort((left, right) => {
+    const [leftSource = 0, leftTarget = 0] = String(left).split('->').map((value) => parseBackupPreviewYear(value));
+    const [rightSource = 0, rightTarget = 0] = String(right).split('->').map((value) => parseBackupPreviewYear(value));
+    if (leftSource !== rightSource) return leftSource - rightSource;
+    return leftTarget - rightTarget;
+  });
+  const totalRows = includedTables.reduce((sum, tableName) => sum + getBackupPreviewTableRowCount(payload, tableName), 0);
+  const householdRows = getBackupPreviewTableRowCount(payload, 'households') + getBackupPreviewTableRowCount(payload, 'registration_households');
+
+  return {
+    fileName: normalizeText(fileName) || 'Selected backup file',
+    createdAt: normalizeText(payload.created_at),
+    years,
+    includedTables,
+    totalRows,
+    householdRows,
+    rollovers
+  };
+};
+
+const loadBackupRestorePreview = async (selectedFile) => {
+  const requestId = ++backupRestorePreviewRequestId;
+  backupRestorePreviewState.loading = true;
+  backupRestorePreviewState.valid = false;
+  backupRestorePreviewState.error = '';
+  backupRestorePreviewState.fileName = normalizeText(selectedFile?.name);
+  backupRestorePreviewState.meta = null;
+  renderBackupRestoreState();
+
+  try {
+    const raw = await selectedFile.text();
+    if (requestId !== backupRestorePreviewRequestId) return false;
+    const payload = JSON.parse(raw);
+    backupRestorePreviewState.meta = summarizeBackupPreview(payload, selectedFile.name);
+    backupRestorePreviewState.loading = false;
+    backupRestorePreviewState.valid = true;
+    backupRestorePreviewState.error = '';
+    renderBackupRestoreState();
+    return true;
+  } catch (error) {
+    if (requestId !== backupRestorePreviewRequestId) return false;
+    backupRestorePreviewState.loading = false;
+    backupRestorePreviewState.valid = false;
+    backupRestorePreviewState.meta = null;
+    backupRestorePreviewState.error = error instanceof Error
+      ? error.message
+      : 'Unable to read the selected backup file.';
+    renderBackupRestoreState();
+    return false;
+  }
 };
 
 const syncSelectByText = (selectElement, targetLabel) => {
@@ -829,10 +1226,29 @@ const renderBackupRestoreState = () => {
   if (!backupRestorePanel) return;
 
   const backup = readBackupStatus() || normalizeBackupStatus(null);
+  const availableYears = readBackupYearOptions();
+  ensureBackupYearOptions(availableYears);
+  const selectedCoverageMode = getSelectedBackupCoverageMode();
+  const selectedBackupYear = getSelectedBackupYear();
+  const yearModeActive = selectedCoverageMode === 'year';
   syncSelectByText(backupScheduleSelect, backup.schedule);
   syncSelectByText(backupStorageLocationSelect, backup.storageLocation);
   if (backupScheduleSelect) backupScheduleSelect.disabled = true;
   if (backupStorageLocationSelect) backupStorageLocationSelect.disabled = true;
+  if (backupCoverageSelect) {
+    backupCoverageSelect.value = selectedCoverageMode;
+    backupCoverageSelect.disabled = isBackupActionBusy || isSettingsMutating;
+  }
+  if (backupYearSelect) {
+    backupYearSelect.disabled = isBackupActionBusy || isSettingsMutating || !yearModeActive || availableYears.length === 0;
+    if (!yearModeActive) {
+      backupYearSelect.title = 'Enable "Selected Year Only" to choose a year.';
+    } else if (availableYears.length === 0) {
+      backupYearSelect.title = 'No household years are available for year-specific backup.';
+    } else {
+      backupYearSelect.title = '';
+    }
+  }
 
   if (backupLastBackupInput) {
     const displayValue = backup.available ? formatBackupDateTime(backup.lastBackupAt) : 'Not available';
@@ -858,23 +1274,650 @@ const renderBackupRestoreState = () => {
   }
 
   const hasSelectedRestoreFile = !!backupRestoreFileInput?.files?.[0];
+  const previewReady = !hasSelectedRestoreFile
+    ? false
+    : backupRestorePreviewState.valid && !backupRestorePreviewState.loading;
+  if (backupRestoreFileName) {
+    const selectedFileName = backupRestorePreviewState.fileName || backupRestoreFileInput?.files?.[0]?.name;
+    setBackupPreviewText(backupRestoreFileName, selectedFileName, 'No file chosen');
+    backupRestoreFileName.title = normalizeText(selectedFileName);
+  }
   if (backupRunBtn) {
-    backupRunBtn.disabled = isBackupActionBusy || isSettingsMutating;
+    backupRunBtn.disabled = isBackupActionBusy || isSettingsMutating || (yearModeActive && (!selectedBackupYear || availableYears.length === 0));
+    if (yearModeActive && availableYears.length === 0) {
+      backupRunBtn.title = 'No household years are available for year-specific backup.';
+    } else if (yearModeActive && !selectedBackupYear) {
+      backupRunBtn.title = 'Select a valid backup year first.';
+    } else {
+      backupRunBtn.title = '';
+    }
   }
   if (backupDownloadBtn) {
     backupDownloadBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available;
   }
   if (backupRestoreBtn) {
-    backupRestoreBtn.disabled = isBackupActionBusy || isSettingsMutating || !hasSelectedRestoreFile || !backup.available;
-    backupRestoreBtn.title = !backup.available
-      ? 'Run Backup first to create a current recovery point.'
-      : '';
+    backupRestoreBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available || !previewReady;
+    if (!backup.available) {
+      backupRestoreBtn.title = 'Run Backup first to create a current household-data recovery point.';
+    } else if (backupRestorePreviewState.loading) {
+      backupRestoreBtn.title = 'Analyzing the selected backup file.';
+    } else if (hasSelectedRestoreFile && !backupRestorePreviewState.valid) {
+      backupRestoreBtn.title = 'Selected backup file is invalid or unreadable.';
+    } else {
+      backupRestoreBtn.title = '';
+    }
+  }
+
+  if (backupRestorePreview) {
+    const showPreview = hasSelectedRestoreFile
+      || backupRestorePreviewState.loading
+      || backupRestorePreviewState.valid
+      || !!backupRestorePreviewState.error;
+    backupRestorePreview.classList.toggle('d-none', !showPreview);
+  }
+
+  if (backupPreviewTriggerFile) {
+    setBackupPreviewText(
+      backupPreviewTriggerFile,
+      backupRestorePreviewState.fileName || backupRestoreFileInput?.files?.[0]?.name,
+      'No file selected'
+    );
+  }
+
+  if (backupPreviewFileName) {
+    setBackupPreviewText(backupPreviewFileName, backupRestorePreviewState.fileName || backupRestoreFileInput?.files?.[0]?.name, 'No file selected');
+  }
+  const applyBackupPreviewBadgeState = (element) => {
+    if (!element) return;
+    element.className = 'badge';
+    if (backupRestorePreviewState.loading) {
+      element.textContent = 'Analyzing';
+      element.classList.add('bg-info-subtle', 'text-info');
+    } else if (backupRestorePreviewState.error) {
+      element.textContent = 'Invalid';
+      element.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (backupRestorePreviewState.valid) {
+      element.textContent = 'Ready';
+      element.classList.add('bg-primary-subtle', 'text-primary');
+    } else {
+      element.textContent = 'Waiting';
+      element.classList.add('bg-secondary-subtle', 'text-secondary');
+    }
+  };
+  applyBackupPreviewBadgeState(backupPreviewTriggerBadge);
+  applyBackupPreviewBadgeState(backupPreviewBadge);
+
+  if (backupPreviewOpenBtn) {
+    backupPreviewOpenBtn.classList.toggle('d-none', !hasSelectedRestoreFile);
+    backupPreviewOpenBtn.disabled = !backupRestorePreviewState.valid || backupRestorePreviewState.loading;
+    backupPreviewOpenBtn.title = backupRestorePreviewState.loading
+      ? 'Finish analyzing the selected backup file first.'
+      : backupRestorePreviewState.valid
+        ? ''
+        : 'Select a valid backup file first.';
+  }
+
+  if (backupPreviewMessage) {
+    backupPreviewMessage.classList.remove('text-muted', 'text-danger', 'text-primary');
+    if (backupRestorePreviewState.loading) {
+      backupPreviewMessage.textContent = 'Reading the selected file and checking its years, tables, and row counts.';
+      backupPreviewMessage.classList.add('text-primary');
+    } else if (backupRestorePreviewState.error) {
+      backupPreviewMessage.textContent = backupRestorePreviewState.error;
+      backupPreviewMessage.classList.add('text-danger');
+    } else if (backupRestorePreviewState.valid && backupRestorePreviewState.meta) {
+      const yearsLabel = backupRestorePreviewState.meta.years.length
+        ? backupRestorePreviewState.meta.years.join(', ')
+        : 'No household year detected';
+      backupPreviewMessage.textContent = `Preview ready. This backup contains data for year(s): ${yearsLabel}.`;
+      backupPreviewMessage.classList.add('text-muted');
+    } else {
+      backupPreviewMessage.textContent = 'Select a backup file to preview the years and contents before restore.';
+      backupPreviewMessage.classList.add('text-muted');
+    }
+  }
+
+  const previewMeta = backupRestorePreviewState.meta;
+  if (backupRestorePreviewState.valid && previewMeta) {
+    setBackupPreviewText(backupPreviewCreatedAt, formatBackupDateTime(previewMeta.createdAt), 'Not available');
+    setBackupPreviewText(backupPreviewYears, previewMeta.years.length ? previewMeta.years.join(', ') : 'No year detected');
+    setBackupPreviewText(backupPreviewTables, formatCountLabel(previewMeta.includedTables.length, 'table'));
+    setBackupPreviewText(backupPreviewRows, formatCountLabel(previewMeta.totalRows, 'row'));
+    setBackupPreviewText(backupPreviewHouseholds, formatCountLabel(previewMeta.householdRows, 'household record'));
+    renderBackupPreviewPillList(backupPreviewRollovers, previewMeta.rollovers, null, 'No rollover history saved in this backup');
+    renderBackupPreviewPillList(backupPreviewIncludedTables, previewMeta.includedTables, formatBackupPreviewTableLabel, 'No included tables');
+  } else {
+    setBackupPreviewText(backupPreviewCreatedAt, '');
+    setBackupPreviewText(backupPreviewYears, '');
+    setBackupPreviewText(backupPreviewTables, '');
+    setBackupPreviewText(backupPreviewRows, '');
+    setBackupPreviewText(backupPreviewHouseholds, '');
+    renderBackupPreviewPillList(backupPreviewRollovers, [], null, 'No rollover history saved in this backup');
+    renderBackupPreviewPillList(backupPreviewIncludedTables, [], formatBackupPreviewTableLabel, 'No included tables');
   }
 };
 
 const setBackupActionBusy = (busy) => {
   isBackupActionBusy = busy;
   renderBackupRestoreState();
+};
+
+const setSettingsRolloverNotice = (message, tone = 'muted') => {
+  if (!settingsRolloverNotice) return;
+  settingsRolloverNotice.textContent = message;
+  settingsRolloverNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  if (tone === 'success') {
+    settingsRolloverNotice.classList.add('text-success');
+    return;
+  }
+  if (tone === 'danger') {
+    settingsRolloverNotice.classList.add('text-danger');
+    return;
+  }
+  settingsRolloverNotice.classList.add('text-muted');
+};
+
+const extractSettingsRolloverYearFromDate = (value) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getFullYear();
+};
+
+const extractSettingsRolloverHouseholdYear = (value) => {
+  const match = String(value || '').match(/^HH-(\d{4})-/i);
+  if (!match) return 0;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isInteger(parsed) ? parsed : 0;
+};
+
+const getSettingsRolloverRowYear = (row) => {
+  const explicitYear = Number.parseInt(String(row?.record_year || ''), 10);
+  if (Number.isInteger(explicitYear) && explicitYear > 0) return explicitYear;
+  const fromCode = extractSettingsRolloverHouseholdYear(row?.household_id);
+  if (fromCode > 0) return fromCode;
+  const fromUpdated = extractSettingsRolloverYearFromDate(row?.updated_at);
+  if (fromUpdated > 0) return fromUpdated;
+  return extractSettingsRolloverYearFromDate(row?.created_at);
+};
+
+const getSelectedSettingsRolloverYear = () => {
+  const parsed = Number.parseInt(normalizeText(settingsRolloverYearSelect?.value), 10);
+  if (Number.isInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return new Date().getFullYear();
+};
+
+const ensureSettingsRolloverYearOptions = (rows = []) => {
+  if (!settingsRolloverYearSelect) return;
+  const currentValue = normalizeText(settingsRolloverYearSelect.value);
+  const currentYear = new Date().getFullYear();
+  const yearSet = new Set([currentYear, currentYear - 1]);
+
+  rows.forEach((row) => {
+    const year = getSettingsRolloverRowYear(row);
+    if (Number.isInteger(year) && year > 0) {
+      yearSet.add(year);
+    }
+  });
+
+  const years = Array.from(yearSet).sort((a, b) => b - a);
+  settingsRolloverYearSelect.innerHTML = '';
+  years.forEach((year) => {
+    const option = document.createElement('option');
+    option.value = String(year);
+    option.textContent = String(year);
+    settingsRolloverYearSelect.appendChild(option);
+  });
+
+  if (currentValue && years.includes(Number.parseInt(currentValue, 10))) {
+    settingsRolloverYearSelect.value = currentValue;
+    return;
+  }
+  settingsRolloverYearSelect.value = String(years[0] || currentYear);
+};
+
+const getSettingsRolloverAvailableYears = () => {
+  const years = settingsRolloverState.rows
+    .map((row) => getSettingsRolloverRowYear(row))
+    .filter((year) => Number.isInteger(year) && year > 0);
+  return Array.from(new Set(years)).sort((a, b) => b - a);
+};
+
+const getSettingsRolloverStatusForYear = (targetYear) => {
+  return settingsRolloverState.statuses.find((item) => Number(item?.target_year || 0) === Number(targetYear || 0)) || null;
+};
+
+const getSettingsRolloverLatestSourceYear = (targetYear) => {
+  return getSettingsRolloverAvailableYears().find((year) => year < targetYear) || 0;
+};
+
+const countSettingsRolloverRowsForYear = (targetYear) => {
+  return settingsRolloverState.rows.filter((row) => getSettingsRolloverRowYear(row) === Number(targetYear || 0)).length;
+};
+
+const setSettingsRolloverBadgeState = (label, tone = 'primary') => {
+  if (!settingsRolloverStatusBadge) return;
+  settingsRolloverStatusBadge.textContent = label;
+  settingsRolloverStatusBadge.classList.remove(
+    'bg-primary-subtle',
+    'text-primary',
+    'bg-success-subtle',
+    'text-success',
+    'bg-warning-subtle',
+    'text-warning',
+    'bg-danger-subtle',
+    'text-danger',
+    'bg-secondary-subtle',
+    'text-secondary'
+  );
+
+  if (tone === 'success') {
+    settingsRolloverStatusBadge.classList.add('bg-success-subtle', 'text-success');
+    return;
+  }
+  if (tone === 'warning') {
+    settingsRolloverStatusBadge.classList.add('bg-warning-subtle', 'text-warning');
+    return;
+  }
+  if (tone === 'danger') {
+    settingsRolloverStatusBadge.classList.add('bg-danger-subtle', 'text-danger');
+    return;
+  }
+  if (tone === 'secondary') {
+    settingsRolloverStatusBadge.classList.add('bg-secondary-subtle', 'text-secondary');
+    return;
+  }
+  settingsRolloverStatusBadge.classList.add('bg-primary-subtle', 'text-primary');
+};
+
+const renderSettingsRolloverState = () => {
+  if (!settingsRolloverPanel) return;
+
+  ensureSettingsRolloverYearOptions(settingsRolloverState.rows);
+
+  const selectedYear = getSelectedSettingsRolloverYear();
+  const status = getSettingsRolloverStatusForYear(selectedYear);
+  const isCompleted = normalizeText(status?.status).toLowerCase() === 'completed';
+  const sourceYear = isCompleted
+    ? Number(status?.source_year || 0) || getSettingsRolloverLatestSourceYear(selectedYear)
+    : getSettingsRolloverLatestSourceYear(selectedYear);
+  const computedSourceCount = countSettingsRolloverRowsForYear(sourceYear);
+  const sourceCount = isCompleted
+    ? Math.max(Number(status?.source_household_count || 0), computedSourceCount)
+    : computedSourceCount;
+  const targetCount = countSettingsRolloverRowsForYear(selectedYear);
+
+  if (settingsRolloverSourceYearInput) {
+    settingsRolloverSourceYearInput.value = sourceYear > 0 ? String(sourceYear) : 'Not available';
+  }
+  if (settingsRolloverSourceCountInput) {
+    settingsRolloverSourceCountInput.value = String(sourceCount);
+  }
+  if (settingsRolloverTargetCountInput) {
+    settingsRolloverTargetCountInput.value = String(targetCount);
+  }
+  if (settingsRolloverResetBtn) {
+    settingsRolloverResetBtn.classList.toggle('d-none', !isCompleted && settingsRolloverBusyAction !== 'reset');
+    settingsRolloverResetBtn.disabled = true;
+    settingsRolloverResetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset Rollover';
+  }
+
+  if (settingsRolloverState.loading) {
+    setSettingsRolloverBadgeState('Checking', 'primary');
+    setSettingsRolloverNotice('Loading rollover status...', 'muted');
+    if (settingsRolloverActionBtn) {
+        settingsRolloverActionBtn.disabled = true;
+        settingsRolloverActionBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+      }
+    if (settingsRolloverResetBtn) {
+      settingsRolloverResetBtn.disabled = true;
+    }
+    if (settingsRolloverYearSelect) {
+      settingsRolloverYearSelect.disabled = true;
+    }
+    return;
+  }
+
+  if (settingsRolloverState.error) {
+    setSettingsRolloverBadgeState('Error', 'danger');
+    setSettingsRolloverNotice(settingsRolloverState.error, 'danger');
+    if (settingsRolloverActionBtn) {
+        settingsRolloverActionBtn.disabled = true;
+        settingsRolloverActionBtn.innerHTML = '<i class="bi bi-copy"></i> Roll Over Selected Year';
+      }
+    if (settingsRolloverResetBtn) {
+      settingsRolloverResetBtn.disabled = true;
+    }
+    if (settingsRolloverYearSelect) {
+      settingsRolloverYearSelect.disabled = false;
+    }
+    return;
+  }
+
+  if (settingsRolloverYearSelect) {
+    settingsRolloverYearSelect.disabled = isSettingsRolloverBusy || isSettingsMutating;
+  }
+
+  if (isSettingsRolloverBusy) {
+    setSettingsRolloverBadgeState('Running', 'warning');
+    setSettingsRolloverNotice(
+      settingsRolloverBusyAction === 'reset'
+        ? `Resetting rolled-over records for ${selectedYear}. Please wait...`
+        : `Rolling over household records into ${selectedYear}. Please wait...`,
+      'muted'
+    );
+    if (settingsRolloverActionBtn) {
+      settingsRolloverActionBtn.disabled = true;
+      settingsRolloverActionBtn.innerHTML = settingsRolloverBusyAction === 'run'
+        ? '<i class="bi bi-hourglass-split"></i> Rolling Over...'
+        : '<i class="bi bi-copy"></i> Roll Over Selected Year';
+    }
+    if (settingsRolloverResetBtn) {
+      settingsRolloverResetBtn.classList.toggle('d-none', settingsRolloverBusyAction !== 'reset');
+      settingsRolloverResetBtn.disabled = true;
+      settingsRolloverResetBtn.innerHTML = settingsRolloverBusyAction === 'reset'
+        ? '<i class="bi bi-hourglass-split"></i> Resetting...'
+        : '<i class="bi bi-arrow-counterclockwise"></i> Reset Rollover';
+    }
+    return;
+  }
+
+  if (isCompleted) {
+    const completedAt = formatBackupDateTime(status?.completed_at || '');
+    setSettingsRolloverBadgeState('Completed', 'success');
+    setSettingsRolloverNotice(
+      completedAt !== 'Not available'
+        ? `Rollover for ${selectedYear} completed on ${completedAt}. Use Reset Rollover if you need to clear this year and run it again.`
+        : `Rollover for ${selectedYear} has already been completed. Use Reset Rollover if you need to clear this year and run it again.`,
+      'success'
+    );
+    if (settingsRolloverActionBtn) {
+      settingsRolloverActionBtn.disabled = true;
+      settingsRolloverActionBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Rollover Completed';
+    }
+    if (settingsRolloverResetBtn) {
+      settingsRolloverResetBtn.classList.toggle('d-none', false);
+      settingsRolloverResetBtn.disabled = isSettingsMutating;
+      settingsRolloverResetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset Rollover';
+    }
+    return;
+  }
+
+  if (!sourceYear) {
+    setSettingsRolloverBadgeState('Unavailable', 'secondary');
+    setSettingsRolloverNotice(`No previous household year is available to roll over into ${selectedYear}.`, 'muted');
+    if (settingsRolloverActionBtn) {
+      settingsRolloverActionBtn.disabled = true;
+      settingsRolloverActionBtn.innerHTML = '<i class="bi bi-copy"></i> Roll Over Selected Year';
+    }
+    return;
+  }
+
+  setSettingsRolloverBadgeState('Ready', 'primary');
+  setSettingsRolloverNotice(
+    targetCount > 0
+      ? `Ready to copy ${sourceCount} household record${sourceCount === 1 ? '' : 's'} from ${sourceYear} to ${selectedYear}. Existing ${selectedYear} households will stay as-is.`
+      : `Ready to copy ${sourceCount} household record${sourceCount === 1 ? '' : 's'} from ${sourceYear} to ${selectedYear}.`,
+    'muted'
+  );
+  if (settingsRolloverActionBtn) {
+    settingsRolloverActionBtn.disabled = isSettingsMutating;
+    settingsRolloverActionBtn.innerHTML = '<i class="bi bi-copy"></i> Roll Over Selected Year';
+  }
+  if (settingsRolloverResetBtn) {
+    settingsRolloverResetBtn.classList.toggle('d-none', true);
+    settingsRolloverResetBtn.disabled = true;
+    settingsRolloverResetBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset Rollover';
+  }
+};
+
+const fetchSettingsRolloverState = async () => {
+  const params = new URLSearchParams({
+    action: 'list_households',
+    include_rollover_statuses: '1',
+    limit: String(SETTINGS_ROLLOVER_FETCH_LIMIT),
+    offset: '0'
+  });
+  let response;
+  try {
+    response = await fetch(`${SETTINGS_ROLLOVER_API_ENDPOINT}?${params.toString()}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+  } catch (error) {
+    throw new Error('Cannot reach household rollover data right now.');
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || payload.success !== true) {
+    const message = payload && payload.error
+      ? String(payload.error)
+      : `Failed to load rollover data (${response.status}).`;
+    throw new Error(message);
+  }
+
+  const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
+  const statuses = Array.isArray(payload?.data?.rollover_statuses) ? payload.data.rollover_statuses : [];
+  return {
+    rows: items.map((item) => ({
+      household_id: String(item?.household_id || ''),
+      record_year: Number(item?.record_year || 0),
+      updated_at: String(item?.updated_at || ''),
+      created_at: String(item?.created_at || '')
+    })),
+    statuses: statuses.map((item) => ({
+      target_year: Number(item?.target_year || 0),
+      source_year: Number(item?.source_year || 0),
+      status: String(item?.status || ''),
+      source_household_count: Number(item?.source_household_count || 0),
+      created_household_count: Number(item?.created_household_count || 0),
+      skipped_household_count: Number(item?.skipped_household_count || 0),
+      completed_at: String(item?.completed_at || '')
+    }))
+  };
+};
+
+const loadSettingsRolloverState = async () => {
+  if (!settingsRolloverPanel || settingsRolloverState.loading) return;
+  settingsRolloverState.loading = true;
+  settingsRolloverState.error = '';
+  renderSettingsRolloverState();
+
+  try {
+    const payload = await fetchSettingsRolloverState();
+    settingsRolloverState.rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    settingsRolloverState.statuses = Array.isArray(payload?.statuses) ? payload.statuses : [];
+  } catch (error) {
+    settingsRolloverState.rows = [];
+    settingsRolloverState.statuses = [];
+    settingsRolloverState.error = error instanceof Error ? error.message : 'Unable to load rollover data.';
+  } finally {
+    settingsRolloverState.loading = false;
+    renderSettingsRolloverState();
+  }
+};
+
+const requestSettingsYearRollover = async (targetYear, sourceYear) => {
+  let response;
+  try {
+    response = await fetch(SETTINGS_ROLLOVER_API_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      body: JSON.stringify({
+        action: 'rollover_households',
+        target_year: targetYear,
+        source_year: sourceYear
+      })
+    });
+  } catch (error) {
+    throw new Error('Cannot reach household rollover action right now.');
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || payload.success !== true) {
+    const message = payload && payload.error
+      ? String(payload.error)
+      : `Failed to roll over households (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return payload;
+};
+
+const requestSettingsYearRolloverReset = async (targetYear) => {
+  let response;
+  try {
+    response = await fetch(SETTINGS_ROLLOVER_API_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      body: JSON.stringify({
+        action: 'reset_rollover_households',
+        target_year: targetYear
+      })
+    });
+  } catch (error) {
+    throw new Error('Cannot reach rollover reset action right now.');
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || payload.success !== true) {
+    const message = payload && payload.error
+      ? String(payload.error)
+      : `Failed to reset rollover data (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return payload;
+};
+
+const executeSettingsYearRollover = async () => {
+  if (!pendingSettingsRolloverRequest) return;
+
+  const { targetYear, sourceYear } = pendingSettingsRolloverRequest;
+  const confirmButtonOriginalHtml = settingsRolloverConfirmBtn?.innerHTML || 'Confirm Rollover';
+  let successMessage = '';
+  let errorMessage = '';
+
+  if (settingsRolloverConfirmBtn) {
+    settingsRolloverConfirmBtn.disabled = true;
+    settingsRolloverConfirmBtn.innerHTML = 'Rolling Over...';
+  }
+
+  isSettingsRolloverBusy = true;
+  settingsRolloverBusyAction = 'run';
+  renderSettingsRolloverState();
+
+  try {
+    const payload = await requestSettingsYearRollover(targetYear, sourceYear);
+    settingsRolloverConfirmModal?.hide();
+    pendingSettingsRolloverRequest = null;
+    await loadSettingsRolloverState();
+    if (settingsRolloverYearSelect) {
+      settingsRolloverYearSelect.value = String(targetYear);
+    }
+    renderSettingsRolloverState();
+
+    const created = Number(payload?.created || 0);
+    const skipped = Number(payload?.skipped || 0);
+    successMessage = `Rollover completed for ${payload?.target_year || targetYear}. Created ${created} household record${created === 1 ? '' : 's'} and skipped ${skipped}.`;
+  } catch (error) {
+    settingsRolloverConfirmModal?.hide();
+    errorMessage = error instanceof Error ? error.message : 'Unable to roll over households right now.';
+  } finally {
+    isSettingsRolloverBusy = false;
+    settingsRolloverBusyAction = '';
+    renderSettingsRolloverState();
+    pendingSettingsRolloverRequest = null;
+    if (settingsRolloverConfirmBtn) {
+      settingsRolloverConfirmBtn.disabled = false;
+      settingsRolloverConfirmBtn.innerHTML = confirmButtonOriginalHtml;
+    }
+    if (successMessage) {
+      setSettingsRolloverNotice(successMessage, 'success');
+    } else if (errorMessage) {
+      setSettingsRolloverNotice(errorMessage, 'danger');
+    }
+  }
+};
+
+const executeSettingsYearRolloverReset = async () => {
+  if (!pendingSettingsRolloverResetRequest) return;
+
+  const { targetYear } = pendingSettingsRolloverResetRequest;
+  const confirmButtonOriginalHtml = settingsRolloverResetConfirmBtn?.innerHTML || 'Reset Rollover';
+  let successMessage = '';
+  let errorMessage = '';
+
+  if (settingsRolloverResetConfirmBtn) {
+    settingsRolloverResetConfirmBtn.disabled = true;
+    settingsRolloverResetConfirmBtn.innerHTML = 'Resetting...';
+  }
+
+  isSettingsRolloverBusy = true;
+  settingsRolloverBusyAction = 'reset';
+  renderSettingsRolloverState();
+
+  try {
+    const payload = await requestSettingsYearRolloverReset(targetYear);
+    settingsRolloverResetConfirmModal?.hide();
+    pendingSettingsRolloverResetRequest = null;
+    await loadSettingsRolloverState();
+    if (settingsRolloverYearSelect) {
+      settingsRolloverYearSelect.value = String(targetYear);
+    }
+    renderSettingsRolloverState();
+
+    const deletedHouseholds = Number(payload?.deleted_households || 0);
+    const deletedMembers = Number(payload?.deleted_members || 0);
+    successMessage = `Rollover reset for ${targetYear}. Removed ${deletedHouseholds} rolled-over household record${deletedHouseholds === 1 ? '' : 's'} and ${deletedMembers} member record${deletedMembers === 1 ? '' : 's'}.`;
+  } catch (error) {
+    settingsRolloverResetConfirmModal?.hide();
+    errorMessage = error instanceof Error ? error.message : 'Unable to reset rollover data right now.';
+  } finally {
+    isSettingsRolloverBusy = false;
+    settingsRolloverBusyAction = '';
+    renderSettingsRolloverState();
+    pendingSettingsRolloverResetRequest = null;
+    if (settingsRolloverResetConfirmBtn) {
+      settingsRolloverResetConfirmBtn.disabled = false;
+      settingsRolloverResetConfirmBtn.innerHTML = confirmButtonOriginalHtml;
+    }
+    if (successMessage) {
+      setSettingsRolloverNotice(successMessage, 'success');
+    } else if (errorMessage) {
+      setSettingsRolloverNotice(errorMessage, 'danger');
+    }
+  }
 };
 
 const resolveBackupRestoreConfirmRequest = (confirmed) => {
@@ -887,8 +1930,8 @@ const resolveBackupRestoreConfirmRequest = (confirmed) => {
 const requestBackupRestoreConfirm = (fileName = '') => {
   const safeFileName = normalizeText(fileName);
   const message = safeFileName
-    ? `Restore from "${safeFileName}" backup file? This will overwrite current system data.`
-    : 'Restore from this backup file? This will overwrite current system data.';
+    ? `Restore from "${safeFileName}" backup file? This will overwrite current household and resident records.`
+    : 'Restore from this backup file? This will overwrite current household and resident records.';
 
   if (backupRestoreConfirmText) {
     backupRestoreConfirmText.textContent = message;
@@ -946,71 +1989,6 @@ const triggerBackupFileDownload = (blob, fileName) => {
   }, 1000);
 };
 
-const renderStaffPasswordVisibility = (password, visible = false) => {
-  const plainPassword = String(password || '');
-  const hasPassword = plainPassword.length > 0;
-
-  if (staffViewPasswordValue) {
-    staffViewPasswordValue.dataset.staffPassword = plainPassword;
-    staffViewPasswordValue.dataset.visible = hasPassword && visible ? 'true' : 'false';
-    if (!hasPassword) {
-      staffViewPasswordValue.textContent = 'Not available';
-    } else {
-      staffViewPasswordValue.textContent = visible ? plainPassword : maskPassword(plainPassword);
-    }
-  }
-
-  if (!staffViewPasswordToggleBtn) return;
-
-  staffViewPasswordToggleBtn.disabled = !hasPassword;
-  const toggleLabel = staffViewPasswordToggleBtn.querySelector('[data-toggle-label]');
-  const icon = staffViewPasswordToggleBtn.querySelector('i');
-
-  if (!hasPassword) {
-    if (toggleLabel) toggleLabel.textContent = 'Unavailable';
-    if (icon) {
-      icon.classList.remove('bi-eye', 'bi-eye-slash');
-      icon.classList.add('bi-lock');
-    }
-    return;
-  }
-
-  if (toggleLabel) toggleLabel.textContent = visible ? 'Hide' : 'Show';
-  if (icon) {
-    icon.classList.remove('bi-lock', 'bi-eye', 'bi-eye-slash');
-    icon.classList.add(visible ? 'bi-eye-slash' : 'bi-eye');
-  }
-};
-
-const renderStaffViewModalAccount = (account) => {
-  if (!account) return;
-  const isDeactivated = account.status === 'deactivated';
-
-  if (staffViewName) staffViewName.textContent = account.fullName || 'Staff Account';
-  if (staffViewMeta) staffViewMeta.textContent = `${account.role || 'Registration Staff'} | ${account.module || 'Registration Module'}`;
-  if (staffViewUsername) staffViewUsername.textContent = account.username || '-';
-  if (staffViewContact) staffViewContact.textContent = account.contactNumber || 'Not provided';
-
-  renderStaffPasswordVisibility(account.passwordVisible || '', false);
-
-  if (staffViewStatusBadge) {
-    staffViewStatusBadge.textContent = isDeactivated ? 'Deactivated' : 'Active';
-    staffViewStatusBadge.classList.remove('bg-success-subtle', 'text-success', 'bg-danger-subtle', 'text-danger');
-    staffViewStatusBadge.classList.add(
-      isDeactivated ? 'bg-danger-subtle' : 'bg-success-subtle',
-      isDeactivated ? 'text-danger' : 'text-success'
-    );
-  }
-
-  if (staffViewToggleBtn) {
-    staffViewToggleBtn.classList.remove('btn-outline-success', 'btn-outline-warning');
-    staffViewToggleBtn.classList.add(isDeactivated ? 'btn-outline-success' : 'btn-outline-warning');
-    staffViewToggleBtn.innerHTML = isDeactivated
-      ? '<i class="bi bi-check-circle"></i> Activate'
-      : '<i class="bi bi-pause-circle"></i> Deactivate';
-  }
-};
-
 const renderBarangayProfileState = () => {
   if (!barangayProfilePanel) return;
   const profile = readBarangayProfile() || normalizeBarangayProfile(null);
@@ -1047,6 +2025,7 @@ const rerenderSettingsPanels = () => {
   renderActiveUsers();
   renderBarangayProfileState();
   renderBackupRestoreState();
+  renderSettingsRolloverState();
   syncStaffViewModal();
 };
 
@@ -1054,29 +2033,6 @@ const toPositiveInteger = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.trunc(parsed);
-};
-
-const toggleStaffAccountStatusById = async (staffId) => {
-  const selected = readStaffAccounts().find((account) => account.id === staffId);
-  if (!selected) return;
-  const nextStatus = selected.status === 'deactivated' ? 'active' : 'deactivated';
-
-  try {
-    const response = await runSettingsAction({
-      action: 'set_staff_status',
-      staff_id: toPositiveInteger(staffId),
-      status: nextStatus
-    });
-    rerenderSettingsPanels();
-    const fallbackMessage = nextStatus === 'deactivated'
-      ? `Staff account "${selected.fullName}" has been deactivated.`
-      : `Staff account "${selected.fullName}" has been activated.`;
-    setStaffAccountNotice(response.message || fallbackMessage, 'success');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to update staff status right now.';
-    setStaffAccountNotice(message, 'danger');
-    syncStaffViewModal();
-  }
 };
 
 const deleteStaffAccountById = async (staffId) => {
@@ -1092,10 +2048,6 @@ const deleteStaffAccountById = async (staffId) => {
       action: 'delete_staff',
       staff_id: toPositiveInteger(staffId)
     });
-    if (activeStaffViewId === staffId) {
-      activeStaffViewId = '';
-      staffViewModal?.hide();
-    }
     rerenderSettingsPanels();
     setStaffAccountNotice(response.message || `Staff account "${selected.fullName}" has been deleted.`, 'success');
   } catch (error) {
@@ -1107,15 +2059,101 @@ const deleteStaffAccountById = async (staffId) => {
   }
 };
 
-const syncStaffViewModal = () => {
-  if (!activeStaffViewId) return;
-  const account = readStaffAccounts().find((item) => item.id === activeStaffViewId);
-  if (!account) {
-    activeStaffViewId = '';
-    staffViewModal?.hide();
+const clearStaffResetFields = () => {
+  if (staffResetFullName) staffResetFullName.value = '';
+  if (staffResetUsername) staffResetUsername.value = '';
+  if (staffResetPassword) staffResetPassword.value = '';
+  if (staffResetPasswordConfirm) staffResetPasswordConfirm.value = '';
+};
+
+const openStaffResetCredentialsModalById = (staffId) => {
+  const selected = readStaffAccounts().find((account) => account.id === staffId);
+  if (!selected) {
+    setStaffAccountNotice('Staff account not found.', 'danger');
     return;
   }
-  renderStaffViewModalAccount(account);
+
+  activeStaffResetId = staffId;
+  clearStaffResetFields();
+  if (staffResetFullName) staffResetFullName.value = selected.fullName || '';
+  if (staffResetUsername) staffResetUsername.value = selected.username || '';
+  setStaffResetNotice(
+    `Set a new temporary username and password for ${selected.fullName}. Staff must change them on the next login.`,
+    'muted'
+  );
+  staffResetCredentialsModal?.show();
+};
+
+const promptStaffCredentialResetById = (staffId) => {
+  const selected = readStaffAccounts().find((account) => account.id === staffId);
+  if (!selected) {
+    setStaffAccountNotice('Staff account not found.', 'danger');
+    return;
+  }
+
+  pendingStaffResetId = staffId;
+  if (staffResetConfirmText) {
+    staffResetConfirmText.textContent = `You are about to reset the credentials for ${selected.fullName}. Continue to open the reset form.`;
+  }
+
+  if (staffResetConfirmModal) {
+    staffResetConfirmModal.show();
+    return;
+  }
+
+  const proceed = window.confirm(`Reset credentials for ${selected.fullName}? This will open the reset form.`);
+  if (!proceed) {
+    pendingStaffResetId = '';
+    setStaffAccountNotice('Staff credential reset was cancelled.', 'muted');
+    return;
+  }
+
+  openStaffResetCredentialsModalById(staffId);
+  setStaffResetNotice('Enter new username and password, then save new credentials.', 'muted');
+};
+
+const attemptStaffCredentialReset = async () => {
+  const selected = readStaffAccounts().find((account) => account.id === activeStaffResetId);
+  if (!selected) {
+    setStaffResetNotice('Staff account not found.', 'danger');
+    return;
+  }
+
+  const username = String(staffResetUsername?.value || '').trim();
+  const password = String(staffResetPassword?.value || '');
+  const confirmPassword = String(staffResetPasswordConfirm?.value || '');
+
+  if (!username || !password || !confirmPassword) {
+    setStaffResetNotice('Complete all reset fields before saving.', 'danger');
+    return;
+  }
+  if (!validateUsername(username)) {
+    setStaffResetNotice('Username must be 3-80 characters and use only letters, numbers, dot, underscore, or dash.', 'danger');
+    return;
+  }
+  if (!validateStaffPassword(password)) {
+    setStaffResetNotice('Temporary password must be at least 8 characters and include 1 special character.', 'danger');
+    return;
+  }
+  if (password !== confirmPassword) {
+    setStaffResetNotice('Temporary password and confirmation do not match.', 'danger');
+    return;
+  }
+
+  try {
+    const response = await runSettingsAction({
+      action: 'reset_staff_credentials',
+      staff_id: toPositiveInteger(activeStaffResetId),
+      username,
+      password
+    });
+    rerenderSettingsPanels();
+    setStaffAccountNotice(response.message || `Staff credentials for "${selected.fullName}" were reset successfully.`, 'success');
+    staffResetCredentialsModal?.hide();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to reset staff credentials right now.';
+    setStaffResetNotice(message, 'danger');
+  }
 };
 
 const requestStaffDeleteById = (staffId) => {
@@ -1156,12 +2194,13 @@ const renderStaffAccounts = () => {
         </div>
       </div>
     `;
-    setStaffAccountNotice('No staff account created yet.', 'muted');
+    setStaffAccountNotice('', 'muted');
     return;
   }
 
   staffAccountsList.innerHTML = accounts.map((account) => {
     const isDeactivated = account.status === 'deactivated';
+    const requiresCredentialUpdate = account.requiresCredentialUpdate === true;
     const badgeClass = isDeactivated ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success';
     const badgeText = isDeactivated ? 'Deactivated' : 'Active';
     const accountId = escapeHtml(account.id);
@@ -1169,6 +2208,13 @@ const renderStaffAccounts = () => {
     const role = escapeHtml(account.role);
     const moduleName = escapeHtml(account.module);
     const username = escapeHtml(account.username);
+    const contactNumber = escapeHtml(account.contactNumber || 'Not provided');
+    const credentialBadge = requiresCredentialUpdate
+      ? '<span class="badge bg-warning-subtle text-warning staff-account-status">Needs Update</span>'
+      : '';
+    const credentialNote = requiresCredentialUpdate
+      ? '<div class="small text-warning">Temporary credentials pending staff update</div>'
+      : '';
     return `
       <div class="settings-list-item staff-account-card">
         <div class="staff-account-main">
@@ -1177,14 +2223,37 @@ const renderStaffAccounts = () => {
               <div class="staff-account-name">${fullName}</div>
               <div class="staff-account-meta">${role} | ${moduleName}</div>
               <div class="small">Username: ${username}</div>
+              <div class="small text-muted">Mobile: ${contactNumber}</div>
+              ${credentialNote}
             </div>
           </div>
         </div>
         <div class="staff-account-actions">
           <span class="badge ${badgeClass} staff-account-status">${badgeText}</span>
-          <button type="button" class="btn btn-sm btn-outline-primary staff-action-btn" data-staff-action="view" data-staff-id="${accountId}">
-            <i class="bi bi-eye"></i>View
-          </button>
+          ${credentialBadge}
+          <div class="dropdown staff-action-menu">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary staff-action-menu-toggle"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              aria-label="More staff actions"
+            >
+              <i class="bi bi-three-dots"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end staff-action-menu-list">
+              <li>
+                <button type="button" class="dropdown-item" data-staff-action="reset" data-staff-id="${accountId}">
+                  <i class="bi bi-key"></i> Reset
+                </button>
+              </li>
+              <li>
+                <button type="button" class="dropdown-item text-danger" data-staff-action="delete" data-staff-id="${accountId}">
+                  <i class="bi bi-trash"></i> Delete
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     `;
@@ -1194,7 +2263,7 @@ const renderStaffAccounts = () => {
     setStaffAccountNotice(`Staff account limit reached (${STAFF_ACCOUNT_LIMIT}). Delete an existing account before creating a new one.`, 'danger');
     return;
   }
-  setStaffAccountNotice('Manage your staff accounts here.', 'muted');
+  setStaffAccountNotice('', 'muted');
 };
 
 const renderActiveUsers = () => {
@@ -1764,7 +2833,10 @@ const renderAdminCredentialsState = () => {
     openAdminCredentialsForm();
     adminCredentialsStartBtn?.classList.add('d-none');
     clearAdminCredentialsFields();
-    setAdminCredentialsNotice('Enter your temporary credentials, then set your own username and password.', 'muted');
+    if (adminCredentialsCurrentUsername) {
+      adminCredentialsCurrentUsername.value = currentUser.username || '';
+    }
+    setAdminCredentialsNotice('Temporary admin credentials are still active. Update them before accessing other admin tools.', 'muted');
     return;
   }
 
@@ -2005,6 +3077,7 @@ adminCredentialsSaveBtn?.addEventListener('click', async (event) => {
   const newUsername = String(adminCredentialsNewUsername?.value || '').trim();
   const newPassword = String(adminCredentialsNewPassword?.value || '');
   const confirmPassword = String(adminCredentialsConfirmPassword?.value || '');
+  const requiresUpdate = currentUser.requiresCredentialUpdate === true;
 
   if (!currentUsername || !currentPassword || !newUsername || !newPassword || !confirmPassword) {
     setAdminCredentialsNotice('Complete all fields before saving your credentials.', 'danger');
@@ -2034,6 +3107,13 @@ adminCredentialsSaveBtn?.addEventListener('click', async (event) => {
     clearAdminCredentialsFields();
     rerenderSettingsPanels();
     adminCredentialsStartBtn?.classList.remove('d-none');
+    if (requiresUpdate) {
+      setAdminCredentialsNotice(response.message || 'Credentials updated successfully. Redirecting to admin dashboard...', 'success');
+      window.setTimeout(() => {
+        window.location.href = 'admin.php';
+      }, 700);
+      return;
+    }
     setAdminCredentialsNotice(response.message || 'Credentials updated successfully.', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update credentials right now.';
@@ -2055,6 +3135,9 @@ adminCredentialsStartBtn?.addEventListener('click', (event) => {
   }
 
   clearAdminCredentialsFields();
+  if (adminCredentialsCurrentUsername) {
+    adminCredentialsCurrentUsername.value = currentUser.username || '';
+  }
 
   openAdminCredentialsForm();
   setAdminCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
@@ -2147,15 +3230,163 @@ barangayProfileSealBrowseBtn?.addEventListener('click', (event) => {
   barangayProfileSealInput?.click();
 });
 
-backupRestoreFileInput?.addEventListener('change', () => {
+settingsRolloverYearSelect?.addEventListener('change', () => {
+  renderSettingsRolloverState();
+});
+
+settingsRolloverActionBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!settingsRolloverPanel || isSettingsRolloverBusy || isSettingsMutating) return;
+
+  const targetYear = getSelectedSettingsRolloverYear();
+  const existingStatus = getSettingsRolloverStatusForYear(targetYear);
+  if (normalizeText(existingStatus?.status).toLowerCase() === 'completed') {
+    renderSettingsRolloverState();
+    return;
+  }
+
+  const sourceYear = getSettingsRolloverLatestSourceYear(targetYear);
+  if (!sourceYear) {
+    renderSettingsRolloverState();
+    setSettingsRolloverNotice(`No previous household year is available to roll over into ${targetYear}.`, 'danger');
+    return;
+  }
+
+  const sourceCount = countSettingsRolloverRowsForYear(sourceYear);
+  const targetCount = countSettingsRolloverRowsForYear(targetYear);
+  pendingSettingsRolloverRequest = { targetYear, sourceYear, sourceCount, targetCount };
+
+  const confirmMessage = targetCount > 0
+    ? `Copy ${sourceCount} household record${sourceCount === 1 ? '' : 's'} from ${sourceYear} to ${targetYear}? Existing ${targetYear} records will stay as-is and only missing households will be created.`
+    : `Copy ${sourceCount} household record${sourceCount === 1 ? '' : 's'} from ${sourceYear} to ${targetYear}?`;
+  const confirmDetails = `This will mark ${targetYear} as rolled over after the copy is completed.`;
+
+  if (settingsRolloverConfirmMessage) {
+    settingsRolloverConfirmMessage.textContent = confirmMessage;
+  }
+  if (settingsRolloverConfirmDetails) {
+    settingsRolloverConfirmDetails.textContent = confirmDetails;
+  }
+
+  if (settingsRolloverConfirmModal) {
+    settingsRolloverConfirmModal.show();
+    return;
+  }
+
+  const confirmed = window.confirm(`${confirmMessage}\n\n${confirmDetails}`);
+  if (!confirmed) {
+    pendingSettingsRolloverRequest = null;
+    setSettingsRolloverNotice('Rollover was cancelled.', 'muted');
+    return;
+  }
+
+  await executeSettingsYearRollover();
+});
+
+settingsRolloverConfirmBtn?.addEventListener('click', async () => {
+  await executeSettingsYearRollover();
+});
+
+settingsRolloverResetConfirmBtn?.addEventListener('click', async () => {
+  await executeSettingsYearRolloverReset();
+});
+
+settingsRolloverResetBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!settingsRolloverPanel || isSettingsRolloverBusy || isSettingsMutating) return;
+
+  const targetYear = getSelectedSettingsRolloverYear();
+  const existingStatus = getSettingsRolloverStatusForYear(targetYear);
+  if (normalizeText(existingStatus?.status).toLowerCase() !== 'completed') {
+    renderSettingsRolloverState();
+    return;
+  }
+
+  const targetCount = countSettingsRolloverRowsForYear(targetYear);
+  const confirmMessage = `Reset rollover for ${targetYear}?`;
+  const confirmDetails = `This will remove rolled-over household records for ${targetYear} and allow you to run the rollover again.${targetCount > 0 ? ` Current target-year households: ${targetCount}.` : ''}`;
+
+  pendingSettingsRolloverResetRequest = { targetYear, targetCount };
+
+  if (settingsRolloverResetConfirmMessage) {
+    settingsRolloverResetConfirmMessage.textContent = confirmMessage;
+  }
+  if (settingsRolloverResetConfirmDetails) {
+    settingsRolloverResetConfirmDetails.textContent = confirmDetails;
+  }
+
+  if (settingsRolloverResetConfirmModal) {
+    settingsRolloverResetConfirmModal.show();
+    return;
+  }
+
+  const confirmed = window.confirm(`${confirmMessage}\n\n${confirmDetails}`);
+  if (!confirmed) {
+    pendingSettingsRolloverResetRequest = null;
+    setSettingsRolloverNotice('Rollover reset was cancelled.', 'muted');
+    return;
+  }
+
+  await executeSettingsYearRolloverReset();
+});
+
+backupCoverageSelect?.addEventListener('change', () => {
+  syncBackupSelectionStateFromControls();
+  renderBackupRestoreState();
+
+  const availableYears = readBackupYearOptions();
+  if (getSelectedBackupCoverageMode() === 'year') {
+    if (!availableYears.length) {
+      setBackupRestoreNotice('No household years are available yet for a year-specific backup.', 'danger');
+      return;
+    }
+    const selectedYear = getSelectedBackupYear();
+    setBackupRestoreNotice(
+      selectedYear > 0
+        ? `Backup coverage set to selected year: ${selectedYear}.`
+        : 'Select a backup year to continue.',
+      'muted'
+    );
+    return;
+  }
+
+  setBackupRestoreNotice('Backup coverage set to all years.', 'muted');
+});
+
+backupYearSelect?.addEventListener('change', () => {
+  syncBackupSelectionStateFromControls();
+  renderBackupRestoreState();
+
+  if (getSelectedBackupCoverageMode() !== 'year') return;
+  const selectedYear = getSelectedBackupYear();
+  setBackupRestoreNotice(
+    selectedYear > 0
+      ? `Selected backup year: ${selectedYear}.`
+      : 'Select a valid backup year to continue.',
+    selectedYear > 0 ? 'muted' : 'danger'
+  );
+});
+
+backupPreviewOpenBtn?.addEventListener('click', () => {
+  if (!backupRestorePreviewState.valid || backupRestorePreviewState.loading) return;
+  backupPreviewModal?.show();
+});
+
+backupRestoreFileChooseBtn?.addEventListener('click', () => {
+  backupRestoreFileInput?.click();
+});
+
+backupRestoreFileInput?.addEventListener('change', async () => {
   const selectedFile = backupRestoreFileInput.files?.[0] || null;
   if (!selectedFile) {
+    cancelBackupRestorePreview();
     setBackupRestoreNotice(BACKUP_RESTORE_PRIORITY_NOTICE, 'muted');
     renderBackupRestoreState();
     return;
   }
 
   if (selectedFile.size > BACKUP_RESTORE_MAX_FILE_SIZE_BYTES) {
+    cancelBackupRestorePreview();
     backupRestoreFileInput.value = '';
     setBackupRestoreNotice('Backup file must be 25MB or less.', 'danger');
     renderBackupRestoreState();
@@ -2163,30 +3394,45 @@ backupRestoreFileInput?.addEventListener('change', () => {
   }
 
   const backup = readBackupStatus() || normalizeBackupStatus(null);
-  if (!backup.available) {
-    setBackupRestoreNotice('Run Backup first before restore. Restore will stay disabled until a backup exists.', 'danger');
-    renderBackupRestoreState();
+  setBackupRestoreNotice(`Analyzing backup file: ${selectedFile.name}`, 'muted');
+  const previewReady = await loadBackupRestorePreview(selectedFile);
+  if (!previewReady) {
+    setBackupRestoreNotice(backupRestorePreviewState.error || 'Unable to inspect the selected backup file.', 'danger');
     return;
   }
-
-  setBackupRestoreNotice(`Ready to restore from: ${selectedFile.name}`, 'muted');
-  renderBackupRestoreState();
+  if (!backup.available) {
+    setBackupRestoreNotice('Preview ready. Run Backup first before restore so current data has a recovery point.', 'danger');
+    return;
+  }
+  setBackupRestoreNotice(`Preview ready: ${selectedFile.name}`, 'muted');
 });
 
 backupRunBtn?.addEventListener('click', async (event) => {
   event.preventDefault();
   if (!backupRestorePanel || isBackupActionBusy) return;
 
-  setBackupActionBusy(true);
-  setBackupRestoreNotice('Creating backup file...', 'muted');
+  let requestPayload;
   try {
-    const response = await runSettingsAction({ action: 'run_backup' });
+    syncBackupSelectionStateFromControls();
+    requestPayload = buildBackupRunRequestPayload();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to prepare backup request.';
+    setBackupRestoreNotice(message, 'danger');
+    renderBackupRestoreState();
+    return;
+  }
+
+  const scopeLabel = describeBackupScopeSelection();
+  setBackupActionBusy(true);
+  setBackupRestoreNotice(`Creating household backup for ${scopeLabel}...`, 'muted');
+  try {
+    const response = await runSettingsAction(requestPayload);
     rerenderSettingsPanels();
     const backup = response && typeof response === 'object' && response.backup && typeof response.backup === 'object'
       ? response.backup
       : null;
     const backupName = String(backup?.file_name || '').trim();
-    const message = response?.message || (backupName ? `Backup created: ${backupName}` : 'Backup completed successfully.');
+    const message = response?.message || (backupName ? `Household backup created for ${scopeLabel}: ${backupName}` : `Household backup for ${scopeLabel} completed successfully.`);
     setBackupRestoreNotice(message, 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to run backup right now.';
@@ -2201,7 +3447,7 @@ backupDownloadBtn?.addEventListener('click', async (event) => {
   if (!backupRestorePanel || isBackupActionBusy) return;
 
   setBackupActionBusy(true);
-  setBackupRestoreNotice('Preparing backup download...', 'muted');
+  setBackupRestoreNotice('Preparing household backup download...', 'muted');
   try {
     const response = await runSettingsAction({ action: 'download_backup' });
     const download = response && typeof response === 'object' && response.download && typeof response.download === 'object'
@@ -2214,7 +3460,7 @@ backupDownloadBtn?.addEventListener('click', async (event) => {
     const blob = decodeBackupBase64ToBlob(download.content_base64, download.mime_type);
     triggerBackupFileDownload(blob, download.file_name);
     rerenderSettingsPanels();
-    setBackupRestoreNotice(response?.message || 'Backup download started.', 'success');
+    setBackupRestoreNotice(response?.message || 'Household backup download started.', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to download backup right now.';
     setBackupRestoreNotice(message, 'danger');
@@ -2229,7 +3475,7 @@ backupRestoreBtn?.addEventListener('click', async (event) => {
 
   const backup = readBackupStatus() || normalizeBackupStatus(null);
   if (!backup.available) {
-    setBackupRestoreNotice('Run Backup first before restoring current data.', 'danger');
+    setBackupRestoreNotice('Run Backup first before restoring current household and resident records.', 'danger');
     renderBackupRestoreState();
     return;
   }
@@ -2257,14 +3503,15 @@ backupRestoreBtn?.addEventListener('click', async (event) => {
   formData.set('backup_file', selectedFile);
 
   setBackupActionBusy(true);
-  setBackupRestoreNotice('Restoring backup. Please wait...', 'muted');
+  setBackupRestoreNotice('Restoring household records. Please wait...', 'muted');
   try {
     const response = await runSettingsMultipartAction(formData);
     if (backupRestoreFileInput) {
       backupRestoreFileInput.value = '';
     }
+    cancelBackupRestorePreview();
     rerenderSettingsPanels();
-    setBackupRestoreNotice(response?.message || 'Backup restore completed successfully.', 'success');
+    setBackupRestoreNotice(response?.message || 'Household backup restore completed successfully.', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to restore backup right now.';
     setBackupRestoreNotice(message, 'danger');
@@ -2333,40 +3580,14 @@ staffAccountsList?.addEventListener('click', (event) => {
   const staffId = actionBtn.getAttribute('data-staff-id');
   if (!action || !staffId) return;
 
-  if (action === 'view') {
-    activeStaffViewId = staffId;
-    syncStaffViewModal();
-    if (activeStaffViewId) {
-      staffViewModal?.show();
-    }
-    return;
-  }
-
-  if (action === 'toggle') {
-    void toggleStaffAccountStatusById(staffId);
+  if (action === 'reset') {
+    promptStaffCredentialResetById(staffId);
     return;
   }
 
   if (action === 'delete') {
     requestStaffDeleteById(staffId);
   }
-});
-
-staffViewPasswordToggleBtn?.addEventListener('click', () => {
-  const plainPassword = String(staffViewPasswordValue?.dataset.staffPassword || '');
-  if (!plainPassword) return;
-  const isVisible = String(staffViewPasswordValue?.dataset.visible || 'false') === 'true';
-  renderStaffPasswordVisibility(plainPassword, !isVisible);
-});
-
-staffViewToggleBtn?.addEventListener('click', async () => {
-  if (!activeStaffViewId) return;
-  await toggleStaffAccountStatusById(activeStaffViewId);
-});
-
-staffViewDeleteBtn?.addEventListener('click', () => {
-  if (!activeStaffViewId) return;
-  requestStaffDeleteById(activeStaffViewId);
 });
 
 backupRestoreConfirmBtn?.addEventListener('click', () => {
@@ -2390,8 +3611,28 @@ staffDeleteConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
   pendingDeleteStaffId = '';
 });
 
-staffViewModalEl?.addEventListener('hidden.bs.modal', () => {
-  activeStaffViewId = '';
+staffResetConfirmBtn?.addEventListener('click', () => {
+  const staffId = pendingStaffResetId;
+  staffResetConfirmModal?.hide();
+  if (!staffId) return;
+  window.setTimeout(() => {
+    openStaffResetCredentialsModalById(staffId);
+    setStaffResetNotice('Enter new username and password, then save new credentials.', 'muted');
+  }, 140);
+});
+
+staffResetConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
+  pendingStaffResetId = '';
+});
+
+staffResetBtn?.addEventListener('click', async () => {
+  await attemptStaffCredentialReset();
+});
+
+staffResetCredentialsModalEl?.addEventListener('hidden.bs.modal', () => {
+  activeStaffResetId = '';
+  clearStaffResetFields();
+  setStaffResetNotice('Temporary credentials are never shown again after this reset.', 'muted');
 });
 
 const resetSettingsAuditFilters = () => {
@@ -2455,6 +3696,15 @@ const initializeSettingsState = async () => {
     setBackupActionBusy(false);
     setBackupRestoreNotice('Loading backup status...', 'muted');
   }
+  if (settingsRolloverPanel) {
+    isSettingsRolloverBusy = false;
+    settingsRolloverBusyAction = '';
+    setSettingsRolloverBadgeState('Checking', 'primary');
+    setSettingsRolloverNotice('Loading rollover status...', 'muted');
+    if (settingsRolloverActionBtn) {
+      settingsRolloverActionBtn.disabled = true;
+    }
+  }
   if (activeUsersList) {
     activeUsersList.innerHTML = `
       <div class="settings-list-item">
@@ -2469,6 +3719,7 @@ const initializeSettingsState = async () => {
 
   try {
     await refreshSettingsState();
+    await loadSettingsRolloverState();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to load user management settings.';
     if (adminAccountPanel) setAdminAccountNotice(message, 'danger');
@@ -2477,6 +3728,7 @@ const initializeSettingsState = async () => {
     if (staffAccountsList) setStaffAccountNotice(message, 'danger');
     if (barangayProfilePanel) setBarangayProfileNotice(message, 'danger');
     if (backupRestorePanel) setBackupRestoreNotice(message, 'danger');
+    if (settingsRolloverPanel) setSettingsRolloverNotice(message, 'danger');
     if (activeUsersList) {
       activeUsersList.innerHTML = `
         <div class="settings-list-item">

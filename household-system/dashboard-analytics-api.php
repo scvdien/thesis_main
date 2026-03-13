@@ -63,6 +63,34 @@ function dash_table_exists(PDO $pdo, string $tableName): bool
     return (bool) $stmt->fetchColumn();
 }
 
+function dash_table_has_column(PDO $pdo, string $tableName, string $columnName): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table_name
+           AND COLUMN_NAME = :column_name
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'table_name' => $tableName,
+        'column_name' => $columnName,
+    ]);
+    return (bool) $stmt->fetchColumn();
+}
+
+function dash_year_sql(PDO $pdo, string $tableName, string $dateColumn = 'created_at'): string
+{
+    if (dash_table_has_column($pdo, $tableName, 'record_year')) {
+        return sprintf(
+            '(CASE WHEN `record_year` BETWEEN 2000 AND 2100 THEN `record_year` ELSE YEAR(`%s`) END)',
+            $dateColumn
+        );
+    }
+    return sprintf('YEAR(`%s`)', $dateColumn);
+}
+
 function dash_parse_year(mixed $value): int
 {
     $year = (int) gmdate('Y');
@@ -281,10 +309,11 @@ function dash_available_years(PDO $pdo): array
         if (!dash_table_exists($pdo, $table)) {
             continue;
         }
+        $yearSql = dash_year_sql($pdo, $table);
         $stmt = $pdo->query(
-            'SELECT DISTINCT YEAR(`created_at`) AS `year`
+            'SELECT DISTINCT ' . $yearSql . ' AS `year`
              FROM `' . $table . '`
-             WHERE `created_at` IS NOT NULL'
+             WHERE ' . $yearSql . ' BETWEEN 2000 AND 2100'
         );
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as $row) {
@@ -390,10 +419,11 @@ function dash_build_analytics(PDO $pdo, int $year): array
 
     $residentRows = [];
     if (dash_table_exists($pdo, 'registration_residents')) {
+        $residentYearSql = dash_year_sql($pdo, 'registration_residents');
         $residentStmt = $pdo->prepare(
             'SELECT `household_code`, `source_type`, `sex`, `age`, `relation_to_head`, `resident_data_json`, `created_at`
              FROM `registration_residents`
-             WHERE YEAR(`created_at`) = :year'
+             WHERE ' . $residentYearSql . ' = :year'
         );
         $residentStmt->execute(['year' => $year]);
         $residentRows = $residentStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -479,10 +509,11 @@ function dash_build_analytics(PDO $pdo, int $year): array
 
     $householdRows = [];
     if (dash_table_exists($pdo, 'registration_households')) {
+        $householdYearSql = dash_year_sql($pdo, 'registration_households');
         $householdStmt = $pdo->prepare(
             'SELECT `household_code`, `member_count`, `head_data_json`, `created_at`
              FROM `registration_households`
-             WHERE YEAR(`created_at`) = :year'
+             WHERE ' . $householdYearSql . ' = :year'
         );
         $householdStmt->execute(['year' => $year]);
         $householdRows = $householdStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];

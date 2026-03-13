@@ -42,6 +42,8 @@ if ($brandSidebarLabel === '') {
 }
 $systemLabel = trim($brandFooterLabel . ' Household Information Management System');
 $settingsCsrfToken = auth_csrf_token();
+$requiresCredentialUpdate = !empty($authUser['requires_credential_update']);
+$adminCredentialLock = $authRole === AUTH_ROLE_ADMIN && $requiresCredentialUpdate;
 $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scripts.js') ?: time());
 ?>
@@ -59,7 +61,10 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
-<body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
+<body
+  data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-requires-credential-update="<?= $requiresCredentialUpdate ? 'true' : 'false' ?>"
+>
 <?php echo auth_client_role_script($authRole); ?>
 
 <div id="wrapper">
@@ -94,6 +99,13 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
         <div class="d-flex align-items-center gap-2 flex-wrap"></div>
       </div>
 
+      <?php if ($adminCredentialLock): ?>
+      <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+        <i class="bi bi-shield-lock"></i>
+        <div>Update your temporary admin username and password before using other admin tools.</div>
+      </div>
+      <?php endif; ?>
+
       <div class="settings-shell">
         <aside class="settings-nav">
           <div class="settings-nav-group">
@@ -105,6 +117,10 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-nav-title">Administration</div>
             <a href="#admin-account" data-role="captain-only"><i class="bi bi-person-badge"></i>Admin Account</a>
             <a href="#create-staff-account" data-role="admin-only"><i class="bi bi-people"></i>Manage Staff</a>
+          </div>
+          <div class="settings-nav-group" data-role="admin-only">
+            <div class="settings-nav-title">Data</div>
+            <a href="#rollover-years"><i class="bi bi-copy"></i>Roll Over Years</a>
           </div>
           <div class="settings-nav-group" data-role="captain-only">
             <div class="settings-nav-title">Users</div>
@@ -321,7 +337,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Create Staff Account</h5>
-                <p class="small text-muted mb-0">Admin creates staff accounts and activates them immediately.</p>
+                <p class="small text-muted mb-0">Admin creates staff accounts, then staff must replace temporary credentials on first login.</p>
               </div>
               <span class="badge bg-success-subtle text-success">Create Staff Account</span>
             </div>
@@ -354,16 +370,63 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                   <option>Registration Module</option>
                 </select>
               </div>
-              <div class="settings-form-full d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div class="small text-muted">Newly created staff accounts are activated immediately.</div>
+              <div class="settings-form-full">
+                <div class="small text-muted settings-inline-notice d-none" id="staffAccountNotice"></div>
+              </div>
+              <div class="settings-form-full settings-inline-actions">
                 <button type="button" class="btn btn-cta" id="staffCreateBtn">
                   <i class="bi bi-person-check"></i> Create Staff Account
                 </button>
               </div>
             </div>
-            <div class="small text-muted mt-2" id="staffAccountNotice">No staff account created yet.</div>
             <div class="settings-divider"></div>
             <div class="settings-list" id="staffAccountsList"></div>
+          </section>
+
+          <section class="settings-section settings-panel" style="--delay:0.14s" id="rollover-years" data-role="admin-only">
+            <div class="settings-section-head">
+              <div>
+                <h5 class="mb-1">Roll Over Years</h5>
+                <p class="small text-muted mb-0">Copy household records from the latest completed year into a new target year.</p>
+              </div>
+              <span class="badge bg-primary-subtle text-primary" id="settingsRolloverStatusBadge">Checking</span>
+            </div>
+            <div class="settings-callout">
+              <i class="bi bi-info-circle"></i>
+              <div>
+                <div class="fw-semibold">Household Records Only</div>
+                <div class="small text-muted">This action copies household and member records only. Existing target-year households stay as-is, and missing households are added.</div>
+              </div>
+            </div>
+            <div class="settings-form-grid">
+              <div>
+                <label class="form-label small">Target Year</label>
+                <select class="form-select" id="settingsRolloverYearSelect" aria-label="Select rollover target year"></select>
+              </div>
+              <div>
+                <label class="form-label small">Source Year</label>
+                <input type="text" class="form-control" id="settingsRolloverSourceYear" value="Checking..." readonly>
+              </div>
+              <div>
+                <label class="form-label small">Source Households</label>
+                <input type="text" class="form-control" id="settingsRolloverSourceCount" value="0" readonly>
+              </div>
+              <div>
+                <label class="form-label small">Existing Target Households</label>
+                <input type="text" class="form-control" id="settingsRolloverTargetCount" value="0" readonly>
+              </div>
+              <div class="settings-form-full d-flex align-items-center justify-content-between flex-wrap gap-2 settings-rollover-actions-row">
+                <div class="small text-muted settings-rollover-notice" id="settingsRolloverNotice">Loading rollover status...</div>
+                <div class="d-flex gap-2 flex-wrap justify-content-end settings-rollover-actions">
+                  <button type="button" class="btn btn-outline-danger d-none" id="settingsRolloverResetBtn">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reset Rollover
+                  </button>
+                  <button type="button" class="btn btn-cta" id="settingsRolloverActionBtn">
+                    <i class="bi bi-copy"></i> Roll Over Selected Year
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section class="settings-section settings-panel" style="--delay:0.2s" id="active-users" data-role="captain-only">
@@ -492,7 +555,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Backup & Restore</h5>
-                <p class="small text-muted mb-0">Protect and recover barangay system data.</p>
+                <p class="small text-muted mb-0">Protect and recover household and resident records without changing user credentials.</p>
               </div>
               <span class="badge bg-success-subtle text-success" id="backupHealthBadge">Healthy</span>
             </div>
@@ -500,13 +563,13 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               <i class="bi bi-info-circle"></i>
               <div>
                 <div class="fw-semibold">Backup Policy</div>
-                <div class="small text-muted">Keep at least one recent backup before restoring or updating records.</div>
+                <div class="small text-muted">Only household and resident records are included. Captain, admin, and staff credentials are not part of this backup.</div>
               </div>
             </div>
-            <div class="settings-form-grid">
-              <div>
-                <label class="form-label small">Backup Schedule</label>
-                <select class="form-select" id="backupScheduleSelect">
+              <div class="settings-form-grid">
+                <div>
+                  <label class="form-label small">Backup Schedule</label>
+                  <select class="form-select" id="backupScheduleSelect">
                   <option>Daily at 9:00 PM</option>
                   <option>Weekly (Every Friday)</option>
                   <option>Manual Only</option>
@@ -521,6 +584,21 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                 </select>
               </div>
               <div>
+                <label class="form-label small">Backup Coverage</label>
+                <select class="form-select" id="backupCoverageSelect">
+                  <option value="all">All Years</option>
+                  <option value="year">Selected Year Only</option>
+                </select>
+                <div class="form-hint">Choose whether to back up all household years or one year only.</div>
+              </div>
+              <div>
+                <label class="form-label small">Backup Year</label>
+                <select class="form-select" id="backupYearSelect">
+                  <option value="">No years available</option>
+                </select>
+                <div class="form-hint">Enabled only when <strong>Selected Year Only</strong> is chosen.</div>
+              </div>
+              <div>
                 <label class="form-label small">Last Backup</label>
                 <input type="text" class="form-control" id="backupLastBackup" value="Not available" readonly>
               </div>
@@ -528,12 +606,21 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                 <label class="form-label small">Backup Size</label>
                 <input type="text" class="form-control" id="backupSizeDisplay" value="N/A" readonly>
               </div>
-              <div class="settings-form-full">
-                <label class="form-label small">Restore From File</label>
-                <input type="file" class="form-control" id="backupRestoreFile" accept=".json,application/json,text/json">
-              </div>
                 <div class="settings-form-full">
-                  <div class="small text-muted mb-2" id="backupRestoreNotice">Run Backup first before restoring. Restoring will overwrite current data.</div>
+                  <label class="form-label small">Restore From File</label>
+                  <div class="backup-restore-file-row">
+                    <input type="file" class="visually-hidden" id="backupRestoreFile" accept=".json,application/json,text/json">
+                    <button type="button" class="backup-restore-file-choose" id="backupRestoreFileChooseBtn">
+                      Choose File
+                    </button>
+                    <div class="backup-restore-file-name" id="backupRestoreFileName">No file chosen</div>
+                    <button type="button" class="btn btn-outline-primary btn-sm backup-restore-file-view-btn d-none" id="backupPreviewOpenBtn">
+                      <i class="bi bi-eye"></i> Details
+                    </button>
+                  </div>
+                </div>
+                <div class="settings-form-full">
+                  <div class="small text-muted mb-2" id="backupRestoreNotice">Run Backup first before restoring. Restoring will overwrite current household and resident records.</div>
                   <div class="d-flex gap-2 flex-wrap justify-content-end backup-restore-actions">
                     <button type="button" class="btn btn-primary" id="backupRunBtn">
                       <i class="bi bi-cloud-arrow-up"></i> Run Backup First
@@ -593,48 +680,87 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
     </div>
   </div>
 
-  <!-- STAFF ACCOUNT VIEW MODAL -->
-  <div class="modal fade" id="staffViewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content modern-modal p-0 overflow-hidden">
-        <div class="modal-header border-0 px-4 pt-4 pb-2 staff-view-modal-header">
-          <div class="staff-view-header-main">
-            <h5 class="modal-title mb-1" id="staffViewName">Staff Account</h5>
-            <p class="small text-muted mb-0" id="staffViewMeta">Registration Staff | Registration Module</p>
+  <div class="modal fade" id="staffResetConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning">
+          <i class="bi bi-shield-exclamation fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Confirm Staff Credential Reset</h5>
+        <p class="mb-3" id="staffResetConfirmText">You are about to reset staff credentials. Continue to open the reset form.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="staffResetConfirmBtn">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="settingsRolloverConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-primary">
+          <i class="bi bi-copy fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Confirm Year Rollover</h5>
+        <p class="mb-2" id="settingsRolloverConfirmMessage">Copy household records into the selected target year?</p>
+        <p class="text-muted small mb-3" id="settingsRolloverConfirmDetails"></p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-modern" id="settingsRolloverConfirmBtn">Confirm Rollover</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="settingsRolloverResetConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-danger">
+          <i class="bi bi-arrow-counterclockwise fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Confirm Rollover Reset</h5>
+        <p class="mb-2" id="settingsRolloverResetConfirmMessage">Reset rollover for the selected target year?</p>
+        <p class="text-muted small mb-3" id="settingsRolloverResetConfirmDetails"></p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="settingsRolloverResetConfirmBtn">Reset Rollover</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESET STAFF CREDENTIALS MODAL -->
+  <div class="modal fade" id="staffResetCredentialsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-primary">
+          <i class="bi bi-key-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Reset Staff Credentials</h5>
+        <p class="mb-3 text-muted">Set a new temporary username and password. Staff must change them after the next login.</p>
+        <div class="settings-form-grid text-start">
+          <div class="settings-form-full">
+            <label class="form-label small">Staff Account</label>
+            <input type="text" class="form-control" id="staffResetFullName" readonly>
           </div>
-          <div class="staff-view-header-actions">
-            <span class="badge bg-success-subtle text-success" id="staffViewStatusBadge">Active</span>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div>
+            <label class="form-label small">Temporary Username</label>
+            <input type="text" class="form-control" id="staffResetUsername" placeholder="maria.santos">
+          </div>
+          <div>
+            <label class="form-label small">Temporary Password</label>
+            <input type="password" class="form-control" id="staffResetPassword" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character.">
+          </div>
+          <div class="settings-form-full">
+            <label class="form-label small">Confirm Temporary Password</label>
+            <input type="password" class="form-control" id="staffResetPasswordConfirm" placeholder="Re-type temporary password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character.">
           </div>
         </div>
-        <div class="modal-body px-4 pt-2 pb-3">
-          <div class="staff-view-grid">
-            <div class="staff-view-field">
-              <span class="staff-view-label">Username</span>
-              <code class="staff-view-value" id="staffViewUsername">-</code>
-            </div>
-            <div class="staff-view-field">
-              <span class="staff-view-label">Contact Number</span>
-              <span class="staff-view-value staff-view-value-text" id="staffViewContact">-</span>
-            </div>
-            <div class="staff-view-field staff-view-field-full">
-              <span class="staff-view-label">Password</span>
-              <div class="staff-view-password-row">
-                <code class="staff-view-value" id="staffViewPasswordValue" data-staff-password="" data-visible="false">--------</code>
-                <button type="button" class="btn btn-sm btn-outline-secondary staff-view-password-btn" id="staffViewPasswordToggleBtn">
-                  <i class="bi bi-eye"></i><span data-toggle-label>Show</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer border-0 px-4 pt-0 pb-4">
-          <button type="button" class="btn btn-outline-warning btn-modern" id="staffViewToggleBtn">
-            <i class="bi bi-pause-circle"></i> Deactivate
-          </button>
-          <button type="button" class="btn btn-danger btn-modern" id="staffViewDeleteBtn">
-            <i class="bi bi-trash"></i> Delete
-          </button>
+        <div class="small text-muted mt-3" id="staffResetNotice">Temporary credentials are never shown again after this reset.</div>
+        <div class="d-flex justify-content-center gap-2 mt-4">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-modern" id="staffResetBtn">Save New Credentials</button>
         </div>
       </div>
     </div>
@@ -665,10 +791,67 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
           <i class="bi bi-exclamation-triangle-fill fs-1"></i>
         </div>
         <h5 class="modal-title mb-2">Confirm Restore</h5>
-        <p class="mb-3" id="backupRestoreConfirmText">Restore from this backup file? This will overwrite current system data.</p>
+        <p class="mb-3" id="backupRestoreConfirmText">Restore from this backup file? This will overwrite current household and resident records.</p>
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="backupRestoreConfirmBtn">Restore</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="backupPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content modern-modal">
+        <div class="modal-header border-0 pb-0 backup-preview-modal-header">
+          <div class="backup-preview-modal-copy">
+            <h5 class="modal-title mb-1">Backup Preview</h5>
+            <p class="small text-muted mb-0" id="backupPreviewMessage">Select a backup file to preview the years and contents before restore.</p>
+          </div>
+          <div class="backup-preview-modal-actions">
+            <span class="badge bg-secondary-subtle text-secondary" id="backupPreviewBadge">Waiting</span>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+        </div>
+        <div class="modal-body pt-3">
+          <div class="backup-preview-card backup-preview-card-modal">
+            <div class="backup-preview-file-panel">
+              <span class="backup-preview-panel-label">Selected Backup File</span>
+              <div class="backup-preview-file-name" id="backupPreviewFileName">No file selected</div>
+            </div>
+            <div class="backup-preview-grid backup-preview-grid-summary">
+              <div class="backup-preview-item backup-preview-item-created">
+                <span class="k">Backup Created</span>
+                <span class="v" id="backupPreviewCreatedAt">-</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="k">Years In Data</span>
+                <span class="v" id="backupPreviewYears">-</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="k">Tables</span>
+                <span class="v" id="backupPreviewTables">-</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="k">Rows In Scope</span>
+                <span class="v" id="backupPreviewRows">-</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="k">Household Rows</span>
+                <span class="v" id="backupPreviewHouseholds">-</span>
+              </div>
+            </div>
+            <div class="backup-preview-detail-grid">
+              <div class="backup-preview-detail-card backup-preview-detail-card-rollovers">
+                <span class="k">Rollover History</span>
+                <div class="backup-preview-pill-list" id="backupPreviewRollovers">-</div>
+              </div>
+              <div class="backup-preview-detail-card backup-preview-detail-card-tables">
+                <span class="k">Included Tables</span>
+                <div class="backup-preview-pill-list backup-preview-pill-list-tables" id="backupPreviewIncludedTables">-</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

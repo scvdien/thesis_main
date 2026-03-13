@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$csrfToken = auth_csrf_token();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -63,6 +64,7 @@ if ($brandSidebarLabel === '') {
 <meta charset="utf-8">
 <title>Reports | <?= htmlspecialchars($dashboardLabel, ENT_QUOTES, 'UTF-8') ?></title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
 
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
@@ -153,15 +155,7 @@ if ($brandSidebarLabel === '') {
         <div class="modal-header border-0 pb-0 report-modal-header">
           <h5 class="modal-title mb-0">Report Details</h5>
 <?php if ($isAdminRole): ?>
-          <button
-            type="button"
-            class="report-modal-delete-icon-btn ms-auto"
-            id="reportModalDeleteIcon"
-            style="margin-left:auto;"
-            aria-label="Delete report"
-            title="Delete report">
-            <i class="bi bi-trash"></i>
-          </button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 <?php else: ?>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 <?php endif; ?>
@@ -189,9 +183,13 @@ if ($brandSidebarLabel === '') {
         <div class="modal-footer border-0 pt-0 report-modal-footer">
           <div class="report-modal-actions">
             <button class="btn btn-outline-success btn-modern" id="reportModalPrint"><i class="bi bi-file-earmark-excel"></i> Generate Excel</button>
-            <div class="report-modal-pdf-stack">
+            <div class="report-modal-side-stack">
               <button class="btn btn-modern btn-report-pdf" id="reportModalDownload"><i class="bi bi-file-earmark-pdf"></i> Generate PDF</button>
-              <button class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+<?php if ($isAdminRole): ?>
+              <button class="btn btn-danger btn-modern report-modal-delete-btn" id="reportModalDelete"><i class="bi bi-trash"></i> Delete Report</button>
+<?php else: ?>
+              <button class="btn btn-outline-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+<?php endif; ?>
             </div>
           </div>
         </div>
@@ -219,7 +217,7 @@ if ($brandSidebarLabel === '') {
             </div>
             <div>
               <label class="form-label small">Reporting Period</label>
-              <input type="month" class="form-control" id="createPeriod">
+              <input type="month" class="form-control" id="createPeriod" required>
             </div>
             <div class="settings-form-full">
               <label class="form-label small">Document Content</label>

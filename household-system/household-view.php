@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$csrfToken = auth_csrf_token();
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -28,6 +29,8 @@ $brandSidebarLabel = $brandLabel;
 if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
   $brandSidebarLabel = trim($brandLabel . ' ' . $brandCity);
 }
+$siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
+$householdViewStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/household-view.css') ?: time());
 $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/household-view.js') ?: time());
 ?>
 <!doctype html>
@@ -35,11 +38,12 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <title>Household Details | Admin</title>
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/site-style.css">
-  <link rel="stylesheet" href="assets/css/household-view.css">
+  <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+  <link rel="stylesheet" href="assets/css/household-view.css?v=<?= htmlspecialchars($householdViewStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
 <?php echo auth_client_role_script($authRole); ?>
@@ -97,28 +101,28 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
       </div>
 
       <section class="hv-summary">
-        <div class="hv-pill">
+        <div class="hv-pill hv-pill-record">
           <div class="pill-head">
             <div class="label">Record ID</div>
             <i class="bi bi-upc-scan"></i>
           </div>
           <div class="value" id="hvId">-</div>
         </div>
-        <div class="hv-pill">
+        <div class="hv-pill hv-pill-status">
           <div class="pill-head">
             <div class="label">Status</div>
             <i class="bi bi-patch-check"></i>
           </div>
           <div class="badge status" id="hvStatus">-</div>
         </div>
-        <div class="hv-pill">
+        <div class="hv-pill hv-pill-updated">
           <div class="pill-head">
             <div class="label">Last Updated</div>
             <i class="bi bi-clock-history"></i>
           </div>
           <div class="value" id="hvUpdated">-</div>
         </div>
-        <div class="hv-pill">
+        <div class="hv-pill hv-pill-members">
           <div class="pill-head">
             <div class="label">Members</div>
             <i class="bi bi-people"></i>
@@ -134,19 +138,29 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
             <div class="hv-primary-main">
               <p class="hv-primary-label mb-1">Household Head</p>
               <h5 class="mb-2" id="hvHeadName">-</h5>
+              <p class="hv-primary-note mb-3">Primary resident listed for this household record.</p>
               <div class="hv-chip-row">
                 <div class="hv-chip"><span class="k">Age</span><span class="v" id="hvHeadAge">-</span></div>
                 <div class="hv-chip"><span class="k">Sex</span><span class="v" id="hvHeadSex">-</span></div>
                 <div class="hv-chip"><span class="k">Civil Status</span><span class="v" id="hvHeadCivil">-</span></div>
               </div>
             </div>
-            <div class="kv-grid hv-quick-kv">
-              <div class="kv"><span class="k">Contact</span><span class="v" id="hvHeadContact">-</span></div>
-              <div class="kv"><span class="k">Zone</span><span class="v" id="hvHeadZone">-</span></div>
-              <div class="kv wide"><span class="k">Address</span><span class="v" id="hvHeadAddress">-</span></div>
-              <div class="kv"><span class="k">Barangay</span><span class="v" id="hvHeadBarangay">-</span></div>
-              <div class="kv"><span class="k">City/Municipality</span><span class="v" id="hvHeadCity">-</span></div>
-              <div class="kv"><span class="k">Province</span><span class="v" id="hvHeadProvince">-</span></div>
+            <div class="hv-primary-group">
+              <p class="hv-primary-group-title">Contact &amp; Location</p>
+              <div class="kv-grid hv-quick-kv">
+                <div class="kv"><span class="k">Contact</span><span class="v" id="hvHeadContact">-</span></div>
+                <div class="kv"><span class="k">Zone / Purok</span><span class="v" id="hvHeadZone">-</span></div>
+                <div class="kv wide"><span class="k">Full Address</span><span class="v" id="hvHeadAddress">-</span></div>
+              </div>
+            </div>
+            <div class="hv-primary-group hv-primary-group-snapshot">
+              <p class="hv-primary-group-title">Household Snapshot</p>
+              <div class="kv-grid hv-quick-kv">
+                <div class="kv"><span class="k">Occupation</span><span class="v" id="hvPrimaryOccupation">-</span></div>
+                <div class="kv"><span class="k">Children</span><span class="v" id="hvPrimaryChildren">-</span></div>
+                <div class="kv"><span class="k">Ownership</span><span class="v" id="hvPrimaryOwnership">-</span></div>
+                <div class="kv"><span class="k">House Type</span><span class="v" id="hvPrimaryHouseType">-</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -162,7 +176,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </h2>
               <div id="hvCollapseOne" class="accordion-collapse collapse show" aria-labelledby="hvHeadingOne" data-bs-parent="#hvAccordion">
                 <div class="accordion-body">
-                  <div class="kv-grid">
+                  <div class="kv-grid hv-personal-grid">
                     <div class="kv"><span class="k">Birthday</span><span class="v" id="hvHeadBirthday">-</span></div>
                     <div class="kv"><span class="k">Age</span><span class="v" id="hvHeadAgeInPersonal">-</span></div>
                     <div class="kv"><span class="k">Citizenship</span><span class="v" id="hvHeadCitizenship">-</span></div>
@@ -182,24 +196,26 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
                   Education, Employment, and Social Welfare
                 </button>
               </h2>
-              <div id="hvCollapseTwo" class="accordion-collapse collapse" aria-labelledby="hvHeadingTwo" data-bs-parent="#hvAccordion">
-                <div class="accordion-body">
-                  <div class="kv-grid">
-                    <div class="kv"><span class="k">Education Attainment</span><span class="v" id="hvHeadEducation">-</span></div>
-                    <div class="kv"><span class="k">Degree/Course</span><span class="v" id="hvHeadDegree">-</span></div>
-                    <div class="kv wide"><span class="k">School</span><span class="v" id="hvHeadSchool">-</span></div>
-                    <div class="kv"><span class="k">School Type</span><span class="v" id="hvHeadSchoolType">-</span></div>
-                    <div class="kv"><span class="k">Drop Out</span><span class="v" id="hvHeadDropout">-</span></div>
-                    <div class="kv"><span class="k">OSY</span><span class="v" id="hvHeadOSY">-</span></div>
-                    <div class="kv"><span class="k">Studying</span><span class="v" id="hvHeadCurrentlyStudying">-</span></div>
-                    <div class="kv"><span class="k">Occupation</span><span class="v" id="hvHeadOccupation">-</span></div>
-                    <div class="kv"><span class="k">Employment Status</span><span class="v" id="hvHeadEmploymentStatus">-</span></div>
-                    <div class="kv"><span class="k">Work Type</span><span class="v" id="hvHeadWorkType">-</span></div>
-                    <div class="kv"><span class="k">Monthly Income</span><span class="v" id="hvHeadIncome">-</span></div>
-                    <div class="kv"><span class="k">4Ps</span><span class="v" id="hvHead4ps">-</span></div>
-                    <div class="kv"><span class="k">Senior</span><span class="v" id="hvHeadSenior">-</span></div>
-                    <div class="kv"><span class="k">PWD</span><span class="v" id="hvHeadPWD">-</span></div>
-                    <div class="kv"><span class="k">Indigenous People</span><span class="v" id="hvHeadIP">-</span></div>
+                <div id="hvCollapseTwo" class="accordion-collapse collapse" aria-labelledby="hvHeadingTwo" data-bs-parent="#hvAccordion">
+                  <div class="accordion-body">
+                    <div class="kv-grid hv-education-grid">
+                      <div class="hv-education-top">
+                        <div class="kv"><span class="k">Education Attainment</span><span class="v" id="hvHeadEducation">-</span></div>
+                        <div class="kv"><span class="k">Degree/Course</span><span class="v" id="hvHeadDegree">-</span></div>
+                      </div>
+                      <div class="kv wide"><span class="k">School</span><span class="v" id="hvHeadSchool">-</span></div>
+                      <div class="kv"><span class="k">School Type</span><span class="v" id="hvHeadSchoolType">-</span></div>
+                      <div class="kv"><span class="k">Drop Out</span><span class="v" id="hvHeadDropout">-</span></div>
+                      <div class="kv"><span class="k">OSY</span><span class="v" id="hvHeadOSY">-</span></div>
+                      <div class="kv"><span class="k">Studying</span><span class="v" id="hvHeadCurrentlyStudying">-</span></div>
+                      <div class="kv"><span class="k">Occupation</span><span class="v" id="hvHeadOccupation">-</span></div>
+                      <div class="kv"><span class="k">Employment Status</span><span class="v" id="hvHeadEmploymentStatus">-</span></div>
+                      <div class="kv"><span class="k">Work Type</span><span class="v" id="hvHeadWorkType">-</span></div>
+                      <div class="kv"><span class="k">Monthly Income</span><span class="v" id="hvHeadIncome">-</span></div>
+                      <div class="kv"><span class="k">4Ps</span><span class="v" id="hvHead4ps">-</span></div>
+                      <div class="kv"><span class="k">Senior</span><span class="v" id="hvHeadSenior">-</span></div>
+                      <div class="kv"><span class="k">PWD</span><span class="v" id="hvHeadPWD">-</span></div>
+                      <div class="kv"><span class="k">Indigenous People</span><span class="v" id="hvHeadIP">-</span></div>
                   </div>
                 </div>
               </div>
@@ -213,7 +229,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </h2>
               <div id="hvCollapseThree" class="accordion-collapse collapse" aria-labelledby="hvHeadingThree" data-bs-parent="#hvAccordion">
                 <div class="accordion-body">
-                  <div class="kv-grid">
+                  <div class="kv-grid hv-government-grid">
                     <div class="kv"><span class="k">Registered Voter</span><span class="v" id="hvHeadVoter">-</span></div>
                     <div class="kv"><span class="k">Precinct</span><span class="v" id="hvHeadPrecinct">-</span></div>
                     <div class="kv"><span class="k">SSS</span><span class="v" id="hvHeadSSS">-</span></div>
@@ -234,24 +250,28 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
                   Household and Housing Information
                 </button>
               </h2>
-              <div id="hvCollapseFour" class="accordion-collapse collapse" aria-labelledby="hvHeadingFour" data-bs-parent="#hvAccordion">
-                <div class="accordion-body">
-                  <div class="kv-grid hv-house-grid">
-                    <div class="kv"><span class="k">Members</span><span class="v" id="hvHouseNumMembers">-</span></div>
-                    <div class="kv"><span class="k">Relation to Head</span><span class="v" id="hvHouseRelationToHead">-</span></div>
-                    <div class="kv"><span class="k">Children</span><span class="v" id="hvHouseNumChildren">-</span></div>
-                    <div class="kv"><span class="k">Marital Partner</span><span class="v" id="hvHousePartnerName">-</span></div>
-                    <div class="kv"><span class="k">Ownership</span><span class="v" id="hvHouseOwnership">-</span></div>
-                    <div class="kv"><span class="k">House Type</span><span class="v" id="hvHouseType">-</span></div>
-                    <div class="kv"><span class="k">Rooms</span><span class="v" id="hvHouseRooms">-</span></div>
-                    <div class="kv"><span class="k">Toilet</span><span class="v" id="hvHouseToilet">-</span></div>
-                    <div class="kv"><span class="k">Electricity</span><span class="v" id="hvHouseElectricity">-</span></div>
-                    <div class="kv"><span class="k">Internet</span><span class="v" id="hvHouseInternet">-</span></div>
-                    <div class="kv wide"><span class="k">Water Source</span><span class="v" id="hvHouseWater">-</span></div>
+                <div id="hvCollapseFour" class="accordion-collapse collapse" aria-labelledby="hvHeadingFour" data-bs-parent="#hvAccordion">
+                  <div class="accordion-body">
+                    <div class="hv-house-layout">
+                      <div class="kv-grid hv-house-grid">
+                        <div class="kv"><span class="k">Members</span><span class="v" id="hvHouseNumMembers">-</span></div>
+                        <div class="kv"><span class="k">Relation to Head</span><span class="v" id="hvHouseRelationToHead">-</span></div>
+                        <div class="kv"><span class="k">Children</span><span class="v" id="hvHouseNumChildren">-</span></div>
+                        <div class="kv"><span class="k">Marital Partner</span><span class="v" id="hvHousePartnerName">-</span></div>
+                        <div class="kv"><span class="k">Ownership</span><span class="v" id="hvHouseOwnership">-</span></div>
+                        <div class="kv"><span class="k">House Type</span><span class="v" id="hvHouseType">-</span></div>
+                        <div class="kv"><span class="k">Rooms</span><span class="v" id="hvHouseRooms">-</span></div>
+                        <div class="kv"><span class="k">Toilet</span><span class="v" id="hvHouseToilet">-</span></div>
+                      </div>
+                      <div class="kv-grid hv-house-grid-bottom">
+                        <div class="kv"><span class="k">Electricity</span><span class="v" id="hvHouseElectricity">-</span></div>
+                        <div class="kv"><span class="k">Internet</span><span class="v" id="hvHouseInternet">-</span></div>
+                        <div class="kv"><span class="k">Water Source</span><span class="v" id="hvHouseWater">-</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
           </div>
         </div>
@@ -315,7 +335,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               <div id="memberDetailsBasic" class="accordion-collapse collapse show" aria-labelledby="memberDetailsBasicHead" data-bs-parent="#memberDetailsAccordion">
                 <div class="accordion-body">
                   <div class="member-detail-grid">
-                    <div class="member-detail-item full"><span class="k">Full Name</span><span class="v" id="mdName">-</span></div>
+                    <div class="member-detail-item"><span class="k">Full Name</span><span class="v" id="mdName">-</span></div>
                     <div class="member-detail-item"><span class="k">Relation</span><span class="v" id="mdRelationToHeadValue">-</span></div>
                     <div class="member-detail-item"><span class="k">Birthday</span><span class="v" id="mdBirthday">-</span></div>
                     <div class="member-detail-item"><span class="k">Age</span><span class="v" id="mdAge">-</span></div>
@@ -340,13 +360,13 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </h2>
               <div id="memberDetailsContact" class="accordion-collapse collapse" aria-labelledby="memberDetailsContactHead" data-bs-parent="#memberDetailsAccordion">
                 <div class="accordion-body">
-                  <div class="member-detail-grid">
+                  <div class="member-detail-grid member-detail-grid--contact">
                     <div class="member-detail-item"><span class="k">Contact</span><span class="v" id="mdContact">-</span></div>
                     <div class="member-detail-item"><span class="k">Zone</span><span class="v" id="mdZone">-</span></div>
                     <div class="member-detail-item"><span class="k">Barangay</span><span class="v" id="mdBarangay">-</span></div>
                     <div class="member-detail-item"><span class="k">City/Municipality</span><span class="v" id="mdCity">-</span></div>
                     <div class="member-detail-item"><span class="k">Province</span><span class="v" id="mdProvince">-</span></div>
-                    <div class="member-detail-item full"><span class="k">Address</span><span class="v" id="mdAddress">-</span></div>
+                    <div class="member-detail-item"><span class="k">Address</span><span class="v" id="mdAddress">-</span></div>
                   </div>
                 </div>
               </div>
@@ -360,15 +380,17 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </h2>
               <div id="memberDetailsProfile" class="accordion-collapse collapse" aria-labelledby="memberDetailsProfileHead" data-bs-parent="#memberDetailsAccordion">
                 <div class="accordion-body">
-                  <div class="member-detail-grid">
+                  <div class="member-profile-grid-top">
                     <div class="member-detail-item"><span class="k">Education</span><span class="v" id="mdEducation">-</span></div>
                     <div class="member-detail-item"><span class="k">Degree/Course</span><span class="v" id="mdDegree">-</span></div>
-                    <div class="member-detail-item full"><span class="k">School Name</span><span class="v" id="mdSchoolName">-</span></div>
+                    <div class="member-detail-item"><span class="k">School Name</span><span class="v" id="mdSchoolName">-</span></div>
                     <div class="member-detail-item"><span class="k">School Type</span><span class="v" id="mdSchoolType">-</span></div>
                     <div class="member-detail-item"><span class="k">Dropout</span><span class="v" id="mdDropout">-</span></div>
                     <div class="member-detail-item"><span class="k">Out of School Youth</span><span class="v" id="mdOSY">-</span></div>
                     <div class="member-detail-item"><span class="k">Currently Studying</span><span class="v" id="mdCurrentlyStudying">-</span></div>
                     <div class="member-detail-item"><span class="k">Occupation</span><span class="v" id="mdOccupation">-</span></div>
+                  </div>
+                  <div class="member-profile-grid-bottom">
                     <div class="member-detail-item"><span class="k">Employment Status</span><span class="v" id="mdEmploymentStatus">-</span></div>
                     <div class="member-detail-item"><span class="k">Work Type</span><span class="v" id="mdWorkType">-</span></div>
                     <div class="member-detail-item"><span class="k">Monthly Income</span><span class="v" id="mdMonthlyIncome">-</span></div>
@@ -385,11 +407,13 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
               </h2>
               <div id="memberDetailsGov" class="accordion-collapse collapse" aria-labelledby="memberDetailsGovHead" data-bs-parent="#memberDetailsAccordion">
                 <div class="accordion-body">
-                  <div class="member-detail-grid">
+                  <div class="member-gov-grid-top">
                     <div class="member-detail-item"><span class="k">4Ps Beneficiary</span><span class="v" id="md4ps">-</span></div>
-                    <div class="member-detail-item"><span class="k">Senior Citizen</span><span class="v" id="mdSenior">-</span></div>
                     <div class="member-detail-item"><span class="k">PWD</span><span class="v" id="mdPWD">-</span></div>
+                    <div class="member-detail-item"><span class="k">Senior Citizen</span><span class="v" id="mdSenior">-</span></div>
                     <div class="member-detail-item"><span class="k">Indigenous People</span><span class="v" id="mdIP">-</span></div>
+                  </div>
+                  <div class="member-gov-grid-bottom">
                     <div class="member-detail-item"><span class="k">Registered Voter</span><span class="v" id="mdVoter">-</span></div>
                     <div class="member-detail-item"><span class="k">Precinct</span><span class="v" id="mdPrecinct">-</span></div>
                     <div class="member-detail-item"><span class="k">SSS</span><span class="v" id="mdSSS">-</span></div>
@@ -403,36 +427,16 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
                 </div>
               </div>
             </div>
-
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="memberDetailsHealthHead">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#memberDetailsHealth" aria-expanded="false" aria-controls="memberDetailsHealth">
-                  Household Profile
-                </button>
-              </h2>
-              <div id="memberDetailsHealth" class="accordion-collapse collapse" aria-labelledby="memberDetailsHealthHead" data-bs-parent="#memberDetailsAccordion">
-                <div class="accordion-body">
-                  <div class="member-detail-grid">
-                    <div class="member-detail-item"><span class="k">Household Members</span><span class="v" id="mdNumMembers">-</span></div>
-                    <div class="member-detail-item"><span class="k">Relation to Head</span><span class="v" id="mdRelationToHead">-</span></div>
-                    <div class="member-detail-item"><span class="k">No. of Children</span><span class="v" id="mdNumChildren">-</span></div>
-                    <div class="member-detail-item"><span class="k">Partner Name</span><span class="v" id="mdPartnerName">-</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
-        <div class="modal-footer border-0 pt-0">
+        <div class="modal-footer border-0 pt-0 member-modal-footer">
+          <button type="button" class="btn btn-outline-primary btn-modern role-secretary-only" id="memberDetailsEditBtn">
+            <i class="bi bi-pencil"></i> Edit Member
+          </button>
+          <button type="button" class="btn btn-outline-danger btn-modern role-secretary-only" id="memberDetailsDeleteBtn">
+            <i class="bi bi-trash"></i> Delete Member
+          </button>
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
-          <div class="ms-auto d-flex gap-2">
-            <button type="button" class="btn btn-danger btn-modern role-secretary-only" id="memberDetailsDeleteBtn">
-              <i class="bi bi-trash"></i> Delete Member
-            </button>
-            <button type="button" class="btn btn-primary btn-modern role-secretary-only" id="memberDetailsEditBtn">
-              <i class="bi bi-pencil"></i> Edit Member
-            </button>
-          </div>
         </div>
       </div>
     </div>

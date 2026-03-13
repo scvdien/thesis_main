@@ -106,6 +106,34 @@ function auth_role_home(string $role): string
     };
 }
 
+/**
+ * @param array<string, mixed> $user
+ */
+function auth_user_requires_credential_update(array $user): bool
+{
+    return (bool) ($user['requires_credential_update'] ?? false);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function auth_admin_requires_credential_update(array $user): bool
+{
+    return auth_user_role($user) === AUTH_ROLE_ADMIN && auth_user_requires_credential_update($user);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function auth_user_home(array $user): string
+{
+    if (auth_admin_requires_credential_update($user)) {
+        return 'settings.php?role=admin#admin-credentials';
+    }
+
+    return auth_role_home(auth_user_role($user));
+}
+
 function auth_set_last_denial_reason(string $reason): void
 {
     $GLOBALS['__auth_last_denial_reason'] = $reason;
@@ -354,7 +382,6 @@ function auth_bootstrap_users_table(PDO $pdo): void
             `full_name` VARCHAR(120) NOT NULL,
             `username` VARCHAR(80) NOT NULL,
             `password_hash` VARCHAR(255) NOT NULL,
-            `password_plain` VARCHAR(255) NULL,
             `role` VARCHAR(20) NOT NULL,
             `contact_number` VARCHAR(40) NULL,
             `is_active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -389,8 +416,8 @@ function auth_users_has_column(PDO $pdo, string $column): bool
 
 function auth_ensure_users_columns(PDO $pdo): void
 {
-    if (!auth_users_has_column($pdo, 'password_plain')) {
-        $pdo->exec('ALTER TABLE `users` ADD COLUMN `password_plain` VARCHAR(255) NULL AFTER `password_hash`');
+    if (auth_users_has_column($pdo, 'password_plain')) {
+        $pdo->exec('ALTER TABLE `users` DROP COLUMN `password_plain`');
     }
     if (!auth_users_has_column($pdo, 'contact_number')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `contact_number` VARCHAR(40) NULL AFTER `role`');
@@ -403,31 +430,191 @@ function auth_ensure_users_columns(PDO $pdo): void
     }
 }
 
-function auth_seed_default_users(PDO $pdo): void
+function auth_users_count(PDO $pdo): int
 {
-    $count = (int) $pdo->query('SELECT COUNT(*) FROM `users`')->fetchColumn();
-    if ($count > 0) {
-        return;
+    return (int) $pdo->query('SELECT COUNT(*) FROM `users`')->fetchColumn();
+}
+
+function auth_setup_required(?PDO $pdo = null): bool
+{
+    $pdo = $pdo ?? auth_db();
+    auth_bootstrap_users_table($pdo);
+    auth_ensure_users_columns($pdo);
+    return auth_users_count($pdo) === 0;
+}
+
+function auth_initial_username(string $username): string
+{
+    $normalized = trim($username);
+    if ($normalized === '') {
+        return '';
     }
 
+    return preg_match('/^[A-Za-z0-9._-]{3,80}$/', $normalized) === 1
+        ? $normalized
+        : '';
+}
+
+function auth_initial_password_strong(string $password): bool
+{
+    return strlen($password) >= 8 && preg_match('/[^A-Za-z0-9]/', $password) === 1;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function auth_create_initial_captain(string $fullName, string $username, string $password): array
+{
+    $fullName = auth_audit_text($fullName, 120);
+    $username = auth_initial_username($username);
+
+    if ($fullName === '') {
+        throw new InvalidArgumentException('Full name is required.');
+    }
+    if ($username === '') {
+        throw new InvalidArgumentException('Username must be 3-80 characters and use only letters, numbers, dot, underscore, or dash.');
+    }
+    if (!auth_initial_password_strong($password)) {
+        throw new InvalidArgumentException('Password must be at least 8 characters and include at least 1 special character.');
+    }
+
+    auth_bootstrap_store();
+    $pdo = auth_db();
+
+    try {
+        $pdo->beginTransaction();
+
+        if (auth_users_count($pdo) > 0) {
+            throw new RuntimeException('Initial setup is already complete. Sign in with your existing account.');
+        }
+
+        $existsStmt = $pdo->prepare(
+            'SELECT 1
+             FROM `users`
+             WHERE `username` = :username
+             LIMIT 1'
+        );
+        $existsStmt->execute(['username' => $username]);
+        if ((bool) $existsStmt->fetchColumn()) {
+            throw new RuntimeException('Username already exists.');
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `role`, `contact_number`, `is_active`, `must_change_password`)
+             VALUES (:full_name, :username, :password_hash, :role, :contact_number, 1, 0)'
+        );
+        $stmt->execute([
+            'full_name' => $fullName,
+            'username' => $username,
+            'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+            'role' => AUTH_ROLE_CAPTAIN,
+            'contact_number' => null,
+        ]);
+
+        $userId = (int) $pdo->lastInsertId();
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+
+    auth_audit_log([
+        'actor_user_id' => $userId,
+        'actor_username' => $username,
+        'actor_role' => AUTH_ROLE_CAPTAIN,
+        'action_key' => 'initial_setup_completed',
+        'action_type' => 'created',
+        'module_name' => 'Authentication',
+        'record_type' => 'user',
+        'record_id' => $username,
+        'details' => 'Initial captain account created during secure setup.',
+        'metadata' => [
+            'user_id' => $userId,
+            'full_name' => $fullName,
+            'role' => AUTH_ROLE_CAPTAIN,
+        ],
+    ]);
+
+    return [
+        'id' => $userId,
+        'full_name' => $fullName,
+        'username' => $username,
+        'role' => AUTH_ROLE_CAPTAIN,
+        'requires_credential_update' => false,
+    ];
+}
+
+function auth_remove_insecure_default_users(PDO $pdo): void
+{
     $defaults = [
         ['Barangay Secretary', 'secretary', 'Secretary@123', AUTH_ROLE_SECRETARY],
         ['Barangay Captain', 'captain', 'Captain@123', AUTH_ROLE_CAPTAIN],
         ['Registration Staff', 'staff', 'Staff@123', AUTH_ROLE_STAFF],
     ];
 
-    $stmt = $pdo->prepare(
-        'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `password_plain`, `role`, `is_active`)
-         VALUES (:full_name, :username, :password_hash, :password_plain, :role, 1)'
+    $selectStmt = $pdo->prepare(
+        'SELECT `id`, `full_name`, `username`, `password_hash`, `role`
+         FROM `users`
+         WHERE `username` = :username
+           AND `role` = :role
+         LIMIT 1'
+    );
+    $deleteStmt = $pdo->prepare(
+        'DELETE FROM `users`
+         WHERE `id` = :id
+         LIMIT 1'
     );
 
+    $removedAccounts = [];
     foreach ($defaults as [$fullName, $username, $password, $role]) {
-        $stmt->execute([
-            'full_name' => $fullName,
+        $selectStmt->execute([
             'username' => $username,
-            'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-            'password_plain' => $role === AUTH_ROLE_STAFF ? $password : null,
             'role' => $role,
+        ]);
+        $row = $selectStmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $passwordHash = (string) ($row['password_hash'] ?? '');
+        if ($passwordHash === '' || !password_verify($password, $passwordHash)) {
+            continue;
+        }
+
+        $userId = (int) ($row['id'] ?? 0);
+        if ($userId <= 0) {
+            continue;
+        }
+
+        $deleteStmt->execute(['id' => $userId]);
+        if ($deleteStmt->rowCount() <= 0) {
+            continue;
+        }
+
+        $removedAccounts[] = [
+            'user_id' => $userId,
+            'username' => $username,
+            'role' => $role,
+            'matched_full_name' => $fullName,
+        ];
+    }
+
+    foreach ($removedAccounts as $removedAccount) {
+        auth_audit_log([
+            'actor_user_id' => (int) ($removedAccount['user_id'] ?? 0),
+            'actor_username' => (string) ($removedAccount['username'] ?? ''),
+            'actor_role' => (string) ($removedAccount['role'] ?? ''),
+            'action_key' => 'insecure_default_account_removed',
+            'action_type' => 'security',
+            'module_name' => 'Authentication',
+            'record_type' => 'user',
+            'record_id' => (string) ($removedAccount['username'] ?? ''),
+            'details' => 'Removed insecure default-seeded account during security hardening.',
+            'metadata' => [
+                'matched_full_name' => (string) ($removedAccount['matched_full_name'] ?? ''),
+            ],
         ]);
     }
 }
@@ -559,8 +746,8 @@ function auth_bootstrap_store(): void
     $pdo = auth_db();
     auth_bootstrap_users_table($pdo);
     auth_ensure_users_columns($pdo);
-    auth_seed_default_users($pdo);
     auth_bootstrap_audit_trail_table($pdo);
+    auth_remove_insecure_default_users($pdo);
     $bootstrapped = true;
 }
 
@@ -616,6 +803,14 @@ function auth_attempt_login(string $username, string $password, string $selected
 
     auth_bootstrap_store();
     $pdo = auth_db();
+    if (auth_users_count($pdo) === 0) {
+        $auditLogin(false, 'Login failed: system setup is not complete.');
+        return [
+            'success' => false,
+            'error' => 'System setup is required before signing in.',
+            'user' => null,
+        ];
+    }
 
     $stmt = $pdo->prepare(
         'SELECT `id`, `full_name`, `username`, `password_hash`, `role`, `is_active`, `must_change_password`
@@ -738,7 +933,7 @@ function auth_attempt_login(string $username, string $password, string $selected
  * @param array<int, string> $allowedRoles
  * @return array<string, mixed>
  */
-function auth_require_page(array $allowedRoles = []): array
+function auth_require_page(array $allowedRoles = [], bool $allowPendingCredentialUpdate = false): array
 {
     $user = auth_current_user();
     if (!is_array($user)) {
@@ -748,7 +943,14 @@ function auth_require_page(array $allowedRoles = []): array
     $role = auth_user_role($user);
     $normalizedAllowed = array_values(array_filter(array_map('auth_normalize_role', $allowedRoles)));
     if ($normalizedAllowed && !in_array($role, $normalizedAllowed, true)) {
-        auth_redirect(auth_role_home($role));
+        auth_redirect(auth_user_home($user));
+    }
+
+    if (!$allowPendingCredentialUpdate && auth_admin_requires_credential_update($user)) {
+        $scriptName = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        if ($scriptName !== 'settings.php') {
+            auth_redirect(auth_user_home($user));
+        }
     }
 
     return $user;
@@ -773,7 +975,7 @@ function auth_json_error(int $statusCode, string $message, string $code = ''): n
  * @param array<int, string> $allowedRoles
  * @return array<string, mixed>
  */
-function auth_require_api(array $allowedRoles = []): array
+function auth_require_api(array $allowedRoles = [], bool $allowPendingCredentialUpdate = false): array
 {
     $user = auth_current_user();
     if (!is_array($user)) {
@@ -794,6 +996,10 @@ function auth_require_api(array $allowedRoles = []): array
     $normalizedAllowed = array_values(array_filter(array_map('auth_normalize_role', $allowedRoles)));
     if ($normalizedAllowed && !in_array($role, $normalizedAllowed, true)) {
         auth_json_error(403, 'You do not have permission for this action.');
+    }
+
+    if (!$allowPendingCredentialUpdate && auth_admin_requires_credential_update($user)) {
+        auth_json_error(403, 'Update your temporary admin credentials before using other admin tools.', 'credentials_update_required');
     }
 
     return $user;

@@ -86,11 +86,13 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
           <i class="bi bi-list toggle-btn" onclick="toggleSidebar()"></i>
           <h4 class="mb-0 text-primary">Households</h4>
         </div>
-        <div>
-          <select id="yearSelect" class="form-select d-inline w-auto"></select>
-          <button class="btn btn-outline-primary ms-2" id="refreshBtn">
-            <i class="bi bi-arrow-clockwise"></i> Refresh
-          </button>
+        <div class="topbar-side">
+          <div class="topbar-actions">
+            <select id="yearSelect" class="form-select d-inline w-auto"></select>
+            <button class="btn btn-outline-primary ms-2" id="refreshBtn">
+              <i class="bi bi-arrow-clockwise topbar-btn-icon"></i><span class="topbar-btn-label">Refresh</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -108,7 +110,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
               <input type="text" id="householdSearchInput" class="form-control" placeholder="Search head, household ID, or zone">
               <i class="bi bi-search"></i>
             </div>
-            <a href="registration.php" class="btn btn-primary btn-sm role-secretary-only d-inline-flex align-items-center gap-1 household-toolbar-add">
+            <a href="registration.php" id="addHouseholdBtn" class="btn btn-primary btn-sm role-secretary-only d-inline-flex align-items-center gap-1 household-toolbar-add">
               <i class="bi bi-plus-circle"></i> Add Household
             </a>
           </div>

@@ -1,4 +1,5 @@
 (function () {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   try {
     const roleFromBody = (document.body?.dataset?.role || 'captain').toLowerCase();
     sessionStorage.setItem('userRole', roleFromBody || 'captain');
@@ -298,9 +299,11 @@
         try {
           const candidate = await fetch(endpoint, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
               'Content-Type': 'application/json',
-              Accept: 'application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json'
+              Accept: 'application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
+              ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
             },
             body: JSON.stringify(requestPayload)
           });

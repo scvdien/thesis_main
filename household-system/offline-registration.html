@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d6efd">
+  <title>Registration Offline</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef3fb;
+      --card: #ffffff;
+      --text: #163150;
+      --muted: #62748a;
+      --accent: #0d6efd;
+      --accent-soft: rgba(13, 110, 253, 0.12);
+      --border: rgba(22, 49, 80, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top, rgba(13, 110, 253, 0.16), transparent 36%),
+        linear-gradient(180deg, #f9fbff 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .offline-card {
+      width: min(100%, 560px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 18px 42px rgba(22, 49, 80, 0.12);
+    }
+
+    .offline-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    h1 {
+      margin: 18px 0 10px;
+      font-size: clamp(28px, 4vw, 36px);
+      line-height: 1.1;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .offline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .offline-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid transparent;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .offline-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(13, 110, 253, 0.14);
+    }
+
+    .offline-link-primary {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .offline-link-secondary {
+      border-color: var(--border);
+      background: #ffffff;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <main class="offline-card">
+    <div class="offline-badge">Offline Mode</div>
+    <h1>Registration page is not cached yet.</h1>
+    <p>
+      Open the registration module online first so the browser can cache it for offline refresh and recovery.
+      Any households you already saved locally will stay in browser storage and can sync once the internet returns.
+    </p>
+    <div class="offline-actions">
+      <a class="offline-link offline-link-primary" href="./registration.php">Try Registration</a>
+      <a class="offline-link offline-link-secondary" href="./member.php">Try Member Page</a>
+    </div>
+  </main>
+</body>
+</html>

@@ -30,6 +30,7 @@ const HOUSEHOLD_FETCH_LIMIT = 500;
 
 const state = {
   rows: [],
+  years: [],
   loading: false,
   error: ''
 };
@@ -79,6 +80,8 @@ const extractHouseholdYear = (value) => {
 };
 
 const getHouseholdRowYear = (row) => {
+  const explicitYear = Number.parseInt(String(row?.record_year || ''), 10);
+  if (Number.isInteger(explicitYear) && explicitYear > 0) return explicitYear;
   const fromCode = extractHouseholdYear(row?.household_id);
   if (fromCode > 0) return fromCode;
   const fromUpdated = extractYearFromDate(row?.updated_at);
@@ -97,12 +100,27 @@ const formatUpdatedDate = (value) => {
   });
 };
 
+const pageParams = new URLSearchParams(window.location.search);
+const normalizeYearFilterValue = (value) => {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? String(parsed) : '';
+};
 const currentYear = new Date().getFullYear();
+const requestedYear = normalizeYearFilterValue(pageParams.get('year'));
 const yearSelect = document.getElementById('yearSelect');
-const ensureYearOptions = (rows = []) => {
+const normalizeAvailableYears = (values = []) => {
+  return Array.from(new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => Number.parseInt(String(value || '').trim(), 10))
+      .filter((year) => Number.isInteger(year) && year > 0)
+  )).sort((a, b) => b - a);
+};
+
+const ensureYearOptions = (rows = [], availableYears = state.years) => {
   if (!yearSelect) return;
   const currentValue = String(yearSelect.value || '').trim();
-  const yearSet = new Set([currentYear]);
+  const yearSet = new Set([currentYear, currentYear - 1]);
+  normalizeAvailableYears(availableYears).forEach((year) => yearSet.add(year));
   rows.forEach((row) => {
     const year = getHouseholdRowYear(row);
     if (Number.isInteger(year) && year > 0) {
@@ -119,8 +137,10 @@ const ensureYearOptions = (rows = []) => {
   });
   if (currentValue && years.includes(Number.parseInt(currentValue, 10))) {
     yearSelect.value = currentValue;
+  } else if (requestedYear && years.includes(Number.parseInt(requestedYear, 10))) {
+    yearSelect.value = requestedYear;
   } else {
-    yearSelect.value = String(currentYear);
+    yearSelect.value = String(years[0] || currentYear);
   }
 };
 
@@ -132,6 +152,7 @@ if (footerYear) {
 }
 
 const refreshBtn = document.getElementById('refreshBtn');
+const addHouseholdBtn = document.getElementById('addHouseholdBtn');
 const refreshModalEl = document.getElementById('refreshModal');
 const refreshModal = refreshModalEl ? new bootstrap.Modal(refreshModalEl) : null;
 if (refreshBtn && refreshModal) {
@@ -190,7 +211,7 @@ const ensureZoneOptions = (rows = []) => {
   householdZoneFilter.value = hasCurrent ? currentValue : 'all';
 };
 
-const roleFromQueryRaw = new URLSearchParams(window.location.search).get('role');
+const roleFromQueryRaw = pageParams.get('role');
 const roleFromQuery = (roleFromQueryRaw || '').toLowerCase();
 const roleFromStorage = (sessionStorage.getItem('userRole') || '').toLowerCase();
 const roleFromBody = (document.body.dataset.role || '').toLowerCase();
@@ -201,6 +222,27 @@ if (roleFromQuery) {
 document.body.dataset.role = resolvedRole;
 const canEdit = resolvedRole === 'secretary' || resolvedRole === 'admin';
 document.body.classList.toggle('role-can-edit', canEdit);
+
+const buildHouseholdsPageUrl = (yearValue = getSelectedYear()) => {
+  const params = new URLSearchParams(window.location.search);
+  if (canEdit) {
+    params.set('role', resolvedRole);
+  } else {
+    params.delete('role');
+  }
+  const normalizedYear = normalizeYearFilterValue(yearValue);
+  if (normalizedYear) {
+    params.set('year', normalizedYear);
+  } else {
+    params.delete('year');
+  }
+  return `households.php${params.toString() ? `?${params.toString()}` : ''}`;
+};
+
+const syncHouseholdsUrlState = () => {
+  if (!window.history?.replaceState) return;
+  window.history.replaceState(null, '', buildHouseholdsPageUrl());
+};
 
 const dashboardLink = document.querySelector('.menu a[href="index.php"]');
 if (dashboardLink && canEdit) {
@@ -274,6 +316,12 @@ const getFilteredRows = (selectedYear) => {
   });
 };
 
+const updateAddHouseholdLink = () => {
+  if (!addHouseholdBtn) return;
+  const selectedYear = Number.parseInt(getSelectedYear(), 10) || currentYear;
+  addHouseholdBtn.setAttribute('href', `registration.php?year=${encodeURIComponent(String(selectedYear))}`);
+};
+
 const renderHouseholdTable = () => {
   if (!householdsTableBody) return;
 
@@ -335,12 +383,43 @@ const renderHouseholdTable = () => {
   `;
 };
 
+const fetchHouseholdYears = async () => {
+  const params = new URLSearchParams({
+    action: 'list_household_years'
+  });
+  const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || payload.success !== true) {
+    const message = payload && payload.error
+      ? String(payload.error)
+      : `Failed to load household years (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return normalizeAvailableYears(payload?.data?.years);
+};
+
 const fetchHouseholds = async () => {
   const params = new URLSearchParams({
     action: 'list_households',
     limit: String(HOUSEHOLD_FETCH_LIMIT),
     offset: '0'
   });
+  const selectedYear = normalizeYearFilterValue(getSelectedYear());
+  if (selectedYear) {
+    params.set('year', selectedYear);
+  }
   const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
     method: 'GET',
     credentials: 'same-origin',
@@ -362,14 +441,17 @@ const fetchHouseholds = async () => {
   }
 
   const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
-  return items.map((item) => ({
-    household_id: String(item?.household_id || ''),
-    head_name: String(item?.head_name || ''),
-    zone: normalizeZoneLabel(item?.zone),
-    member_count: Number(item?.member_count || 0),
-    updated_at: String(item?.updated_at || ''),
-    source: String(item?.source || '')
-  }));
+  return {
+    items: items.map((item) => ({
+      household_id: String(item?.household_id || ''),
+      record_year: Number(item?.record_year || 0),
+      head_name: String(item?.head_name || ''),
+      zone: normalizeZoneLabel(item?.zone),
+      member_count: Number(item?.member_count || 0),
+      updated_at: String(item?.updated_at || ''),
+      source: String(item?.source || '')
+    }))
+  };
 };
 
 async function loadHouseholds() {
@@ -378,18 +460,36 @@ async function loadHouseholds() {
   renderHouseholdTable();
 
   try {
-    state.rows = await fetchHouseholds();
-    ensureYearOptions(state.rows);
+    const payload = await fetchHouseholds();
+    state.rows = Array.isArray(payload?.items) ? payload.items : [];
+    ensureYearOptions(state.rows, state.years);
     ensureZoneOptions(state.rows);
+    updateAddHouseholdLink();
+    syncHouseholdsUrlState();
   } catch (error) {
     state.rows = [];
     state.error = error instanceof Error ? error.message : 'Unable to load households.';
-    ensureYearOptions([]);
+    ensureYearOptions([], state.years);
     ensureZoneOptions([]);
+    updateAddHouseholdLink();
   } finally {
     state.loading = false;
     renderHouseholdTable();
   }
+}
+
+async function initializeHouseholds() {
+  try {
+    state.years = await fetchHouseholdYears();
+  } catch (error) {
+    state.years = [];
+  }
+
+  ensureYearOptions([], state.years);
+  ensureZoneOptions([]);
+  updateAddHouseholdLink();
+  syncHouseholdsUrlState();
+  await loadHouseholds();
 }
 
 const populateEditModal = (dataset) => {
@@ -427,6 +527,8 @@ document.addEventListener('click', (event) => {
     const params = new URLSearchParams();
     if (baseId) params.set('id', baseId);
     if (resolvedRole) params.set('role', resolvedRole);
+    const selectedYear = normalizeYearFilterValue(getSelectedYear());
+    if (selectedYear) params.set('year', selectedYear);
     window.location.href = `household-view.php${params.toString() ? `?${params.toString()}` : ''}`;
     return;
   }
@@ -464,8 +566,8 @@ hhModalDeleteBtn?.addEventListener('click', () => {
 
 householdSearchInput?.addEventListener('input', renderHouseholdTable);
 householdZoneFilter?.addEventListener('change', renderHouseholdTable);
-yearSelect?.addEventListener('change', renderHouseholdTable);
+yearSelect?.addEventListener('change', () => {
+  void loadHouseholds();
+});
 
-ensureYearOptions([]);
-ensureZoneOptions([]);
-void loadHouseholds();
+void initializeHouseholds();

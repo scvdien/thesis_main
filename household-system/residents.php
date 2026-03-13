@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$csrfToken = auth_csrf_token();
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -41,6 +42,8 @@ if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
 $systemLabel = trim($brandFooterLabel . ' Household Information Management System');
+$siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
+$residentsStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/residents-style.css') ?: time());
 $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-scripts.js') ?: time());
 ?>
 
@@ -50,12 +53,74 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
 <meta charset="utf-8">
 <title>Residents | Barangay Captain Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
 
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site-style.css">
-<link rel="stylesheet" href="assets/css/residents-style.css">
+<link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+<link rel="stylesheet" href="assets/css/residents-style.css?v=<?= htmlspecialchars($residentsStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+<style>
+  #residentDetailsContact .resident-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    align-items: start;
+  }
+
+  #residentDetailsProfile .resident-profile-grid-top {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    align-items: start;
+  }
+
+  #residentDetailsProfile .resident-profile-grid-bottom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 14px;
+    align-items: start;
+    margin-top: 12px;
+  }
+
+  #residentDetailsGov .resident-gov-grid-top {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 14px;
+    align-items: start;
+  }
+
+  #residentDetailsGov .resident-gov-grid-bottom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 14px;
+    align-items: start;
+    margin-top: 12px;
+  }
+
+  @media (max-width: 992px) {
+    #residentDetailsGov .resident-gov-grid-top,
+    #residentDetailsGov .resident-gov-grid-bottom {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    #residentDetailsContact .resident-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    #residentDetailsProfile .resident-profile-grid-top,
+    #residentDetailsProfile .resident-profile-grid-bottom {
+      grid-template-columns: 1fr;
+    }
+
+    #residentDetailsGov .resident-gov-grid-top,
+    #residentDetailsGov .resident-gov-grid-bottom {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
 
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
@@ -181,7 +246,7 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
               <div id="residentDetailsBasic" class="accordion-collapse collapse show" aria-labelledby="residentDetailsBasicHead" data-bs-parent="#residentDetailsAccordion">
                 <div class="accordion-body">
                   <div class="resident-detail-grid">
-                    <div class="resident-detail-item full"><span class="k">Full Name</span><span class="v" id="rdName">-</span></div>
+                    <div class="resident-detail-item"><span class="k">Full Name</span><span class="v" id="rdName">-</span></div>
                     <div class="resident-detail-item"><span class="k">Relation</span><span class="v" id="rdRelationToHeadValue">-</span></div>
                     <div class="resident-detail-item"><span class="k">Birthday</span><span class="v" id="rdBirthday">-</span></div>
                     <div class="resident-detail-item"><span class="k">Age</span><span class="v" id="rdAge">-</span></div>
@@ -212,7 +277,7 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
                     <div class="resident-detail-item"><span class="k">Barangay</span><span class="v" id="rdBarangay">-</span></div>
                     <div class="resident-detail-item"><span class="k">City/Municipality</span><span class="v" id="rdCity">-</span></div>
                     <div class="resident-detail-item"><span class="k">Province</span><span class="v" id="rdProvince">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">Address</span><span class="v" id="rdAddress">-</span></div>
+                    <div class="resident-detail-item"><span class="k">Address</span><span class="v" id="rdAddress">-</span></div>
                   </div>
                 </div>
               </div>
@@ -226,15 +291,17 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
               </h2>
               <div id="residentDetailsProfile" class="accordion-collapse collapse" aria-labelledby="residentDetailsProfileHead" data-bs-parent="#residentDetailsAccordion">
                 <div class="accordion-body">
-                  <div class="resident-detail-grid">
+                  <div class="resident-profile-grid-top">
                     <div class="resident-detail-item"><span class="k">Education</span><span class="v" id="rdEducation">-</span></div>
                     <div class="resident-detail-item"><span class="k">Degree/Course</span><span class="v" id="rdDegree">-</span></div>
-                    <div class="resident-detail-item full"><span class="k">School Name</span><span class="v" id="rdSchoolName">-</span></div>
+                    <div class="resident-detail-item"><span class="k">School Name</span><span class="v" id="rdSchoolName">-</span></div>
                     <div class="resident-detail-item"><span class="k">School Type</span><span class="v" id="rdSchoolType">-</span></div>
                     <div class="resident-detail-item"><span class="k">Dropout</span><span class="v" id="rdDropout">-</span></div>
                     <div class="resident-detail-item"><span class="k">Out of School Youth</span><span class="v" id="rdOSY">-</span></div>
                     <div class="resident-detail-item"><span class="k">Currently Studying</span><span class="v" id="rdCurrentlyStudying">-</span></div>
                     <div class="resident-detail-item"><span class="k">Occupation</span><span class="v" id="rdOccupation">-</span></div>
+                  </div>
+                  <div class="resident-profile-grid-bottom">
                     <div class="resident-detail-item"><span class="k">Employment Status</span><span class="v" id="rdEmploymentStatus">-</span></div>
                     <div class="resident-detail-item"><span class="k">Work Type</span><span class="v" id="rdWorkType">-</span></div>
                     <div class="resident-detail-item"><span class="k">Monthly Income</span><span class="v" id="rdMonthlyIncome">-</span></div>
@@ -251,11 +318,13 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
               </h2>
               <div id="residentDetailsGov" class="accordion-collapse collapse" aria-labelledby="residentDetailsGovHead" data-bs-parent="#residentDetailsAccordion">
                 <div class="accordion-body">
-                  <div class="resident-detail-grid">
+                  <div class="resident-gov-grid-top">
                     <div class="resident-detail-item"><span class="k">4Ps Beneficiary</span><span class="v" id="rd4ps">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Senior Citizen</span><span class="v" id="rdSenior">-</span></div>
                     <div class="resident-detail-item"><span class="k">PWD</span><span class="v" id="rdPWD">-</span></div>
+                    <div class="resident-detail-item"><span class="k">Senior Citizen</span><span class="v" id="rdSenior">-</span></div>
                     <div class="resident-detail-item"><span class="k">Indigenous People</span><span class="v" id="rdIP">-</span></div>
+                  </div>
+                  <div class="resident-gov-grid-bottom">
                     <div class="resident-detail-item"><span class="k">Registered Voter</span><span class="v" id="rdVoter">-</span></div>
                     <div class="resident-detail-item"><span class="k">Precinct</span><span class="v" id="rdPrecinct">-</span></div>
                     <div class="resident-detail-item"><span class="k">SSS</span><span class="v" id="rdSSS">-</span></div>
@@ -270,23 +339,6 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
               </div>
             </div>
 
-            <div class="accordion-item">
-              <h2 class="accordion-header" id="residentDetailsHouseholdHead">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#residentDetailsHousehold" aria-expanded="false" aria-controls="residentDetailsHousehold">
-                  Household Profile
-                </button>
-              </h2>
-              <div id="residentDetailsHousehold" class="accordion-collapse collapse" aria-labelledby="residentDetailsHouseholdHead" data-bs-parent="#residentDetailsAccordion">
-                <div class="accordion-body">
-                  <div class="resident-detail-grid">
-                    <div class="resident-detail-item"><span class="k">Household Members</span><span class="v" id="rdNumMembers">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Relation to Head</span><span class="v" id="rdRelationToHead">-</span></div>
-                    <div class="resident-detail-item"><span class="k">No. of Children</span><span class="v" id="rdNumChildren">-</span></div>
-                    <div class="resident-detail-item"><span class="k">Partner Name</span><span class="v" id="rdPartnerName">-</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
         <div class="modal-footer border-0 pt-0 resident-modal-footer">

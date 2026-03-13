@@ -171,10 +171,10 @@ function users_api_find_user(PDO $pdo, int $userId): ?array
 /**
  * @return array<int, array<string, mixed>>
  */
-function users_api_staff_accounts(PDO $pdo, bool $includePasswordPlain = false): array
+function users_api_staff_accounts(PDO $pdo): array
 {
     $stmt = $pdo->prepare(
-        'SELECT `id`, `full_name`, `username`, `role`, `contact_number`, `password_plain`, `is_active`, `must_change_password`, `created_at`, `updated_at`
+        'SELECT `id`, `full_name`, `username`, `role`, `contact_number`, `is_active`, `must_change_password`, `created_at`, `updated_at`
          FROM `users`
          WHERE `role` = :role
          ORDER BY `id` DESC'
@@ -191,9 +191,6 @@ function users_api_staff_accounts(PDO $pdo, bool $includePasswordPlain = false):
         $payload['role'] = AUTH_ROLE_STAFF;
         $payload['roleLabel'] = 'Registration Staff';
         $payload['module'] = 'Registration Module';
-        if ($includePasswordPlain) {
-            $payload['passwordVisible'] = (string) ($row['password_plain'] ?? '');
-        }
         $accounts[] = $payload;
     }
     return $accounts;
@@ -530,14 +527,100 @@ function users_api_quote_identifier(string $value): string
     return '`' . str_replace('`', '``', $value) . '`';
 }
 
-function users_api_backup_relative_directory(): string
+function users_api_backup_legacy_public_directory(): string
 {
-    return 'database/backups';
+    return __DIR__ . '/database/backups';
+}
+
+function users_api_backup_normalize_directory(string $path): string
+{
+    $normalized = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, trim($path));
+    if ($normalized === '') {
+        return '';
+    }
+
+    $trimmed = rtrim($normalized, "\\/");
+    if ($trimmed === '') {
+        return DIRECTORY_SEPARATOR;
+    }
+    if (preg_match('/^[A-Za-z]:$/', $trimmed) === 1) {
+        return $trimmed . DIRECTORY_SEPARATOR;
+    }
+    return $trimmed;
 }
 
 function users_api_backup_absolute_directory(): string
 {
-    return __DIR__ . '/database/backups';
+    $configuredDirectory = auth_env(['HIMS_BACKUP_STORAGE_DIR', 'BACKUP_STORAGE_DIR'], '');
+    if ($configuredDirectory !== '') {
+        return users_api_backup_normalize_directory($configuredDirectory);
+    }
+
+    $documentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+    if ($documentRoot !== '') {
+        return users_api_backup_normalize_directory(
+            dirname($documentRoot) . DIRECTORY_SEPARATOR . 'hims-private' . DIRECTORY_SEPARATOR . 'backups'
+        );
+    }
+
+    return users_api_backup_normalize_directory(
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private-storage' . DIRECTORY_SEPARATOR . 'backups'
+    );
+}
+
+function users_api_backup_try_prepare_directory(string $directory): bool
+{
+    if ($directory === '') {
+        return false;
+    }
+    if (is_dir($directory)) {
+        return true;
+    }
+
+    $created = @mkdir($directory, 0775, true);
+    return $created === true || is_dir($directory);
+}
+
+function users_api_backup_migrate_legacy_files(string $targetDirectory): void
+{
+    $legacyDirectory = users_api_backup_legacy_public_directory();
+    if (!is_dir($legacyDirectory) || !users_api_backup_try_prepare_directory($targetDirectory)) {
+        return;
+    }
+
+    $legacyRealPath = realpath($legacyDirectory);
+    $targetRealPath = realpath($targetDirectory);
+    if (is_string($legacyRealPath) && is_string($targetRealPath) && strtolower($legacyRealPath) === strtolower($targetRealPath)) {
+        return;
+    }
+
+    $entries = @scandir($legacyDirectory);
+    if (!is_array($entries)) {
+        return;
+    }
+
+    foreach ($entries as $entry) {
+        $fileName = users_api_backup_normalized_file_name($entry);
+        if ($fileName === '') {
+            continue;
+        }
+
+        $legacyPath = $legacyDirectory . '/' . $fileName;
+        $targetPath = $targetDirectory . '/' . $fileName;
+        if (!is_file($legacyPath) || is_file($targetPath)) {
+            continue;
+        }
+
+        $moved = @rename($legacyPath, $targetPath);
+        if ($moved === true) {
+            continue;
+        }
+
+        $copied = @copy($legacyPath, $targetPath);
+        if ($copied === true) {
+            @unlink($legacyPath);
+        }
+    }
 }
 
 function users_api_backup_human_size(int $bytes): string
@@ -583,11 +666,76 @@ function users_api_backup_normalized_file_name(mixed $value, bool $strictPattern
 }
 
 /**
+ * @return array{scope:string,included_tables:array<int,string>,is_household_scope:bool}
+ */
+function users_api_backup_file_scope_metadata(string $absolutePath): array
+{
+    $metadata = [
+        'scope' => '',
+        'included_tables' => [],
+        'is_household_scope' => false,
+    ];
+
+    if ($absolutePath === '' || !is_file($absolutePath)) {
+        return $metadata;
+    }
+
+    $raw = @file_get_contents($absolutePath);
+    if (!is_string($raw) || trim($raw) === '') {
+        return $metadata;
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return $metadata;
+    }
+
+    $scope = users_api_text($decoded['scope'] ?? '', 80);
+    $rawIncludedTables = $decoded['included_tables'] ?? null;
+    if (!is_array($rawIncludedTables)) {
+        $tablesNode = $decoded['tables'] ?? null;
+        $rawIncludedTables = is_array($tablesNode) ? array_keys($tablesNode) : [];
+    }
+
+    $includedTables = [];
+    foreach ($rawIncludedTables as $value) {
+        $tableName = trim((string) $value);
+        if ($tableName === '' || preg_match('/^[A-Za-z0-9_]+$/', $tableName) !== 1) {
+            continue;
+        }
+        if (!in_array($tableName, $includedTables, true)) {
+            $includedTables[] = $tableName;
+        }
+    }
+
+    $allowedLookup = [];
+    foreach (users_api_backup_household_table_allowlist() as $tableName) {
+        $allowedLookup[strtolower($tableName)] = true;
+    }
+
+    $isHouseholdScope = $includedTables !== [];
+    foreach ($includedTables as $tableName) {
+        if (!isset($allowedLookup[strtolower($tableName)])) {
+            $isHouseholdScope = false;
+            break;
+        }
+    }
+
+    return [
+        'scope' => $scope,
+        'included_tables' => $includedTables,
+        'is_household_scope' => $isHouseholdScope,
+    ];
+}
+
+/**
  * @return array<int, array<string, mixed>>
  */
 function users_api_backup_list_files(): array
 {
     $directory = users_api_backup_absolute_directory();
+    users_api_backup_try_prepare_directory($directory);
+    users_api_backup_migrate_legacy_files($directory);
     if (!is_dir($directory)) {
         return [];
     }
@@ -609,6 +757,11 @@ function users_api_backup_list_files(): array
             continue;
         }
 
+        $scopeMetadata = users_api_backup_file_scope_metadata($absolutePath);
+        if (($scopeMetadata['is_household_scope'] ?? false) !== true) {
+            continue;
+        }
+
         $sizeValue = @filesize($absolutePath);
         $sizeBytes = is_int($sizeValue) && $sizeValue > 0 ? $sizeValue : 0;
         $modifiedValue = @filemtime($absolutePath);
@@ -617,11 +770,12 @@ function users_api_backup_list_files(): array
         $files[] = [
             'file_name' => $fileName,
             'absolute_path' => $absolutePath,
-            'relative_path' => users_api_backup_relative_directory() . '/' . $fileName,
             'size_bytes' => $sizeBytes,
             'size_label' => users_api_backup_human_size($sizeBytes),
             'created_at' => $modifiedAt > 0 ? gmdate('c', $modifiedAt) : '',
             'modified_at_unix' => $modifiedAt,
+            'scope' => (string) ($scopeMetadata['scope'] ?? ''),
+            'included_tables' => is_array($scopeMetadata['included_tables'] ?? null) ? $scopeMetadata['included_tables'] : [],
         ];
     }
 
@@ -671,12 +825,10 @@ function users_api_backup_find_file_by_name(string $fileName): ?array
 function users_api_backup_ensure_directory(): string
 {
     $directory = users_api_backup_absolute_directory();
-    if (!is_dir($directory)) {
-        $created = @mkdir($directory, 0775, true);
-        if ($created !== true && !is_dir($directory)) {
-            users_api_error(500, 'Unable to create backup storage directory.');
-        }
+    if (!users_api_backup_try_prepare_directory($directory)) {
+        users_api_error(500, 'Unable to create backup storage directory.');
     }
+    users_api_backup_migrate_legacy_files($directory);
 
     if (!is_writable($directory)) {
         users_api_error(500, 'Backup storage directory is not writable.');
@@ -695,7 +847,7 @@ function users_api_backup_status_payload(): array
         return [
             'available' => false,
             'schedule' => 'Manual Only',
-            'storage_location' => 'Local Server',
+            'storage_location' => 'Private Server Storage',
             'last_backup_at' => '',
             'last_backup_size_bytes' => 0,
             'last_backup_size_label' => 'N/A',
@@ -706,12 +858,134 @@ function users_api_backup_status_payload(): array
     return [
         'available' => true,
         'schedule' => 'Manual Only',
-        'storage_location' => 'Local Server',
+        'storage_location' => 'Private Server Storage',
         'last_backup_at' => (string) ($latest['created_at'] ?? ''),
         'last_backup_size_bytes' => (int) ($latest['size_bytes'] ?? 0),
         'last_backup_size_label' => (string) ($latest['size_label'] ?? 'N/A'),
         'last_backup_file_name' => (string) ($latest['file_name'] ?? ''),
     ];
+}
+
+function users_api_backup_normalize_scope(mixed $value): string
+{
+    $normalized = strtolower(trim((string) $value));
+    return $normalized === 'selected_year' ? 'selected_year' : 'all_years';
+}
+
+function users_api_backup_normalize_year(mixed $value): ?int
+{
+    $year = (int) $value;
+    if ($year < 2000 || $year > 2100) {
+        return null;
+    }
+    return $year;
+}
+
+function users_api_backup_extract_household_code_year(mixed $value): int
+{
+    $text = trim((string) $value);
+    if ($text === '') {
+        return 0;
+    }
+
+    if (preg_match('/^HH-(\d{4})-/i', $text, $matches) !== 1) {
+        return 0;
+    }
+
+    $year = (int) ($matches[1] ?? 0);
+    return ($year >= 2000 && $year <= 2100) ? $year : 0;
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @param array<int, string> $yearColumns
+ * @param array<int, string> $codeColumns
+ */
+function users_api_backup_row_matches_year(array $row, int $targetYear, array $yearColumns = [], array $codeColumns = []): bool
+{
+    foreach ($yearColumns as $columnName) {
+        $year = users_api_backup_normalize_year($row[$columnName] ?? null);
+        if ($year === $targetYear) {
+            return true;
+        }
+    }
+
+    foreach ($codeColumns as $columnName) {
+        $year = users_api_backup_extract_household_code_year($row[$columnName] ?? null);
+        if ($year === $targetYear) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @return array<int, int>
+ */
+function users_api_backup_available_years(PDO $pdo): array
+{
+    $existingTables = users_api_backup_existing_scope_table_map($pdo);
+    $yearLookup = [];
+    $appendYear = static function (mixed $value) use (&$yearLookup): void {
+        $year = users_api_backup_normalize_year($value);
+        if ($year !== null) {
+            $yearLookup[$year] = true;
+        }
+    };
+
+    if (isset($existingTables['households'])) {
+        $stmt = $pdo->query(
+            'SELECT DISTINCT `household_code`
+             FROM ' . users_api_quote_identifier($existingTables['households']) . '
+             WHERE `household_code` REGEXP "^HH-[0-9]{4}-"'
+        );
+        $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $appendYear(users_api_backup_extract_household_code_year($row['household_code'] ?? null));
+        }
+    }
+
+    if (isset($existingTables['registration_households'])) {
+        $stmt = $pdo->query(
+            'SELECT DISTINCT `record_year`, `household_code`
+             FROM ' . users_api_quote_identifier($existingTables['registration_households'])
+        );
+        $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $appendYear($row['record_year'] ?? null);
+            $appendYear(users_api_backup_extract_household_code_year($row['household_code'] ?? null));
+        }
+    }
+
+    foreach (['registration_members', 'registration_residents'] as $tableKey) {
+        if (!isset($existingTables[$tableKey])) {
+            continue;
+        }
+
+        $stmt = $pdo->query(
+            'SELECT DISTINCT `record_year`
+             FROM ' . users_api_quote_identifier($existingTables[$tableKey]) . '
+             WHERE `record_year` IS NOT NULL'
+        );
+        $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $appendYear($row['record_year'] ?? null);
+        }
+    }
+
+    $years = array_map('intval', array_keys($yearLookup));
+    rsort($years, SORT_NUMERIC);
+    return $years;
 }
 
 /**
@@ -738,6 +1012,44 @@ function users_api_backup_table_names(PDO $pdo): array
         }
         $tables[] = $tableName;
     }
+    return $tables;
+}
+
+/**
+ * @return array<int, string>
+ */
+function users_api_backup_household_table_allowlist(): array
+{
+    return [
+        'households',
+        'household_members',
+        'registration_households',
+        'registration_members',
+        'registration_residents',
+        'registration_year_rollovers',
+    ];
+}
+
+/**
+ * @return array<int, string>
+ */
+function users_api_backup_scope_table_names(PDO $pdo): array
+{
+    $allowedLookup = [];
+    foreach (users_api_backup_household_table_allowlist() as $tableName) {
+        $normalized = strtolower(trim($tableName));
+        if ($normalized !== '') {
+            $allowedLookup[$normalized] = true;
+        }
+    }
+
+    $tables = [];
+    foreach (users_api_backup_table_names($pdo) as $tableName) {
+        if (isset($allowedLookup[strtolower($tableName)])) {
+            $tables[] = $tableName;
+        }
+    }
+
     return $tables;
 }
 
@@ -903,11 +1215,15 @@ function users_api_backup_database_name(PDO $pdo): string
 }
 
 /**
- * @return array<string, mixed>
+ * @return array<string, array{columns:array<int, string>,rows:array<int, array<string, mixed>>,row_count:int}>
  */
-function users_api_backup_export_payload(PDO $pdo): array
+function users_api_backup_table_payload(PDO $pdo): array
 {
-    $tables = users_api_backup_table_names($pdo);
+    $tables = users_api_backup_scope_table_names($pdo);
+    if ($tables === []) {
+        users_api_error(500, 'No household record tables are available for backup.');
+    }
+
     $tablePayload = [];
     foreach ($tables as $tableName) {
         $columns = users_api_backup_table_columns($pdo, $tableName);
@@ -920,10 +1236,169 @@ function users_api_backup_export_payload(PDO $pdo): array
         ];
     }
 
+    return $tablePayload;
+}
+
+/**
+ * @param array<string, array{columns:array<int, string>,rows:array<int, array<string, mixed>>,row_count:int}> $tablePayload
+ * @return array<string, array{columns:array<int, string>,rows:array<int, array<string, mixed>>,row_count:int}>
+ */
+function users_api_backup_filter_table_payload_by_year(array $tablePayload, int $scopeYear): array
+{
+    $filteredRowsByTable = [];
+
+    $householdRows = array_values(array_filter(
+        is_array($tablePayload['households']['rows'] ?? null) ? $tablePayload['households']['rows'] : [],
+        static fn (array $row): bool => users_api_backup_row_matches_year($row, $scopeYear, [], ['household_code'])
+    ));
+    $filteredRowsByTable['households'] = $householdRows;
+
+    $householdIdLookup = [];
+    $householdCodeLookup = [];
+    foreach ($householdRows as $row) {
+        $householdId = (int) ($row['id'] ?? 0);
+        $householdCode = trim((string) ($row['household_code'] ?? ''));
+        if ($householdId > 0) {
+            $householdIdLookup[$householdId] = true;
+        }
+        if ($householdCode !== '') {
+            $householdCodeLookup[$householdCode] = true;
+        }
+    }
+
+    $filteredRowsByTable['household_members'] = array_values(array_filter(
+        is_array($tablePayload['household_members']['rows'] ?? null) ? $tablePayload['household_members']['rows'] : [],
+        static function (array $row) use ($scopeYear, $householdIdLookup, $householdCodeLookup): bool {
+            $householdId = (int) ($row['household_id'] ?? 0);
+            $householdCode = trim((string) ($row['household_code'] ?? ''));
+            return isset($householdIdLookup[$householdId])
+                || ($householdCode !== '' && isset($householdCodeLookup[$householdCode]))
+                || users_api_backup_row_matches_year($row, $scopeYear, [], ['household_code']);
+        }
+    ));
+
+    $registrationHouseholdRows = array_values(array_filter(
+        is_array($tablePayload['registration_households']['rows'] ?? null) ? $tablePayload['registration_households']['rows'] : [],
+        static fn (array $row): bool => users_api_backup_row_matches_year($row, $scopeYear, ['record_year'], ['household_code'])
+    ));
+    $filteredRowsByTable['registration_households'] = $registrationHouseholdRows;
+
+    $registrationHouseholdIdLookup = [];
+    $registrationHouseholdCodeLookup = [];
+    foreach ($registrationHouseholdRows as $row) {
+        $householdId = (int) ($row['id'] ?? 0);
+        $householdCode = trim((string) ($row['household_code'] ?? ''));
+        if ($householdId > 0) {
+            $registrationHouseholdIdLookup[$householdId] = true;
+        }
+        if ($householdCode !== '') {
+            $registrationHouseholdCodeLookup[$householdCode] = true;
+        }
+    }
+
+    $filteredRowsByTable['registration_members'] = array_values(array_filter(
+        is_array($tablePayload['registration_members']['rows'] ?? null) ? $tablePayload['registration_members']['rows'] : [],
+        static function (array $row) use ($scopeYear, $registrationHouseholdIdLookup, $registrationHouseholdCodeLookup): bool {
+            $householdId = (int) ($row['household_id'] ?? 0);
+            $householdCode = trim((string) ($row['household_code'] ?? ''));
+            return isset($registrationHouseholdIdLookup[$householdId])
+                || ($householdCode !== '' && isset($registrationHouseholdCodeLookup[$householdCode]))
+                || users_api_backup_row_matches_year($row, $scopeYear, ['record_year'], ['household_code']);
+        }
+    ));
+
+    $filteredRowsByTable['registration_residents'] = array_values(array_filter(
+        is_array($tablePayload['registration_residents']['rows'] ?? null) ? $tablePayload['registration_residents']['rows'] : [],
+        static function (array $row) use ($scopeYear, $registrationHouseholdIdLookup, $registrationHouseholdCodeLookup): bool {
+            $householdId = (int) ($row['household_id'] ?? 0);
+            $householdCode = trim((string) ($row['household_code'] ?? ''));
+            return isset($registrationHouseholdIdLookup[$householdId])
+                || ($householdCode !== '' && isset($registrationHouseholdCodeLookup[$householdCode]))
+                || users_api_backup_row_matches_year($row, $scopeYear, ['record_year'], ['household_code']);
+        }
+    ));
+
+    $filteredRowsByTable['registration_year_rollovers'] = array_values(array_filter(
+        is_array($tablePayload['registration_year_rollovers']['rows'] ?? null) ? $tablePayload['registration_year_rollovers']['rows'] : [],
+        static fn (array $row): bool => users_api_backup_row_matches_year($row, $scopeYear, ['source_year', 'target_year'])
+    ));
+
+    foreach ($tablePayload as $tableName => $tableData) {
+        $rows = is_array($filteredRowsByTable[$tableName] ?? null) ? $filteredRowsByTable[$tableName] : [];
+        $tablePayload[$tableName] = [
+            'columns' => is_array($tableData['columns'] ?? null) ? $tableData['columns'] : [],
+            'rows' => $rows,
+            'row_count' => count($rows),
+        ];
+    }
+
+    return $tablePayload;
+}
+
+/**
+ * @param array<string, array{columns:array<int, string>,rows:array<int, array<string, mixed>>,row_count:int}> $tablePayload
+ * @return array<int, int>
+ */
+function users_api_backup_payload_years(array $tablePayload): array
+{
+    $yearLookup = [];
+    $appendYear = static function (mixed $value) use (&$yearLookup): void {
+        $year = users_api_backup_normalize_year($value);
+        if ($year !== null) {
+            $yearLookup[$year] = true;
+        }
+    };
+
+    foreach (is_array($tablePayload['households']['rows'] ?? null) ? $tablePayload['households']['rows'] : [] as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $appendYear(users_api_backup_extract_household_code_year($row['household_code'] ?? null));
+    }
+
+    foreach (is_array($tablePayload['registration_households']['rows'] ?? null) ? $tablePayload['registration_households']['rows'] : [] as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $appendYear($row['record_year'] ?? null);
+        $appendYear(users_api_backup_extract_household_code_year($row['household_code'] ?? null));
+    }
+
+    $years = array_map('intval', array_keys($yearLookup));
+    sort($years, SORT_NUMERIC);
+    return $years;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function users_api_backup_export_payload(PDO $pdo, ?int $scopeYear = null): array
+{
+    $tablePayload = users_api_backup_table_payload($pdo);
+    if ($scopeYear !== null) {
+        $tablePayload = users_api_backup_filter_table_payload_by_year($tablePayload, $scopeYear);
+    }
+
+    $totalRows = 0;
+    foreach ($tablePayload as $tableData) {
+        $totalRows += (int) ($tableData['row_count'] ?? 0);
+    }
+
+    if ($scopeYear !== null && $totalRows <= 0) {
+        users_api_error(422, 'No household records were found for backup year ' . $scopeYear . '.');
+    }
+
+    $yearsIncluded = users_api_backup_payload_years($tablePayload);
+    $scope = $scopeYear !== null ? 'household_records_selected_year' : 'household_records';
+
     return [
         'backup_version' => 1,
         'created_at' => gmdate('c'),
         'database' => users_api_backup_database_name($pdo),
+        'scope' => $scope,
+        'selected_year' => $scopeYear,
+        'years_included' => $yearsIncluded,
+        'included_tables' => array_keys($tablePayload),
         'tables' => $tablePayload,
     ];
 }
@@ -931,10 +1406,10 @@ function users_api_backup_export_payload(PDO $pdo): array
 /**
  * @return array<string, mixed>
  */
-function users_api_backup_create(PDO $pdo): array
+function users_api_backup_create(PDO $pdo, ?int $scopeYear = null): array
 {
     $directory = users_api_backup_ensure_directory();
-    $backupPayload = users_api_backup_export_payload($pdo);
+    $backupPayload = users_api_backup_export_payload($pdo, $scopeYear);
     $encoded = json_encode(
         $backupPayload,
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
@@ -949,7 +1424,8 @@ function users_api_backup_create(PDO $pdo): array
     } catch (Throwable $exception) {
         $token = str_replace('.', '', uniqid('', true));
     }
-    $fileName = 'hims-backup-' . gmdate('Ymd-His') . '-' . $token . '.json';
+    $scopePrefix = $scopeYear !== null ? 'year-' . $scopeYear . '-' : 'all-years-';
+    $fileName = 'hims-backup-' . $scopePrefix . gmdate('Ymd-His') . '-' . $token . '.json';
     $absolutePath = $directory . '/' . $fileName;
 
     $writtenBytes = @file_put_contents($absolutePath, $encoded, LOCK_EX);
@@ -964,10 +1440,14 @@ function users_api_backup_create(PDO $pdo): array
 
     return [
         'file_name' => $fileName,
-        'relative_path' => users_api_backup_relative_directory() . '/' . $fileName,
         'size_bytes' => $writtenBytes,
         'size_label' => users_api_backup_human_size($writtenBytes),
         'created_at' => $createdAt,
+        'scope' => (string) ($backupPayload['scope'] ?? 'household_records'),
+        'scope_label' => $scopeYear !== null ? 'Selected Year' : 'All Years',
+        'selected_year' => $scopeYear,
+        'years_included' => is_array($backupPayload['years_included'] ?? null) ? $backupPayload['years_included'] : [],
+        'included_tables' => is_array($backupPayload['included_tables'] ?? null) ? $backupPayload['included_tables'] : [],
     ];
 }
 
@@ -1039,10 +1519,10 @@ function users_api_uploaded_backup_file(): array
 /**
  * @return array<string, string>
  */
-function users_api_backup_existing_table_map(PDO $pdo): array
+function users_api_backup_existing_scope_table_map(PDO $pdo): array
 {
     $map = [];
-    foreach (users_api_backup_table_names($pdo) as $tableName) {
+    foreach (users_api_backup_scope_table_names($pdo) as $tableName) {
         $map[strtolower($tableName)] = $tableName;
     }
     return $map;
@@ -1078,9 +1558,9 @@ function users_api_backup_restore(PDO $pdo, array $backupPayload): array
         users_api_error(422, 'Backup file does not contain restorable table data.');
     }
 
-    $existingTables = users_api_backup_existing_table_map($pdo);
+    $existingTables = users_api_backup_existing_scope_table_map($pdo);
     if ($existingTables === []) {
-        users_api_error(422, 'Current database has no restorable tables.');
+        users_api_error(422, 'Current database has no household record tables that can be restored.');
     }
 
     users_api_backup_ensure_sync_procedures($pdo);
@@ -1128,7 +1608,7 @@ function users_api_backup_restore(PDO $pdo, array $backupPayload): array
     }
 
     if ($preparedTables === []) {
-        users_api_error(422, 'Backup file does not match current database tables.');
+        users_api_error(422, 'Backup file does not contain household record tables that can be restored.');
     }
 
     $tablesRestored = 0;
@@ -1284,9 +1764,8 @@ function users_api_backup_restore_friendly_error(Throwable $exception): string
  * @param array<string, mixed> $authUser
  * @return array<string, mixed>
  */
-function users_api_settings_payload(PDO $pdo, array $authUser): array
+function users_api_current_user_payload(PDO $pdo, array $authUser): array
 {
-    $requesterRole = auth_user_role($authUser);
     $current = users_api_find_user($pdo, (int) ($authUser['id'] ?? 0));
     $currentPayload = users_api_build_user_payload($current);
 
@@ -1307,13 +1786,26 @@ function users_api_settings_payload(PDO $pdo, array $authUser): array
         ];
     }
 
+    return $currentPayload;
+}
+
+/**
+ * @param array<string, mixed> $authUser
+ * @return array<string, mixed>
+ */
+function users_api_settings_payload(PDO $pdo, array $authUser): array
+{
+    $requesterRole = auth_user_role($authUser);
+    $currentPayload = users_api_current_user_payload($pdo, $authUser);
+
     return [
         'current_user' => $currentPayload,
         'admin_account' => users_api_build_user_payload(users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY)),
-        'staff_accounts' => users_api_staff_accounts($pdo, $requesterRole === AUTH_ROLE_ADMIN),
+        'staff_accounts' => users_api_staff_accounts($pdo),
         'active_users' => users_api_active_accounts($pdo),
         'barangay_profile' => users_api_barangay_profile($pdo),
         'backup_status' => users_api_backup_status_payload(),
+        'backup_year_options' => users_api_backup_available_years($pdo),
     ];
 }
 
@@ -1384,14 +1876,16 @@ function users_api_audit_log(
 }
 
 auth_bootstrap_store();
-$authUser = auth_require_api([AUTH_ROLE_CAPTAIN, AUTH_ROLE_ADMIN]);
+$authUser = auth_require_api([AUTH_ROLE_CAPTAIN, AUTH_ROLE_ADMIN, AUTH_ROLE_STAFF], true);
 $pdo = auth_db();
 auth_ensure_users_columns($pdo);
 
 $requesterRole = auth_user_role($authUser);
+$requesterRequiresCredentialUpdate = auth_admin_requires_credential_update($authUser);
 $requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
 if ($requestMethod === 'GET') {
+    users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN, AUTH_ROLE_ADMIN]);
     users_api_respond(200, [
         'success' => true,
         'data' => users_api_settings_payload($pdo, $authUser),
@@ -1412,6 +1906,10 @@ $action = strtolower(users_api_text($payload['action'] ?? '', 80));
 
 if ($action === '') {
     users_api_error(400, 'Action is required.');
+}
+
+if ($requesterRequiresCredentialUpdate && $action !== 'update_own_credentials') {
+    users_api_error(403, 'Update your temporary admin credentials before using other settings actions.');
 }
 
 try {
@@ -1729,26 +2227,43 @@ try {
     if ($action === 'run_backup') {
         users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
 
-        $backupMeta = users_api_backup_create($pdo);
+        $backupScope = users_api_backup_normalize_scope($payload['backup_scope'] ?? '');
+        $backupYear = $backupScope === 'selected_year'
+            ? users_api_backup_normalize_year($payload['backup_year'] ?? null)
+            : null;
+        if ($backupScope === 'selected_year' && $backupYear === null) {
+            users_api_error(422, 'Select a valid backup year first.');
+        }
+
+        $backupMeta = users_api_backup_create($pdo, $backupYear);
         $fileName = (string) ($backupMeta['file_name'] ?? '');
+        $scopeLabel = $backupYear !== null ? 'selected_year' : 'all_years';
+        $responseMessage = $backupYear !== null
+            ? 'Household backup for year ' . $backupYear . ' completed successfully.'
+            : 'Household backup for all years completed successfully.';
 
         users_api_audit_log(
             $authUser,
             'settings_backup_created',
             'created',
-            'Created system backup file.',
+            'Created household records backup file.',
             'backup',
             $fileName,
             [
                 'file_name' => $fileName,
+                'scope' => 'household_records',
+                'scope_mode' => $scopeLabel,
+                'selected_year' => $backupYear,
+                'years_included' => is_array($backupMeta['years_included'] ?? null) ? $backupMeta['years_included'] : [],
                 'size_bytes' => (int) ($backupMeta['size_bytes'] ?? 0),
                 'created_at' => (string) ($backupMeta['created_at'] ?? ''),
+                'included_tables' => is_array($backupMeta['included_tables'] ?? null) ? $backupMeta['included_tables'] : [],
             ]
         );
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Backup completed successfully.',
+            'message' => $responseMessage,
             'data' => users_api_settings_payload($pdo, $authUser),
             'backup' => $backupMeta,
         ]);
@@ -1773,18 +2288,19 @@ try {
             $authUser,
             'settings_backup_downloaded',
             'access',
-            'Downloaded backup file.',
+            'Downloaded household records backup file.',
             'backup',
             $fileName,
             [
                 'file_name' => $fileName,
+                'scope' => 'household_records',
                 'size_bytes' => (int) ($downloadPayload['size_bytes'] ?? 0),
             ]
         );
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Backup file is ready for download.',
+            'message' => 'Household backup file is ready for download.',
             'data' => users_api_settings_payload($pdo, $authUser),
             'download' => $downloadPayload,
         ]);
@@ -1813,11 +2329,12 @@ try {
                 is_array($authUser) ? $authUser : [],
                 'settings_backup_restored',
                 'updated',
-                'Restored system data from backup file.',
+                'Restored household and resident data from backup file.',
                 'backup',
                 $fileName,
                 [
                     'file_name' => $fileName,
+                    'scope' => 'household_records',
                     'size_bytes' => (int) ($uploadedBackup['size_bytes'] ?? 0),
                     'tables_restored' => (int) ($restoreResult['tables_restored'] ?? 0),
                     'rows_restored' => (int) ($restoreResult['rows_restored'] ?? 0),
@@ -1826,7 +2343,7 @@ try {
 
             users_api_respond(200, [
                 'success' => true,
-                'message' => 'Backup restore completed successfully.',
+                'message' => 'Household backup restore completed successfully.',
                 'data' => users_api_settings_payload($pdo, is_array($authUser) ? $authUser : []),
                 'restore' => $restoreResult,
             ]);
@@ -1843,7 +2360,7 @@ try {
     }
 
     if ($action === 'update_own_credentials') {
-        users_api_require_role($requesterRole, [AUTH_ROLE_ADMIN, AUTH_ROLE_CAPTAIN]);
+        users_api_require_role($requesterRole, [AUTH_ROLE_ADMIN, AUTH_ROLE_CAPTAIN, AUTH_ROLE_STAFF]);
 
         $userId = (int) ($authUser['id'] ?? 0);
         if ($userId <= 0) {
@@ -1922,8 +2439,12 @@ try {
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Credentials updated successfully.',
-            'data' => users_api_settings_payload($pdo, is_array($authUser) ? $authUser : []),
+            'message' => $requesterRole === AUTH_ROLE_STAFF
+                ? 'Credentials updated successfully. You can now continue to registration.'
+                : 'Credentials updated successfully.',
+            'data' => $requesterRole === AUTH_ROLE_STAFF
+                ? ['current_user' => users_api_current_user_payload($pdo, is_array($authUser) ? $authUser : [])]
+                : users_api_settings_payload($pdo, is_array($authUser) ? $authUser : []),
         ]);
     }
 
@@ -1953,14 +2474,13 @@ try {
         }
 
         $stmt = $pdo->prepare(
-            'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `password_plain`, `role`, `contact_number`, `is_active`, `must_change_password`)
-             VALUES (:full_name, :username, :password_hash, :password_plain, :role, :contact_number, 1, 0)'
+            'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `role`, `contact_number`, `is_active`, `must_change_password`)
+             VALUES (:full_name, :username, :password_hash, :role, :contact_number, 1, 1)'
         );
         $stmt->execute([
             'full_name' => $fullName,
             'username' => $username,
             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-            'password_plain' => $password,
             'role' => AUTH_ROLE_STAFF,
             'contact_number' => $contactNumber,
         ]);
@@ -1976,12 +2496,75 @@ try {
                 'target_role' => AUTH_ROLE_STAFF,
                 'target_full_name' => $fullName,
                 'contact_number' => $contactNumber,
+                'requires_credential_update' => true,
             ]
         );
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Staff account created successfully.',
+            'message' => 'Staff account created successfully. Staff must change the temporary credentials on first login.',
+            'data' => users_api_settings_payload($pdo, $authUser),
+        ]);
+    }
+
+    if ($action === 'reset_staff_credentials') {
+        users_api_require_role($requesterRole, [AUTH_ROLE_ADMIN]);
+
+        $staffId = (int) ($payload['staff_id'] ?? 0);
+        $username = users_api_normalized_username($payload['username'] ?? '');
+        $password = (string) ($payload['password'] ?? '');
+        if ($staffId <= 0 || $username === '' || $password === '') {
+            users_api_error(422, 'Staff account, username, and password are required.');
+        }
+        if (!users_api_password_strong($password)) {
+            users_api_error(422, 'Temporary password must be at least 8 characters and include 1 special character.');
+        }
+
+        $staffAccount = users_api_find_user($pdo, $staffId);
+        if (!is_array($staffAccount) || auth_normalize_role((string) ($staffAccount['role'] ?? '')) !== AUTH_ROLE_STAFF) {
+            users_api_error(404, 'Staff account not found.');
+        }
+
+        $existingUsername = (string) ($staffAccount['username'] ?? '');
+        if (users_api_username_exists($pdo, $username, $staffId)) {
+            users_api_error(409, 'Username already exists.');
+        }
+
+        $stmt = $pdo->prepare(
+            'UPDATE `users`
+             SET `username` = :username,
+                 `password_hash` = :password_hash,
+                 `must_change_password` = 1,
+                 `updated_at` = CURRENT_TIMESTAMP
+             WHERE `id` = :id AND `role` = :role
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'username' => $username,
+            'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+            'id' => $staffId,
+            'role' => AUTH_ROLE_STAFF,
+        ]);
+
+        users_api_audit_log(
+            $authUser,
+            'settings_staff_credentials_reset',
+            'security',
+            'Reset staff credentials.',
+            'user',
+            $username,
+            [
+                'target_role' => AUTH_ROLE_STAFF,
+                'target_user_id' => $staffId,
+                'old_username' => $existingUsername,
+                'new_username' => $username,
+                'requires_credential_update' => true,
+            ]
+        );
+
+        users_api_respond(200, [
+            'success' => true,
+            'message' => 'Staff credentials reset successfully. Staff must change them on the next login.',
             'data' => users_api_settings_payload($pdo, $authUser),
         ]);
     }

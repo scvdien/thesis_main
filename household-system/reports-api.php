@@ -51,6 +51,41 @@ function reports_api_year(mixed $value): int
 }
 
 /**
+ * @return array{input: string, year: int, label: string}
+ */
+function reports_api_parse_period_input(mixed $value): array
+{
+    $periodInput = reports_api_text($value, 7);
+    if (preg_match('/^(20\d{2})-(0[1-9]|1[0-2])$/', $periodInput, $matches) !== 1) {
+        reports_api_error(422, 'Reporting period is required.');
+    }
+
+    $year = (int) ($matches[1] ?? 0);
+    $month = (int) ($matches[2] ?? 0);
+    $monthLabels = [
+        1 => 'Jan',
+        2 => 'Feb',
+        3 => 'Mar',
+        4 => 'Apr',
+        5 => 'May',
+        6 => 'Jun',
+        7 => 'Jul',
+        8 => 'Aug',
+        9 => 'Sep',
+        10 => 'Oct',
+        11 => 'Nov',
+        12 => 'Dec',
+    ];
+    $label = ($monthLabels[$month] ?? 'Month') . ' ' . $year;
+
+    return [
+        'input' => $periodInput,
+        'year' => $year,
+        'label' => $label,
+    ];
+}
+
+/**
  * @return array<string, mixed>
  */
 function reports_api_json_body(): array
@@ -154,6 +189,38 @@ function reports_api_next_code(PDO $pdo, int $year): string
 }
 
 /**
+ * @return array<int, int>
+ */
+function reports_api_available_years(PDO $pdo, int $selectedYear): array
+{
+    $currentYear = (int) gmdate('Y');
+    $years = [$currentYear, $currentYear - 1, $selectedYear];
+
+    $stmt = $pdo->query(
+        'SELECT DISTINCT `period_year`
+         FROM `reports`
+         WHERE `period_year` BETWEEN 2000 AND 2100
+         ORDER BY `period_year` DESC'
+    );
+    $rows = $stmt instanceof PDOStatement ? $stmt->fetchAll(PDO::FETCH_COLUMN) : [];
+
+    foreach ($rows as $row) {
+        $year = reports_api_year($row);
+        if ($year >= 2000 && $year <= 2100) {
+            $years[] = $year;
+        }
+    }
+
+    $years = array_values(array_unique(array_map(
+        static fn(mixed $value): int => reports_api_year($value),
+        $years
+    )));
+    rsort($years, SORT_NUMERIC);
+
+    return $years;
+}
+
+/**
  * @return array<string, mixed>|null
  */
 function reports_api_find_by_code(PDO $pdo, string $reportCode): ?array
@@ -182,11 +249,9 @@ function reports_api_create(PDO $pdo, array $payload, array $authUser): array
         reports_api_error(422, 'Report title is required.');
     }
 
-    $year = reports_api_year($payload['year'] ?? null);
-    $period = reports_api_text($payload['period'] ?? '', 80);
-    if ($period === '') {
-        $period = 'Year ' . $year;
-    }
+    $periodData = reports_api_parse_period_input($payload['period_input'] ?? null);
+    $year = (int) ($periodData['year'] ?? reports_api_year($payload['year'] ?? null));
+    $period = reports_api_text($periodData['label'] ?? '', 80);
 
     $category = reports_api_text($payload['category'] ?? 'General', 60);
     if ($category === '') {
@@ -342,6 +407,7 @@ try {
                 'items' => $items,
                 'year' => $year,
                 'count' => count($items),
+                'available_years' => reports_api_available_years($pdo, $year),
             ],
         ]);
     }
@@ -349,6 +415,11 @@ try {
     if ($requestMethod === 'POST') {
         if (!reports_api_can_manage($authRole)) {
             reports_api_error(403, 'You do not have permission for this action.');
+        }
+
+        $csrfToken = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+        if (!auth_csrf_valid($csrfToken)) {
+            reports_api_error(419, 'Invalid CSRF token.');
         }
 
         $payload = reports_api_json_body();

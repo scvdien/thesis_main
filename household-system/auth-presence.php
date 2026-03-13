@@ -15,7 +15,7 @@ if ($method !== 'GET') {
 }
 
 auth_bootstrap_store();
-auth_require_api();
+auth_require_api([], true);
 
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode([

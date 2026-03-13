@@ -6,8 +6,29 @@ $authUser = auth_require_page(['staff', 'secretary', 'admin']);
 $authRole = auth_user_role($authUser);
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
+try {
+  $profilePdo = auth_db();
+  $profileStmt = $profilePdo->query('SELECT `barangay_name`, `city_name` FROM `barangay_profile` WHERE `id` = 1 LIMIT 1');
+  $profileRow = $profileStmt instanceof PDOStatement ? $profileStmt->fetch(PDO::FETCH_ASSOC) : null;
+  if (is_array($profileRow)) {
+    $profileBarangay = trim((string) ($profileRow['barangay_name'] ?? ''));
+    $profileCity = trim((string) ($profileRow['city_name'] ?? ''));
+    if ($profileBarangay !== '') {
+      $brandBarangay = $profileBarangay;
+    }
+    if ($profileCity !== '') {
+      $brandCity = $profileCity;
+    }
+  }
+} catch (Throwable $exception) {
+  // Fall back to environment defaults when profile data is unavailable.
+}
 $brandLabel = $brandBarangay !== '' ? $brandBarangay : 'Barangay';
+if (stripos($brandLabel, 'barangay') !== 0) {
+  $brandLabel = trim('Barangay ' . $brandLabel);
+}
 $systemLabel = trim($brandLabel . ($brandCity !== '' ? ' ' . $brandCity : '') . ' Household Information Management System');
+$memberOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts.js') ?: time());
 ?>
 <!DOCTYPE html>
@@ -15,6 +36,8 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d6efd">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>Add Household Member</title>
 
   <!-- Bootstrap CSS -->
@@ -50,31 +73,48 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
           <span>A. Member Information</span>
           <span class="badge rounded-pill">Required</span>
         </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-3"><label class="form-label required" for="first_name">First Name</label><input type="text" class="form-control" id="first_name" required></div>
-            <div class="col-md-3"><label class="form-label" for="middle_name">Middle Name</label><input type="text" class="form-control" id="middle_name"></div>
-            <div class="col-md-3"><label class="form-label required" for="last_name">Last Name</label><input type="text" class="form-control" id="last_name" required></div>
-            <div class="col-md-3"><label class="form-label" for="extension_name">Extension Name</label><input type="text" class="form-control" id="extension_name" placeholder="e.g., Jr., Sr., III"></div>
-            <div class="col-md-3"><label class="form-label required" for="birthday">Birthday</label><input type="date" class="form-control" id="birthday" required></div>
-            <div class="col-md-3"><label class="form-label required" for="sex">Sex/Gender</label>
-              <select class="form-select" id="sex" required>
-                <option value="">Select</option><option>Male</option><option>Female</option><option>Other</option>
-              </select>
+        <div class="card-body member-info-body">
+          <div class="member-info-group">
+            <div class="member-info-group-title">Identity</div>
+            <div class="row g-3">
+              <div class="col-xl-3 col-md-6"><label class="form-label required" for="first_name">First Name</label><input type="text" class="form-control" id="first_name" required></div>
+              <div class="col-xl-3 col-md-6"><label class="form-label" for="middle_name">Middle Name</label><input type="text" class="form-control" id="middle_name"></div>
+              <div class="col-xl-3 col-md-6"><label class="form-label required" for="last_name">Last Name</label><input type="text" class="form-control" id="last_name" required></div>
+              <div class="col-xl-3 col-md-6"><label class="form-label" for="extension_name">Extension Name</label><input type="text" class="form-control" id="extension_name" placeholder="e.g., Jr., Sr., III"></div>
             </div>
-            <div class="col-md-3"><label class="form-label required" for="civil_status">Civil Status</label>
-              <select class="form-select" id="civil_status" required>
-                <option value="">Select</option>
-                <option>Single</option><option>Married</option><option>Widowed</option><option>Separated</option>
-              </select>
-            </div>
-            <div class="col-md-3"><label class="form-label" for="citizenship">Nationality/Citizenship</label><input type="text" class="form-control" id="citizenship" value="Filipino"></div>
-            <div class="col-md-3"><label class="form-label" for="religion">Religion</label><input type="text" class="form-control" id="religion"></div>
-            <div class="col-md-3"><label class="form-label" for="blood_type">Blood Type</label><input type="text" class="form-control" id="blood_type"></div>
-            <div class="col-md-2"><label class="form-label" for="height">Height (cm)</label><input type="number" class="form-control" id="height"></div>
-            <div class="col-md-2"><label class="form-label" for="weight">Weight (kg)</label><input type="number" class="form-control" id="weight"></div>
-            <div class="col-md-2"><label class="form-label" for="age">Age</label><input type="number" class="form-control" id="age" readonly></div>
+          </div>
 
+          <div class="member-info-group">
+            <div class="member-info-group-title">Profile Details</div>
+            <div class="row g-3">
+              <div class="col-lg-3 col-md-6"><label class="form-label required" for="birthday">Birthday</label><input type="date" class="form-control" id="birthday" required></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="age">Age</label><input type="number" class="form-control" id="age" readonly></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label required" for="sex">Sex/Gender</label>
+                <select class="form-select" id="sex" required>
+                  <option value="">Select</option><option>Male</option><option>Female</option><option>Other</option>
+                </select>
+              </div>
+              <div class="col-lg-2 col-md-4"><label class="form-label required" for="civil_status">Civil Status</label>
+                <select class="form-select" id="civil_status" required>
+                  <option value="">Select</option>
+                  <option>Single</option><option>Married</option><option>Widowed</option><option>Separated</option>
+                </select>
+              </div>
+              <div class="col-lg-3 col-md-12"><label class="form-label" for="relation_to_head">Relationship to Head</label>
+                <select class="form-select" id="relation_to_head">
+                  <option value="">Select</option>
+                  <option>Father</option>
+                  <option>Mother</option>
+                  <option>Son</option>
+                  <option>Daughter</option>
+                </select>
+              </div>
+              <div class="col-lg-3 col-md-6"><label class="form-label" for="citizenship">Nationality/Citizenship</label><input type="text" class="form-control" id="citizenship" value="Filipino"></div>
+              <div class="col-lg-3 col-md-6"><label class="form-label" for="religion">Religion</label><input type="text" class="form-control" id="religion"></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="blood_type">Blood Type</label><input type="text" class="form-control" id="blood_type"></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="height">Height (cm)</label><input type="number" class="form-control" id="height"></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="weight">Weight (kg)</label><input type="number" class="form-control" id="weight"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -169,19 +209,6 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
         </div>
       </div>
 
-      <!-- H. Household Data -->
-      <div class="card section-card mb-4">
-        <div class="card-header section-header">H. Household Data</div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-3"><label class="form-label" for="num_members">Number of Household Members</label><input type="number" class="form-control" id="num_members"></div>
-            <div class="col-md-3"><label class="form-label" for="relation_to_head">Relationship to Head</label><input type="text" class="form-control" id="relation_to_head"></div>
-            <div class="col-md-3"><label class="form-label" for="num_children">Number of Children</label><input type="number" class="form-control" id="num_children"></div>
-            <div class="col-md-3"><label class="form-label" for="partner_name">Marital Partner Name</label><input type="text" class="form-control" id="partner_name" placeholder="optional"></div>
-          </div>
-        </div>
-      </div>
-
       <div class="action-bar">
         <div class="d-flex justify-content-end gap-2">
           <button type="button" class="btn btn-outline-primary" id="cancelBtn"><i class="bi bi-arrow-left"></i> Back</button>
@@ -201,6 +228,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/indexeddb-storage-scripts.js"></script>
+  <script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($memberOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/member-scripts.js?v=<?= htmlspecialchars($memberScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>
 </html>

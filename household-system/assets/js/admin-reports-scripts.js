@@ -1,6 +1,7 @@
 (function () {
   const resolvedRole = String(document.body?.dataset?.role || '').toLowerCase();
   const canManageReports = resolvedRole === 'admin';
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
   try {
     sessionStorage.setItem('userRole', resolvedRole || 'captain');
@@ -34,16 +35,46 @@
 
   const currentYear = new Date().getFullYear();
   const yearSelect = document.getElementById('yearSelect');
-  if (yearSelect) {
-    const startYear = currentYear - 6;
-    for (let y = startYear; y <= currentYear; y += 1) {
+  const normalizeReportYear = (value) => {
+    const year = Number.parseInt(String(value || ''), 10);
+    return year >= 2000 && year <= 2100 ? year : 0;
+  };
+  const buildRelevantReportYears = (availableYears = [], selectedYear = currentYear) => {
+    const yearSet = new Set();
+    [currentYear, currentYear - 1, selectedYear].forEach((year) => {
+      const normalizedYear = normalizeReportYear(year);
+      if (normalizedYear > 0) {
+        yearSet.add(normalizedYear);
+      }
+    });
+    availableYears.forEach((year) => {
+      const normalizedYear = normalizeReportYear(year);
+      if (normalizedYear > 0) {
+        yearSet.add(normalizedYear);
+      }
+    });
+    return Array.from(yearSet).sort((left, right) => right - left);
+  };
+  const setReportYearOptions = (availableYears = [], preferredYear = currentYear) => {
+    if (!yearSelect) return;
+    const selectedYear = normalizeReportYear(preferredYear) || currentYear;
+    const years = buildRelevantReportYears(availableYears, selectedYear);
+    const previousValue = normalizeReportYear(yearSelect.value);
+
+    yearSelect.innerHTML = '';
+    years.forEach((year) => {
       const option = document.createElement('option');
-      option.value = String(y);
-      option.textContent = String(y);
+      option.value = String(year);
+      option.textContent = String(year);
       yearSelect.appendChild(option);
-    }
-    yearSelect.value = String(currentYear);
-  }
+    });
+
+    const targetValue = previousValue > 0 && years.includes(previousValue)
+      ? previousValue
+      : selectedYear;
+    yearSelect.value = String(targetValue);
+  };
+  setReportYearOptions([], currentYear);
 
   const footerYear = document.getElementById('year');
   if (footerYear) footerYear.textContent = String(currentYear);
@@ -72,7 +103,6 @@
   const reportModalDownload = document.getElementById('reportModalDownload');
   const reportModalPrint = document.getElementById('reportModalPrint');
   const reportModalDelete = document.getElementById('reportModalDelete');
-  const reportModalDeleteIcon = document.getElementById('reportModalDeleteIcon');
   const deleteReportMessage = document.getElementById('deleteReportMessage');
   const deleteReportConfirmBtn = document.getElementById('deleteReportConfirmBtn');
 
@@ -180,7 +210,11 @@
     }, 'Unable to load reports.');
 
     const items = payload?.data?.items;
-    return Array.isArray(items) ? items : [];
+    const availableYears = Array.isArray(payload?.data?.available_years) ? payload.data.available_years : [];
+    return {
+      items: Array.isArray(items) ? items : [],
+      availableYears
+    };
   };
 
   const createReportOnServer = async (reportPayload) => {
@@ -192,7 +226,8 @@
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'Cache-Control': 'no-cache',
-        Pragma: 'no-cache'
+        Pragma: 'no-cache',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       },
       body: JSON.stringify({
         action: 'create',
@@ -211,7 +246,8 @@
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'Cache-Control': 'no-cache',
-        Pragma: 'no-cache'
+        Pragma: 'no-cache',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       },
       body: JSON.stringify({
         action: 'delete',
@@ -283,10 +319,11 @@
     clearRows();
 
     try {
-      const serverItems = await fetchReportsForYear(selectedYear);
+      const response = await fetchReportsForYear(selectedYear);
       if (requestId !== reportsRequestCounter) return;
 
-      const rows = serverItems.map((item) => normalizeReportItem(item, selectedYear));
+      setReportYearOptions(response.availableYears, selectedYear);
+      const rows = response.items.map((item) => normalizeReportItem(item, selectedYear));
       rows.forEach((rowData) => {
         const row = buildReportRow(rowData);
         if (emptyRow && emptyRow.parentElement === reportsTableBody) {
@@ -450,9 +487,11 @@
         try {
           const candidate = await fetch(endpoint, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
               'Content-Type': 'application/json',
-              Accept: 'application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json'
+              Accept: 'application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json',
+              ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
             },
             body: JSON.stringify(requestPayload)
           });
@@ -522,11 +561,22 @@
         if (createTitle) createTitle.focus();
         return;
       }
+      if (!periodInput) {
+        if (createPeriod) {
+          createPeriod.reportValidity();
+          createPeriod.focus();
+        }
+        return;
+      }
 
-      const selectedYear = Number(yearSelect?.value) || currentYear;
-      let period = formatPeriod(periodInput);
+      const periodYear = normalizeReportYear(periodInput.slice(0, 4)) || currentYear;
+      const period = formatPeriod(periodInput);
       if (period === '-') {
-        period = `Year ${selectedYear}`;
+        if (createPeriod) {
+          createPeriod.reportValidity();
+          createPeriod.focus();
+        }
+        return;
       }
       const documentBody = String(createDocument?.value || '').trim() || 'No document content provided.';
 
@@ -537,11 +587,16 @@
           category: 'General',
           period,
           period_input: periodInput,
-          year: selectedYear,
+          year: periodYear,
           summary: 'Report generated from report form.',
           document: documentBody
         });
 
+        const createdYear = normalizeReportYear(created?.year) || periodYear;
+        setReportYearOptions([], createdYear);
+        if (yearSelect) {
+          yearSelect.value = String(createdYear);
+        }
         await renderReportsForSelectedYear();
         resetCreateForm();
 
@@ -609,10 +664,6 @@
 
   if (reportModalDelete) {
     reportModalDelete.addEventListener('click', openDeleteReportDialog);
-  }
-
-  if (reportModalDeleteIcon) {
-    reportModalDeleteIcon.addEventListener('click', openDeleteReportDialog);
   }
 
   if (deleteReportConfirmBtn) {

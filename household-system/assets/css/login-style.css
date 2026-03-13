@@ -57,9 +57,9 @@ body::after{
 
 .login-shell{
   width:100%;
-  max-width:980px;
+  max-width:1028px;
   display:grid;
-  grid-template-columns:1.05fr 0.95fr;
+  grid-template-columns:1.1fr 0.9fr;
   gap:24px;
   min-width:0;
 }
@@ -105,6 +105,11 @@ body::after{
   align-items:center;
   gap:14px;
 }
+.brand-copy{
+  flex:1;
+  min-width:0;
+  max-width:520px;
+}
 .brand-mark img{
   width:56px;
   height:56px;
@@ -119,7 +124,9 @@ body::after{
   letter-spacing:0.01em;
 }
 .brand-sub{
-  font-size:1rem;
+  font-size:1.04rem;
+  line-height:1.45;
+  max-width:30ch;
   color:rgba(248, 250, 252, 0.85);
 }
 .brand-desc{

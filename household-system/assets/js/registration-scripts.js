@@ -4,6 +4,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const editHouseholdId = (urlParams.get("edit") || "").trim();
   const isEditMode = editHouseholdId.length > 0;
+  const isValidRecordYear = (year) => Number.isInteger(year) && year >= 2000 && year <= 2100;
+  const requestedRecordYear = Number.parseInt((urlParams.get("year") || "").trim(), 10);
+  const editYearMatch = editHouseholdId.match(/^HH-(\d{4})-/i);
+  const editRecordYear = editYearMatch ? Number.parseInt(editYearMatch[1] || "", 10) : 0;
+  const targetRecordYear = isValidRecordYear(editRecordYear)
+    ? editRecordYear
+    : (isValidRecordYear(requestedRecordYear) ? requestedRecordYear : new Date().getFullYear());
   const MEMBERS_KEY = "household_members";
   const EDIT_KEY = "household_member_edit_index";
   const HEAD_KEY = "household_head_data";
@@ -24,7 +31,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       ])
     : window.localStorage;
   const SYNC_ENDPOINT = "registration-sync.php";
+  const USERS_API_ENDPOINT = "users-api.php";
+  const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
+  const CREDENTIAL_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+  const requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
+  const currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
   const contentTitle = document.querySelector(".content-title");
   const contentSubtitle = document.querySelector(".content-subtitle:not(.content-subtitle-mobile)");
   const contentSubtitleMobile = document.querySelector(".content-subtitle-mobile");
@@ -40,12 +52,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const previewBody = document.getElementById("previewBody");
   const censusForm = document.getElementById("censusForm");
   const previewBtn = document.getElementById("previewBtn");
+  const clearBtn = document.getElementById("clearBtn");
   const birthdayInput = document.getElementById("birthday");
   const ageInput = document.getElementById("age");
   const sexInput = document.getElementById("sex");
   const pregnantWrap = document.getElementById("pregnantWrap");
   const pregnantRadios = Array.from(document.querySelectorAll('input[name="pregnant"]'));
   const numMembersInput = document.querySelector('input[name="num_members"]');
+  const numChildrenInput = document.querySelector('input[name="num_children"]');
   const memberModal = memberModalEl ? new bootstrap.Modal(memberModalEl) : null;
   const addMemberBlockedEl = document.getElementById("addMemberBlockedModal");
   const addMemberBlockedModal = addMemberBlockedEl ? new bootstrap.Modal(addMemberBlockedEl) : null;
@@ -58,6 +72,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   const logoutModalEl = document.getElementById("logoutModal");
   const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
   const logoutConfirm = document.getElementById("logoutConfirm");
+  const staffCredentialsModalEl = document.getElementById("staffCredentialsModal");
+  const staffCredentialsModal = staffCredentialsModalEl
+    ? new bootstrap.Modal(staffCredentialsModalEl, { backdrop: "static", keyboard: false })
+    : null;
+  const staffCredentialsCurrentUsername = document.getElementById("staffCredentialsCurrentUsername");
+  const staffCredentialsCurrentPassword = document.getElementById("staffCredentialsCurrentPassword");
+  const staffCredentialsNewUsername = document.getElementById("staffCredentialsNewUsername");
+  const staffCredentialsNewPassword = document.getElementById("staffCredentialsNewPassword");
+  const staffCredentialsConfirmPassword = document.getElementById("staffCredentialsConfirmPassword");
+  const staffCredentialsNotice = document.getElementById("staffCredentialsNotice");
+  const staffCredentialsSaveBtn = document.getElementById("staffCredentialsSaveBtn");
   const clearModalEl = document.getElementById("clearModal");
   const clearModal = clearModalEl ? new bootstrap.Modal(clearModalEl) : null;
   const clearConfirm = document.getElementById("clearConfirm");
@@ -66,6 +91,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveModalTitle = saveModalEl ? saveModalEl.querySelector(".modal-title") : null;
   const saveModalDescription = saveModalEl ? saveModalEl.querySelector("p") : null;
   const saveConfirm = document.getElementById("saveConfirm");
+  const loadExistingBtn = document.getElementById("loadExistingBtn");
+  const loadHouseholdModalEl = document.getElementById("loadHouseholdModal");
+  const loadHouseholdModal = loadHouseholdModalEl ? new bootstrap.Modal(loadHouseholdModalEl) : null;
+  const loadHouseholdYear = document.getElementById("loadHouseholdYear");
+  const loadHouseholdSearch = document.getElementById("loadHouseholdSearch");
+  const loadHouseholdSearchBtn = document.getElementById("loadHouseholdSearchBtn");
+  const loadHouseholdStatus = document.getElementById("loadHouseholdStatus");
+  const loadHouseholdResults = document.getElementById("loadHouseholdResults");
+  const loadHouseholdEmpty = document.getElementById("loadHouseholdEmpty");
+  const loadHouseholdEmptyTitle = document.getElementById("loadHouseholdEmptyTitle");
+  const loadHouseholdEmptyText = document.getElementById("loadHouseholdEmptyText");
   const pendingSyncModalEl = document.getElementById("pendingSyncModal");
   const pendingSyncModal = pendingSyncModalEl ? new bootstrap.Modal(pendingSyncModalEl) : null;
   const pendingSyncList = document.getElementById("pendingSyncList");
@@ -100,6 +136,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   let syncSuccessTimerId = null;
   let syncToastHideTimerId = null;
   let pendingActionBusy = false;
+  let loadHouseholdRequestToken = 0;
+  let staffCredentialSaveBusy = false;
+  const LOAD_HOUSEHOLD_MIN_QUERY_LENGTH = 2;
 
   if (isEditMode) {
     document.title = "Update Household";
@@ -114,6 +153,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (saveModalTitle) saveModalTitle.textContent = "Update Household";
     if (saveModalDescription) saveModalDescription.textContent = "Ready to update this household record?";
     if (saveConfirm) saveConfirm.textContent = "Update";
+    if (loadExistingBtn) {
+      loadExistingBtn.innerHTML = '<i class="bi bi-arrow-left"></i> Back to Registration';
+    }
+  } else if (targetRecordYear !== new Date().getFullYear()) {
+    if (contentSubtitle) {
+      contentSubtitle.textContent = `Registration year: ${targetRecordYear}`;
+    }
+    if (contentSubtitleMobile) {
+      contentSubtitleMobile.textContent = `Year ${targetRecordYear}`;
+    }
   }
 
   const setSidebarOpen = (open) => {
@@ -201,6 +250,107 @@ document.addEventListener("DOMContentLoaded", async () => {
       status: Number.isFinite(status) ? status : 0,
       duplicate,
       at: new Date().toISOString()
+    };
+  };
+
+  const setStaffCredentialsNotice = (message, tone = "muted") => {
+    if (!staffCredentialsNotice) return;
+    const text = String(message || "").trim();
+    staffCredentialsNotice.textContent = text;
+    staffCredentialsNotice.classList.remove("text-muted", "text-success", "text-danger");
+    if (!text) {
+      staffCredentialsNotice.hidden = true;
+      staffCredentialsNotice.classList.add("text-muted");
+      return;
+    }
+    staffCredentialsNotice.hidden = false;
+    if (tone === "success") {
+      staffCredentialsNotice.classList.add("text-success");
+      return;
+    }
+    if (tone === "danger") {
+      staffCredentialsNotice.classList.add("text-danger");
+      return;
+    }
+    staffCredentialsNotice.classList.add("text-muted");
+  };
+
+  const resetStaffCredentialFields = () => {
+    if (staffCredentialsCurrentUsername) {
+      staffCredentialsCurrentUsername.value = currentSessionUsername;
+    }
+  if (staffCredentialsCurrentPassword) {
+    staffCredentialsCurrentPassword.value = "";
+  }
+  if (staffCredentialsNewUsername) {
+    staffCredentialsNewUsername.value = currentSessionUsername;
+  }
+  if (staffCredentialsNewPassword) {
+    staffCredentialsNewPassword.value = "";
+  }
+  if (staffCredentialsConfirmPassword) {
+    staffCredentialsConfirmPassword.value = "";
+  }
+  setStaffCredentialsNotice("");
+};
+
+  const submitStaffCredentialUpdate = async () => {
+    const currentUsername = String(staffCredentialsCurrentUsername?.value || "").trim();
+    const currentPassword = String(staffCredentialsCurrentPassword?.value || "");
+    const newUsername = String(staffCredentialsNewUsername?.value || "").trim();
+    const newPassword = String(staffCredentialsNewPassword?.value || "");
+    const confirmPassword = String(staffCredentialsConfirmPassword?.value || "");
+
+    if (!currentUsername || !currentPassword || !newUsername || !newPassword || !confirmPassword) {
+      throw new Error("Complete all credential fields before saving.");
+    }
+    if (!USERNAME_RULE.test(newUsername)) {
+      throw new Error("New username must be 3-80 characters and use only letters, numbers, dot, underscore, or dash.");
+    }
+    if (!CREDENTIAL_PASSWORD_RULE.test(newPassword)) {
+      throw new Error("New password must be at least 8 characters and include 1 special character.");
+    }
+    if (newPassword !== confirmPassword) {
+      throw new Error("New password and confirmation do not match.");
+    }
+    if (!csrfToken) {
+      throw new Error("Missing CSRF token. Reload the page and sign in again.");
+    }
+
+    const response = await fetch(USERS_API_ENDPOINT, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-CSRF-Token": csrfToken
+      },
+      body: JSON.stringify({
+        action: "update_own_credentials",
+        current_username: currentUsername,
+        current_password: currentPassword,
+        new_username: newUsername,
+        new_password: newPassword
+      })
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = null;
+    }
+
+    if (!response.ok || !payload || payload.success !== true) {
+      const message = payload && payload.error
+        ? String(payload.error)
+        : `Unable to update credentials (${response.status}).`;
+      throw new Error(message);
+    }
+
+    return {
+      payload,
+      newUsername
     };
   };
 
@@ -466,8 +616,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const getNextHouseholdId = () => {
-    const currentYear = new Date().getFullYear();
-    const prefix = `HH-${currentYear}-`;
+    const prefix = `HH-${targetRecordYear}-`;
     const allIds = [
       ...getRegistrationRecords().map((item) => String(item?.household_id || "")),
       ...getSyncQueue().map((item) => String(item?.household_id || "")),
@@ -515,6 +664,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       household_id: householdId,
       mode: isEditMode ? "update" : "create",
       source: "registration-module",
+      record_year: targetRecordYear,
       head,
       members,
       head_name: headName || "Unnamed household head",
@@ -530,6 +680,123 @@ document.addEventListener("DOMContentLoaded", async () => {
   const getHouseholdYearFromId = (householdId) => {
     const match = String(householdId || "").trim().match(/^HH-(\d{4})-\d+$/i);
     return match ? String(match[1] || "") : "";
+  };
+
+  const getRecordTimestamp = (record) => {
+    const parsed = Date.parse(String(record?.updated_at || record?.created_at || ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const buildHeadNameFromRecord = (record) => {
+    if (!record || typeof record !== "object") return "";
+    const directName = String(record.head_name || "").trim();
+    if (directName) return directName;
+    const head = record.head && typeof record.head === "object" ? record.head : {};
+    return [
+      head.first_name,
+      head.middle_name,
+      head.last_name,
+      head.extension_name
+    ]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(" ");
+  };
+
+  const buildCachedHouseholdRecord = (source = {}, sourceRecord = null) => {
+    const record = sourceRecord && typeof sourceRecord === "object"
+      ? sourceRecord
+      : (source?.record && typeof source.record === "object" ? source.record : null);
+    if (!record || typeof record !== "object") {
+      return null;
+    }
+
+    return normalizeLookupHouseholdRecord({
+      ...record,
+      household_id: String(source?.household_id || record.household_id || "").trim(),
+      record_year: Number.parseInt(String(source?.record_year || record.record_year || ""), 10),
+      rollover_source_household_id: String(source?.rollover_source_household_id || record.rollover_source_household_id || "").trim(),
+      head_name: String(source?.head_name || record.head_name || "").trim(),
+      zone: String(source?.zone || record.zone || "").trim(),
+      member_count: Number.parseInt(String(source?.member_count || record.member_count || ""), 10) || 0,
+      source: String(source?.source || record.source || "registration-module").trim() || "registration-module",
+      created_at: String(source?.created_at || record.created_at || "").trim(),
+      updated_at: String(source?.updated_at || record.updated_at || "").trim()
+    });
+  };
+
+  const normalizeLookupHouseholdRecord = (record) => {
+    if (!record || typeof record !== "object") return null;
+    const cleanedRecord = stripClientSyncMeta(record);
+    const householdId = String(cleanedRecord.household_id || "").trim();
+    if (!householdId) return null;
+
+    const head = cleanedRecord.head && typeof cleanedRecord.head === "object"
+      ? { ...cleanedRecord.head }
+      : {};
+    const recordYearRaw = Number.parseInt(
+      String(cleanedRecord.record_year || getHouseholdYearFromId(householdId)),
+      10
+    );
+    const recordYear = isValidRecordYear(recordYearRaw) ? recordYearRaw : 0;
+    const zone = normalizeZoneLabel(cleanedRecord.zone || head.zone);
+    const members = Array.isArray(cleanedRecord.members)
+      ? cleanedRecord.members
+        .filter((member) => member && typeof member === "object")
+        .map((member) => ({
+          ...member,
+          zone: normalizeZoneLabel(member.zone || zone)
+        }))
+      : [];
+    const headName = buildHeadNameFromRecord(cleanedRecord) || "Unnamed household head";
+    const memberCount = Math.max(
+      Number.parseInt(String(cleanedRecord.member_count || ""), 10) || 0,
+      members.length + 1
+    );
+
+    return {
+      ...cleanedRecord,
+      household_id: householdId,
+      record_year: recordYear,
+      rollover_source_household_id: String(cleanedRecord.rollover_source_household_id || "").trim(),
+      source: String(cleanedRecord.source || "registration-module").trim() || "registration-module",
+      head_name: headName,
+      zone,
+      head: {
+        ...head,
+        zone
+      },
+      members,
+      member_count: memberCount,
+      created_at: String(cleanedRecord.created_at || "").trim(),
+      updated_at: String(cleanedRecord.updated_at || cleanedRecord.created_at || "").trim()
+    };
+  };
+
+  const sortHouseholdLookupRecords = (records = []) => {
+    return [...records].sort((left, right) => {
+      const timestampDiff = getRecordTimestamp(right) - getRecordTimestamp(left);
+      if (timestampDiff !== 0) return timestampDiff;
+      return String(right?.household_id || "").localeCompare(String(left?.household_id || ""));
+    });
+  };
+
+  const getStoredHouseholdRecord = (householdId) => {
+    const targetId = String(householdId || "").trim();
+    if (!targetId) return null;
+
+    const candidates = [
+      ...getRegistrationRecords().filter((item) => String(item?.household_id || "").trim() === targetId),
+      ...getSyncQueue().filter((item) => String(item?.household_id || "").trim() === targetId)
+    ]
+      .map((item) => normalizeLookupHouseholdRecord(item))
+      .filter(Boolean);
+
+    if (!candidates.length) {
+      return null;
+    }
+
+    return candidates.sort((left, right) => getRecordTimestamp(right) - getRecordTimestamp(left))[0] || null;
   };
 
   const getHouseholdIdentity = (head = {}) => {
@@ -1012,7 +1279,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const renderPendingSyncModal = () => {
     if (!pendingSyncList) return;
     const queue = getSyncQueue();
-    const isOffline = !window.navigator.onLine;
     if (pendingSyncTitleCount) {
       pendingSyncTitleCount.textContent = `(${queue.length})`;
     }
@@ -1033,23 +1299,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       const duplicateHint = duplicateHouseholdId
         ? `Existing record: ${duplicateHouseholdId}`
         : "";
-      const duplicateMessage = isOffline
+      const duplicateMessage = window.navigator.onLine
         ? (duplicateHouseholdId
-          ? `Duplicate found: ${duplicateHouseholdId}. Go online to enable Replace.`
-          : "Duplicate found. Go online to enable Replace.")
+          ? `Duplicate found: ${duplicateHouseholdId}. Use Load Existing Household to re-encode changes or delete this pending record.`
+          : "Duplicate found. Use Load Existing Household to re-encode changes or delete this pending record.")
         : (duplicateHouseholdId
-          ? `Duplicate found: ${duplicateHouseholdId}. Click Replace to overwrite existing record.`
-          : "Duplicate found. Click Replace to overwrite existing record.");
+          ? `Duplicate found: ${duplicateHouseholdId}. Go online, then use Load Existing Household to re-encode changes or delete this pending record.`
+          : "Duplicate found. Go online, then use Load Existing Household to re-encode changes or delete this pending record.");
       const errorText = issueCode === "duplicate_household"
         ? duplicateMessage
         : (issueMessage || "Waiting to sync once internet/server is available.");
       const errorClass = issueMessage ? "" : " is-waiting";
-      const replaceDisabledAttr = duplicateHouseholdId ? "" : 'disabled data-force-disabled="1"';
-      const replaceButtonHtml = isOffline
-        ? ""
-        : `<button type="button" class="btn btn-sm btn-primary" data-pending-action="replace" data-household-id="${escapeHtml(householdId)}" ${replaceDisabledAttr}>
-             Replace
-           </button>`;
 
       return `
         <div class="pending-sync-item">
@@ -1068,7 +1328,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             <button type="button" class="btn btn-sm btn-outline-danger" data-pending-action="delete" data-household-id="${escapeHtml(householdId)}">
               Delete
             </button>
-            ${replaceButtonHtml}
           </div>
         </div>
       `;
@@ -1169,71 +1428,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       pendingSyncModal?.hide();
     }
     showSyncToast(`Pending household ${targetId} deleted.`, "info", "Pending Updated");
-  };
-
-  const replacePendingRecord = async (householdId) => {
-    const targetId = String(householdId || "").trim();
-    if (!targetId) return;
-    const queue = getSyncQueue();
-    const index = queue.findIndex((item) => String(item?.household_id || "").trim() === targetId);
-    if (index < 0) {
-      renderPendingSyncModal();
-      return;
-    }
-
-    const pendingRecord = queue[index];
-    const parsedLastSyncError = parseSyncErrorMessage(getLastSyncError());
-    const issue = getQueueIssue(pendingRecord, index, parsedLastSyncError);
-    const duplicateHouseholdId = String(issue?.duplicate?.household_id || "").trim();
-    if (!duplicateHouseholdId) {
-      showSyncToast("Replace is only available for duplicate conflicts.", "warning", "Replace Unavailable");
-      return;
-    }
-
-    const shouldReplace = await askPendingActionConfirm({
-      title: "Replace Existing Household?",
-      message: `Replace existing household ${duplicateHouseholdId} using pending record ${targetId}?`,
-      confirmLabel: "Replace",
-      confirmTone: "primary"
-    });
-    if (!shouldReplace) {
-      return;
-    }
-
-    const replacementRecord = withSyncIssue({
-      ...pendingRecord,
-      household_id: duplicateHouseholdId,
-      mode: "replace",
-      created_at: String(issue?.duplicate?.created_at || pendingRecord?.created_at || "")
-    }, null);
-
-    if (targetId !== duplicateHouseholdId) {
-      removeRegistrationRecord(targetId);
-    }
-    upsertRegistrationRecord(replacementRecord);
-
-    const before = queue
-      .slice(0, index)
-      .filter((item) => String(item?.household_id || "").trim() !== duplicateHouseholdId);
-    const after = queue
-      .slice(index + 1)
-      .filter((item) => String(item?.household_id || "").trim() !== duplicateHouseholdId);
-    const nextQueue = [...before, replacementRecord, ...after];
-    setSyncQueue(nextQueue);
-    clearResolvedLastSyncError();
-    updateSyncStatus();
-    renderPendingSyncModal();
-
-    if (window.navigator.onLine) {
-      await flushSyncQueue({ showFeedback: true, showSuccessState: true });
-      renderPendingSyncModal();
-      return;
-    }
-    showSyncToast(
-      `Replacement prepared for ${duplicateHouseholdId}. It will sync once internet returns.`,
-      "info",
-      "Pending Updated"
-    );
   };
 
   const saveRegistration = async () => {
@@ -1528,6 +1722,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     localStorage.setItem(MEMBERS_KEY, JSON.stringify(members));
   };
 
+  const countChildrenFromMembers = (members) => members.filter((member) => {
+    const relation = String(member?.relation_to_head || "").trim().toLowerCase();
+    return relation === "son" || relation === "daughter";
+  }).length;
+
+  const syncHouseholdCounts = (members) => {
+    let changed = false;
+
+    if (numMembersInput) {
+      const nextValue = String(members.length + 1);
+      if (numMembersInput.value !== nextValue) {
+        numMembersInput.value = nextValue;
+        changed = true;
+      }
+    }
+
+    if (numChildrenInput) {
+      const nextValue = String(countChildrenFromMembers(members));
+      if (numChildrenInput.value !== nextValue) {
+        numChildrenInput.value = nextValue;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      saveHeadData();
+    }
+  };
+
   const readHeadDraft = () => {
     try {
       const parsed = JSON.parse(localStorage.getItem(HEAD_KEY) || "{}");
@@ -1544,6 +1767,340 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (value && typeof value === "object") return Object.keys(value).length > 0;
       return String(value || "").trim() !== "";
     });
+  };
+
+  const hasLocalDraftState = () => {
+    return hasHeadDraft() || getMembers().length > 0;
+  };
+
+  const clearRegistrationDraftState = async () => {
+    await localStorage.removeItem(HEAD_KEY);
+    await localStorage.removeItem(MEMBERS_KEY);
+    await localStorage.removeItem(EDIT_KEY);
+    try {
+      sessionStorage.removeItem(PRESERVE_DRAFT_FLAG_KEY);
+    } catch {
+      // Ignore session storage errors.
+    }
+    if (typeof localStorage.flush === "function") {
+      await localStorage.flush();
+    }
+  };
+
+  const setLoadHouseholdLookupEnabled = (enabled) => {
+    if (loadHouseholdYear) {
+      loadHouseholdYear.disabled = !enabled;
+    }
+    if (loadHouseholdSearch) {
+      loadHouseholdSearch.disabled = !enabled;
+    }
+    if (loadHouseholdSearchBtn) {
+      loadHouseholdSearchBtn.disabled = !enabled;
+    }
+  };
+
+  const applyLoadHouseholdYearOptions = (years = [], selectedYear = targetRecordYear) => {
+    if (!loadHouseholdYear) return 0;
+    const options = Array.isArray(years)
+      ? years
+        .map((value) => Number.parseInt(String(value || ""), 10))
+        .filter((year) => isValidRecordYear(year))
+      : [];
+
+    if (options.length === 0) {
+      loadHouseholdYear.innerHTML = '<option value="">No registered years</option>';
+      loadHouseholdYear.value = "";
+      return 0;
+    }
+
+    const preferredYear = isValidRecordYear(Number(selectedYear)) ? Number(selectedYear) : options[0];
+    loadHouseholdYear.innerHTML = options
+      .map((year) => `<option value="${year}">${year}</option>`)
+      .join("");
+    loadHouseholdYear.value = String(options.includes(preferredYear) ? preferredYear : options[0]);
+    return Number.parseInt(String(loadHouseholdYear.value || ""), 10) || 0;
+  };
+
+  const fetchLoadHouseholdYears = async () => {
+    const response = await fetch(`${SYNC_ENDPOINT}?action=list_household_years`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload || payload.success !== true) {
+      const message = payload && payload.error
+        ? String(payload.error)
+        : `Unable to load household years (${response.status}).`;
+      throw new Error(message);
+    }
+
+    return Array.isArray(payload?.data?.years)
+      ? payload.data.years
+      : [];
+  };
+
+  const syncLoadHouseholdYearOptions = async (selectedYear = targetRecordYear) => {
+    if (!loadHouseholdYear) return [];
+
+    setLoadHouseholdLookupEnabled(false);
+    loadHouseholdYear.innerHTML = '<option value="">Loading years...</option>';
+    clearLoadHouseholdResults({ hideEmpty: false });
+    setLoadHouseholdEmptyState(
+      "Loading years",
+      "Checking which household record years are available in the database."
+    );
+    setLoadHouseholdStatus("");
+
+    try {
+      const years = await fetchLoadHouseholdYears();
+      const activeYear = applyLoadHouseholdYearOptions(years, selectedYear);
+
+      if (!activeYear) {
+        setLoadHouseholdLookupEnabled(false);
+        clearLoadHouseholdResults({ hideEmpty: false });
+        setLoadHouseholdEmptyState("No registered years", "No household record years are available in the database yet.");
+        return [];
+      }
+
+      setLoadHouseholdLookupEnabled(true);
+      setLoadHouseholdPrompt(`Select year ${activeYear}, enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters, then click Search.`);
+      return years;
+    } catch (error) {
+      loadHouseholdYear.innerHTML = '<option value="">Unavailable</option>';
+      loadHouseholdYear.value = "";
+      setLoadHouseholdLookupEnabled(false);
+      clearLoadHouseholdResults({ hideEmpty: false });
+      setLoadHouseholdEmptyState("Year lookup unavailable", "The system could not load registered household years right now. Try again in a moment.");
+      const message = error instanceof Error ? error.message : "Unable to load household years right now.";
+      setLoadHouseholdStatus(message, "danger");
+      return [];
+    }
+  };
+
+  const setLoadHouseholdStatus = (message, tone = "muted") => {
+    if (!loadHouseholdStatus) return;
+    const text = String(message || "").trim();
+    loadHouseholdStatus.textContent = text;
+    loadHouseholdStatus.classList.remove("status-danger", "status-success");
+    loadHouseholdStatus.classList.toggle("d-none", text.length === 0);
+    if (text.length === 0) {
+      return;
+    }
+    if (tone === "danger") {
+      loadHouseholdStatus.classList.add("status-danger");
+    } else if (tone === "success") {
+      loadHouseholdStatus.classList.add("status-success");
+    }
+  };
+
+  const clearLoadHouseholdResults = ({ hideEmpty = true } = {}) => {
+    if (loadHouseholdResults) {
+      loadHouseholdResults.innerHTML = "";
+    }
+    if (loadHouseholdEmpty) {
+      loadHouseholdEmpty.classList.toggle("d-none", hideEmpty);
+    }
+  };
+
+  const setLoadHouseholdEmptyState = (title, message) => {
+    if (loadHouseholdEmptyTitle) {
+      loadHouseholdEmptyTitle.textContent = String(title || "").trim() || "Ready to search";
+    }
+    if (loadHouseholdEmptyText) {
+      loadHouseholdEmptyText.textContent = String(message || "").trim() || "Select a year, enter a search term, then click Search.";
+    }
+    if (loadHouseholdEmpty) {
+      loadHouseholdEmpty.classList.remove("d-none");
+    }
+  };
+
+  const setLoadHouseholdPrompt = (message = "") => {
+    const year = Number.parseInt(String(loadHouseholdYear?.value || ""), 10);
+    const safeYear = isValidRecordYear(year) ? year : targetRecordYear;
+    const promptMessage = String(message || "").trim()
+      || `Select year ${safeYear}, enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters, then click Search.`;
+    clearLoadHouseholdResults({ hideEmpty: true });
+    setLoadHouseholdEmptyState("Ready to search", promptMessage);
+    setLoadHouseholdStatus("");
+  };
+
+  const renderLoadHouseholdResults = (items = []) => {
+    if (!loadHouseholdResults || !loadHouseholdEmpty) return;
+    const rows = Array.isArray(items) ? items : [];
+    if (rows.length === 0) {
+      loadHouseholdResults.innerHTML = "";
+      setLoadHouseholdEmptyState(
+        "No households found",
+        "Try a different household ID, head name, or year to find a matching record."
+      );
+      return;
+    }
+
+    loadHouseholdEmpty.classList.add("d-none");
+    loadHouseholdResults.innerHTML = rows.map((item) => {
+      const householdId = String(item?.household_id || "").trim();
+      const recordYear = Number(item?.record_year || 0);
+      const memberCount = Number(item?.member_count || 0);
+      const updatedAt = formatSyncDate(item?.updated_at || item?.created_at || "");
+      const rolloverSourceId = String(item?.rollover_source_household_id || "").trim();
+      const isCurrentRecord = isEditMode && householdId === editHouseholdId;
+      const metaParts = [
+        String(item?.zone || "").trim(),
+        `${memberCount} member${memberCount === 1 ? "" : "s"}`,
+        updatedAt ? `Updated ${updatedAt}` : ""
+      ].filter(Boolean);
+      const note = rolloverSourceId
+        ? `Rolled over from ${rolloverSourceId}`
+        : `Source: ${String(item?.source || "registration-module").replace(/-/g, " ")}`;
+      const currentTag = isCurrentRecord
+        ? '<span class="load-household-result-tag is-current"><i class="bi bi-pencil-square"></i> Current Edit</span>'
+        : '<span class="load-household-result-action">Load record <i class="bi bi-chevron-right"></i></span>';
+
+      return `
+        <button type="button" class="load-household-result" data-household-id="${escapeHtml(householdId)}" data-record-year="${recordYear}" ${isCurrentRecord ? "disabled" : ""}>
+          <div class="load-household-result-head">
+            <div class="load-household-result-id">
+              <span class="load-household-year-pill">${escapeHtml(recordYear)}</span>
+              <span class="load-household-result-code">${escapeHtml(householdId)}</span>
+            </div>
+            ${currentTag}
+          </div>
+          <div class="load-household-result-name">${escapeHtml(String(item?.head_name || "Unnamed household head").trim() || "Unnamed household head")}</div>
+          <div class="load-household-result-meta">${metaParts.map((part) => `<span>${escapeHtml(part)}</span>`).join("")}</div>
+          <div class="load-household-result-note">${escapeHtml(note)}</div>
+        </button>
+      `;
+    }).join("");
+  };
+
+  const fetchHouseholdsForLookup = async ({ year, query } = {}) => {
+    const safeYear = isValidRecordYear(Number(year)) ? Number(year) : targetRecordYear;
+    const trimmedQuery = String(query || "").trim();
+
+    const params = new URLSearchParams({
+      action: "list_households",
+      limit: "15",
+      offset: "0",
+      year: String(safeYear)
+    });
+    if (trimmedQuery) {
+      params.set("q", trimmedQuery);
+    }
+
+    try {
+      const response = await fetch(`${SYNC_ENDPOINT}?${params.toString()}`, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload || payload.success !== true) {
+        const message = payload && payload.error
+          ? String(payload.error)
+          : `Unable to load households (${response.status}).`;
+        throw new Error(message);
+      }
+
+      return Array.isArray(payload?.data?.items) ? payload.data.items : [];
+    } catch (error) {
+      throw error instanceof Error ? error : new Error("Unable to load households right now.");
+    }
+  };
+
+  const runLoadHouseholdSearch = async ({ preserveSearch = true } = {}) => {
+    if (!loadHouseholdResults || !loadHouseholdYear) return;
+    const year = Number.parseInt(String(loadHouseholdYear.value || ""), 10);
+    if (!isValidRecordYear(year)) {
+      clearLoadHouseholdResults({ hideEmpty: false });
+      setLoadHouseholdEmptyState(
+        "Select a registered year",
+        "Choose a year with household records in the database before searching."
+      );
+      setLoadHouseholdStatus("Select a registered year first.", "danger");
+      return;
+    }
+    const query = preserveSearch && loadHouseholdSearch
+      ? String(loadHouseholdSearch.value || "").trim()
+      : "";
+    const safeYear = year;
+    if (query.length < LOAD_HOUSEHOLD_MIN_QUERY_LENGTH) {
+      setLoadHouseholdPrompt(`Enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters to search households in ${safeYear}.`);
+      return;
+    }
+    const token = ++loadHouseholdRequestToken;
+
+    clearLoadHouseholdResults({ hideEmpty: true });
+    setLoadHouseholdStatus(`Searching ${safeYear} households for "${query}"...`);
+
+    try {
+      const items = await fetchHouseholdsForLookup({ year: safeYear, query });
+      if (token !== loadHouseholdRequestToken) return;
+      renderLoadHouseholdResults(items);
+      if (items.length === 0) {
+        setLoadHouseholdStatus(`No households matched "${query}" in ${safeYear}.`);
+        return;
+      }
+
+      setLoadHouseholdStatus(
+        `Found ${items.length} household record${items.length === 1 ? "" : "s"} in ${safeYear}.`,
+        "success"
+      );
+    } catch (error) {
+      if (token !== loadHouseholdRequestToken) return;
+      clearLoadHouseholdResults({ hideEmpty: true });
+      const message = error instanceof Error ? error.message : "Unable to load households right now.";
+      setLoadHouseholdEmptyState("Search unavailable", "The household lookup could not complete right now. Try again in a moment.");
+      setLoadHouseholdStatus(message, "danger");
+    }
+  };
+
+  const openExistingHouseholdForEdit = async (householdId, recordYear) => {
+    const targetHouseholdId = String(householdId || "").trim();
+    const safeYear = Number.parseInt(String(recordYear || ""), 10);
+    if (!targetHouseholdId) return;
+
+    if (isEditMode && targetHouseholdId === editHouseholdId) {
+      loadHouseholdModal?.hide();
+      showSyncToast(`You are already editing ${targetHouseholdId}.`, "info", "Load Household");
+      return;
+    }
+
+    if (hasLocalDraftState()) {
+      const shouldLoad = await askPendingActionConfirm({
+        title: "Discard Current Draft?",
+        message: `Loading ${targetHouseholdId} will replace the household currently in the registration form.`,
+        confirmLabel: "Load Household",
+        confirmTone: "warning"
+      });
+      if (!shouldLoad) {
+        return;
+      }
+    }
+
+    await clearRegistrationDraftState();
+    loadHouseholdModal?.hide();
+
+    const nextUrl = new URL("registration.php", window.location.href);
+    nextUrl.searchParams.set("edit", targetHouseholdId);
+    if (isValidRecordYear(safeYear)) {
+      nextUrl.searchParams.set("year", String(safeYear));
+    }
+    window.location.href = nextUrl.toString();
   };
 
   const fetchHouseholdRecordFromServer = async (householdId) => {
@@ -1569,34 +2126,69 @@ document.addEventListener("DOMContentLoaded", async () => {
     return payload;
   };
 
+  const buildCachedHouseholdRecordFromPayload = (payload) => {
+    const data = payload?.data;
+    return buildCachedHouseholdRecord(data, data?.record);
+  };
+
+  const hydrateDraftFromHouseholdRecord = async (sourceRecord, { cacheRecord = false } = {}) => {
+    const record = normalizeLookupHouseholdRecord(sourceRecord);
+    if (!record) {
+      return false;
+    }
+
+    const headRaw = record.head && typeof record.head === "object" ? record.head : {};
+    const householdZone = normalizeZoneLabel(record.zone || headRaw.zone);
+    const head = {
+      ...headRaw,
+      zone: householdZone
+    };
+    const members = Array.isArray(record.members)
+      ? record.members
+        .filter((row) => row && typeof row === "object")
+        .map((row) => ({
+          ...row,
+          zone: normalizeZoneLabel(row.zone || householdZone)
+        }))
+      : [];
+
+    await localStorage.setItem(HEAD_KEY, JSON.stringify(head));
+    setMembers(members);
+
+    if (cacheRecord) {
+      upsertRegistrationRecord({
+        ...record,
+        head,
+        members,
+        zone: householdZone,
+        head_name: buildHeadNameFromRecord({ ...record, head }) || "Unnamed household head",
+        member_count: Math.max(Number(record.member_count || 0), members.length + 1)
+      });
+    }
+
+    if (typeof localStorage.flush === "function") {
+      await localStorage.flush();
+    }
+
+    return true;
+  };
+
   const hydrateEditModeFromServerIfNeeded = async () => {
     if (!isEditMode || !editHouseholdId) return;
     if (getMembers().length > 0 || hasHeadDraft()) return;
 
+    const storedRecord = getStoredHouseholdRecord(editHouseholdId);
+    if (storedRecord) {
+      await hydrateDraftFromHouseholdRecord(storedRecord);
+      return;
+    }
+
     try {
       const payload = await fetchHouseholdRecordFromServer(editHouseholdId);
-      const record = payload?.data?.record;
-      if (!record || typeof record !== "object") return;
-
-      const headRaw = record.head && typeof record.head === "object" ? record.head : {};
-      const householdZone = normalizeZoneLabel(record.zone || headRaw.zone);
-      const head = {
-        ...headRaw,
-        zone: householdZone
-      };
-      const members = Array.isArray(record.members)
-        ? record.members
-          .filter((row) => row && typeof row === "object")
-          .map((row) => ({
-            ...row,
-            zone: normalizeZoneLabel(row.zone || householdZone)
-          }))
-        : [];
-
-      await localStorage.setItem(HEAD_KEY, JSON.stringify(head));
-      setMembers(members);
-      if (typeof localStorage.flush === "function") {
-        await localStorage.flush();
+      const serverRecord = buildCachedHouseholdRecordFromPayload(payload);
+      if (serverRecord) {
+        await hydrateDraftFromHouseholdRecord(serverRecord, { cacheRecord: true });
+        return;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load edit record from server.";
@@ -1688,6 +2280,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         await localStorage.flush();
       }
       const nextUrl = new URL(addMemberBtn.getAttribute("href") || "member.php", window.location.href);
+      nextUrl.searchParams.set("year", String(targetRecordYear));
       if (isEditMode && editHouseholdId) {
         nextUrl.searchParams.set("edit", editHouseholdId);
       }
@@ -1743,10 +2336,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       { label: "PhilSys ID", value: member.philid },
       { label: "Driver's License", value: member.driver_license },
       { label: "Passport", value: member.passport },
-      { label: "Household Members", value: member.num_members },
-      { label: "Relationship to Head", value: member.relation_to_head },
-      { label: "Number of Children", value: member.num_children },
-      { label: "Marital Partner", value: member.partner_name }
+      { label: "Relationship to Head", value: member.relation_to_head }
     ];
 
     const list = rows
@@ -1766,14 +2356,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const members = getMembers();
     if (memberCount) memberCount.textContent = members.length;
     if (sidebarMemberCount) sidebarMemberCount.textContent = members.length;
-    if (numMembersInput) {
-      const computedCount = members.length + 1;
-      const nextValue = String(computedCount);
-      if (numMembersInput.value !== nextValue) {
-        numMembersInput.value = nextValue;
-        saveHeadData();
-      }
-    }
+    syncHouseholdCounts(members);
 
     if (membersContainer) {
       if (!members.length) {
@@ -1990,13 +2573,86 @@ document.addEventListener("DOMContentLoaded", async () => {
           await deletePendingRecord(householdId);
           return;
         }
-        if (action === "replace") {
-          await replacePendingRecord(householdId);
-        }
       } finally {
         pendingActionBusy = false;
         renderPendingSyncModal();
       }
+    });
+  }
+
+  if (loadExistingBtn) {
+    loadExistingBtn.addEventListener("click", () => {
+      if (isEditMode) {
+        const nextUrl = new URL("registration.php", window.location.href);
+        nextUrl.searchParams.set("year", String(targetRecordYear));
+        window.location.href = nextUrl.toString();
+        return;
+      }
+      if (loadHouseholdSearch) {
+        loadHouseholdSearch.value = "";
+      }
+      loadHouseholdModal?.show();
+    });
+  }
+
+  if (loadHouseholdModalEl) {
+    loadHouseholdModalEl.addEventListener("show.bs.modal", () => {
+      if (loadHouseholdSearch) {
+        loadHouseholdSearch.value = "";
+      }
+      void syncLoadHouseholdYearOptions(targetRecordYear);
+    });
+
+    loadHouseholdModalEl.addEventListener("shown.bs.modal", () => {
+      loadHouseholdSearch?.focus();
+    });
+
+    loadHouseholdModalEl.addEventListener("hidden.bs.modal", () => {
+      loadHouseholdRequestToken += 1;
+    });
+  }
+
+  if (loadHouseholdYear) {
+    loadHouseholdYear.addEventListener("change", () => {
+      setLoadHouseholdPrompt();
+    });
+  }
+
+  if (loadHouseholdSearchBtn) {
+    loadHouseholdSearchBtn.addEventListener("click", () => {
+      runLoadHouseholdSearch();
+    });
+  }
+
+  if (loadHouseholdSearch) {
+    loadHouseholdSearch.addEventListener("input", () => {
+      const query = String(loadHouseholdSearch.value || "").trim();
+      if (query.length === 0) {
+        setLoadHouseholdPrompt();
+        return;
+      }
+      clearLoadHouseholdResults({ hideEmpty: true });
+      setLoadHouseholdEmptyState(
+        "Search ready",
+        `Press Search to find matching households in ${loadHouseholdYear?.value || targetRecordYear}.`
+      );
+      setLoadHouseholdStatus("");
+    });
+
+    loadHouseholdSearch.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      runLoadHouseholdSearch();
+    });
+  }
+
+  if (loadHouseholdResults) {
+    loadHouseholdResults.addEventListener("click", async (event) => {
+      const resultButton = event.target.closest(".load-household-result");
+      if (!resultButton || resultButton.disabled) return;
+      const householdId = String(resultButton.dataset.householdId || "").trim();
+      const recordYear = Number.parseInt(String(resultButton.dataset.recordYear || ""), 10);
+      await openExistingHouseholdForEdit(householdId, recordYear);
     });
   }
 
@@ -2067,9 +2723,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       new bootstrap.Modal(document.getElementById("previewModal")).show();
     });
   }
-  document.getElementById("clearBtn").addEventListener("click", () => {
-    clearModal?.show();
-  });
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      clearModal?.show();
+    });
+  }
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
       if (censusForm && !censusForm.reportValidity()) {
@@ -2093,6 +2751,42 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (logoutConfirm) {
     logoutConfirm.addEventListener("click", () => {
       window.location.href = "logout.php";
+    });
+  }
+  if (staffCredentialsModalEl) {
+    staffCredentialsModalEl.addEventListener("shown.bs.modal", () => {
+      staffCredentialsCurrentPassword?.focus();
+    });
+  }
+  if (staffCredentialsSaveBtn) {
+    staffCredentialsSaveBtn.addEventListener("click", async () => {
+      if (staffCredentialSaveBusy) {
+        return;
+      }
+
+      const originalText = staffCredentialsSaveBtn.textContent;
+      staffCredentialSaveBusy = true;
+      staffCredentialsSaveBtn.disabled = true;
+      staffCredentialsSaveBtn.textContent = "Saving...";
+      try {
+        const result = await submitStaffCredentialUpdate();
+        document.body.dataset.requiresCredentialUpdate = "false";
+        document.body.dataset.currentUsername = result.newUsername;
+        setStaffCredentialsNotice(
+          result.payload?.message || "Credentials updated successfully. Reloading registration...",
+          "success"
+        );
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to update credentials right now.";
+        setStaffCredentialsNotice(message, "danger");
+      } finally {
+        staffCredentialSaveBusy = false;
+        staffCredentialsSaveBtn.disabled = false;
+        staffCredentialsSaveBtn.textContent = originalText || "Save New Credentials";
+      }
     });
   }
   if (clearConfirm) {
@@ -2131,5 +2825,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
     });
+  }
+
+  if (requiresCredentialUpdate) {
+    resetStaffCredentialFields();
+    window.setTimeout(() => {
+      staffCredentialsModal?.show();
+    }, 0);
   }
 });

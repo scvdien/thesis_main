@@ -19,7 +19,16 @@ window.addEventListener('resize', () => {
   }
 });
 
-const roleFromQueryRaw = new URLSearchParams(window.location.search).get('role');
+const pageParams = new URLSearchParams(window.location.search);
+const normalizeYearValue = (value, fallback = '') => {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  if (Number.isInteger(parsed) && parsed > 0) {
+    return String(parsed);
+  }
+  const fallbackParsed = Number.parseInt(String(fallback || '').trim(), 10);
+  return Number.isInteger(fallbackParsed) && fallbackParsed > 0 ? String(fallbackParsed) : '';
+};
+const roleFromQueryRaw = pageParams.get('role');
 const roleFromQuery = (roleFromQueryRaw || '').toLowerCase();
 const roleFromStorage = (sessionStorage.getItem('userRole') || '').toLowerCase();
 const roleFromBody = (document.body.dataset.role || '').toLowerCase();
@@ -30,14 +39,26 @@ const canEdit = resolvedRole === 'secretary' || resolvedRole === 'admin';
 document.body.classList.toggle('role-can-edit', canEdit);
 
 const backLink = document.querySelector('.hv-back-btn');
-if (backLink && (resolvedRole === 'secretary' || resolvedRole === 'admin')) {
-  backLink.setAttribute('href', `households.php?role=${resolvedRole}`);
+const buildHouseholdsListUrl = (yearValue = '') => {
+  const params = new URLSearchParams();
+  if (canEdit) {
+    params.set('role', resolvedRole);
+  }
+  const normalizedYear = normalizeYearValue(yearValue);
+  if (normalizedYear) {
+    params.set('year', normalizedYear);
+  }
+  return `households.php${params.toString() ? `?${params.toString()}` : ''}`;
+};
+if (backLink) {
+  backLink.setAttribute('href', buildHouseholdsListUrl(pageParams.get('year')));
 }
 
 let currentRecord = null;
 let activeMemberIndex = -1;
 const HOUSEHOLD_BASE_DATA_YEAR = String(new Date().getFullYear());
 const HOUSEHOLD_API_ENDPOINT = 'registration-sync.php';
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 const REGISTRATION_HEAD_KEY = 'household_head_data';
 const REGISTRATION_MEMBERS_KEY = 'household_members';
 const REGISTRATION_MEMBER_EDIT_KEY = 'household_member_edit_index';
@@ -139,9 +160,20 @@ const toMemberSex = (sex = '') => {
 
 const statusClass = (status = '') => {
   const s = status.toLowerCase();
+  if (s.includes('synced') || s.includes('up to date')) return 'verified';
   if (s.includes('verified')) return 'verified';
   if (s.includes('pending')) return 'pending';
   return 'unverified';
+};
+
+const statusLabel = (status = '') => {
+  const value = String(status || '').trim();
+  const normalized = value.toLowerCase();
+  if (!value) return '-';
+  if (normalized.includes('synced') || normalized.includes('up to date') || normalized.includes('verified')) {
+    return 'Updated';
+  }
+  return value;
 };
 
 const getMemberProfile = (member = {}, record = {}) => {
@@ -461,7 +493,8 @@ const deleteHouseholdFromServer = async (householdId) => {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
     },
     body: JSON.stringify({
       action: 'delete_household',
@@ -691,7 +724,7 @@ const hydratePage = (record) => {
   setText('hvId', currentDisplayHouseholdId || record.id);
   const statusEl = document.getElementById('hvStatus');
   if (statusEl) {
-    statusEl.textContent = record.status || '-';
+    statusEl.textContent = statusLabel(record.status);
     statusEl.className = `badge status ${statusClass(record.status)}`;
   }
   setText('hvUpdated', replaceFirstYearToken(record.updated, currentDisplayYear));
@@ -713,9 +746,10 @@ const hydratePage = (record) => {
   setText('hvHeadContact', head.contact);
   setText('hvHeadAddress', head.address);
   setText('hvHeadZone', head.zone);
-  setText('hvHeadBarangay', head.barangay);
-  setText('hvHeadCity', head.city);
-  setText('hvHeadProvince', head.province);
+  setText('hvPrimaryOccupation', employment.occupation);
+  setText('hvPrimaryChildren', hh.numChildren);
+  setText('hvPrimaryOwnership', housing.ownership);
+  setText('hvPrimaryHouseType', housing.houseType);
 
   setText('hvHeadEducation', education.attainment);
   setText('hvHeadDegree', education.degree);
@@ -890,9 +924,12 @@ const main = async () => {
     }
   }
   const requestedIdParts = parseHouseholdId(requestedId);
-  const selectedYear = requestedIdParts?.year || HOUSEHOLD_BASE_DATA_YEAR;
+  const selectedYear = normalizeYearValue(params.get('year'), requestedIdParts?.year || HOUSEHOLD_BASE_DATA_YEAR);
 
   currentDisplayYear = selectedYear;
+  if (backLink) {
+    backLink.setAttribute('href', buildHouseholdsListUrl(selectedYear));
+  }
   if (typeof storage.ready === 'function') {
     await storage.ready();
   }
@@ -966,9 +1003,7 @@ const main = async () => {
         // Ignore storage errors.
       }
       deleteModal?.hide();
-      const params = new URLSearchParams();
-      if (resolvedRole) params.set('role', resolvedRole);
-      window.location.href = `households.php${params.toString() ? `?${params.toString()}` : ''}`;
+      window.location.href = buildHouseholdsListUrl(currentDisplayYear);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to delete household right now.';
       window.alert(message);

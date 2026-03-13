@@ -17,4 +17,51 @@ if (is_array($currentUser)) {
 }
 
 auth_logout();
-auth_redirect('login.php');
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0;url=login.php">
+    <title>Signing Out</title>
+</head>
+<body>
+<script>
+(async function () {
+  const moduleScopeUrl = new URL("./", window.location.href).href;
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        registrations
+          .filter((registration) => String(registration.scope || "").startsWith(moduleScopeUrl))
+          .map((registration) => registration.unregister())
+      );
+    }
+  } catch (error) {
+    // Ignore service worker cleanup failures.
+  }
+
+  try {
+    if ("caches" in window) {
+      const cacheKeys = await caches.keys();
+      await Promise.all(
+        cacheKeys
+          .filter((cacheKey) => cacheKey.startsWith("registration-module-"))
+          .map((cacheKey) => caches.delete(cacheKey))
+      );
+    }
+  } catch (error) {
+    // Ignore cache cleanup failures.
+  }
+
+  window.location.replace("login.php");
+})();
+</script>
+<noscript>
+    <p>Signing out. If you are not redirected, <a href="login.php">continue to login</a>.</p>
+</noscript>
+</body>
+</html>

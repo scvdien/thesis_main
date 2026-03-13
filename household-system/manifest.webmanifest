@@ -1,0 +1,24 @@
+{
+  "name": "Household Registration Module",
+  "short_name": "Registration",
+  "start_url": "./registration.php",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#0d6efd",
+  "description": "Offline-capable household registration module with IndexedDB queue sync.",
+  "icons": [
+    {
+      "src": "./assets/img/barangay-cabarian-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/img/barangay-cabarian-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

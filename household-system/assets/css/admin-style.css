@@ -405,25 +405,26 @@ footer.footer {
 .report-modal-footer{
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:12px;
+  justify-content:center;
+  gap:16px;
   flex-wrap:wrap;
 }
 .report-modal-actions{
-  margin-left:auto;
   display:flex;
   align-items:flex-start;
   gap:12px;
   flex-wrap:wrap;
-  justify-content:flex-end;
+  justify-content:center;
 }
-.report-modal-pdf-stack{
+.report-modal-actions .btn{
+  min-width:190px;
+}
+.report-modal-side-stack{
   display:flex;
   flex-direction:column;
-  align-items:stretch;
   gap:10px;
 }
-.report-modal-pdf-stack .btn{
+.report-modal-side-stack .btn{
   width:100%;
 }
 .btn-report-pdf{
@@ -435,6 +436,11 @@ footer.footer {
   border-color:#0d425d;
   background:#0d425d;
   color:#fff;
+}
+.report-modal-delete-btn{
+  min-width:0;
+  padding-inline:18px;
+  white-space:nowrap;
 }
 .report-modal-delete-icon-btn{
   width:36px;
@@ -474,10 +480,16 @@ footer.footer {
     justify-content:center;
   }
   .report-modal-actions{
-    margin-left:0;
     width:100%;
     justify-content:center;
     align-items:center;
+  }
+  .report-modal-actions .btn{
+    width:100%;
+    min-width:0;
+  }
+  .report-modal-side-stack{
+    width:100%;
   }
 }
 .modern-modal p{
@@ -794,7 +806,6 @@ footer.footer {
   .settings-form-grid{
     grid-template-columns:1fr;
   }
-
   /* Mobile stacked tables */
   .stack-table-wrap{
     padding:0;

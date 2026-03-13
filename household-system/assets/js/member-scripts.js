@@ -6,6 +6,7 @@
     const householdIdFromQuery = params.get("hid") || "";
     const roleFromQuery = params.get("role") || "";
     const editHouseholdIdFromQuery = params.get("edit") || "";
+    const registrationYearFromQuery = params.get("year") || "";
     const PRESERVE_DRAFT_FLAG_KEY = "registration_preserve_draft";
 
     const MEMBERS_KEY = isHouseholdViewMode ? "household_view_temp_members" : "household_members";
@@ -137,10 +138,7 @@
       setValue("philid", member.philid);
       setValue("driver_license", member.driver_license);
       setValue("passport", member.passport);
-      setValue("num_members", member.num_members);
       setValue("relation_to_head", member.relation_to_head);
-      setValue("num_children", member.num_children);
-      setValue("partner_name", member.partner_name);
       sexSelect.value = member.sex || "";
       ageInput.value = member.age || calculateAge(member.birthday);
     };
@@ -203,6 +201,9 @@
       const next = new URLSearchParams();
       if (editHouseholdIdFromQuery) {
         next.set("edit", editHouseholdIdFromQuery);
+      }
+      if (registrationYearFromQuery) {
+        next.set("year", registrationYearFromQuery);
       }
       setPreserveDraftFlag();
       window.location.href = `registration.php${next.toString() ? `?${next.toString()}` : ""}#members`;
@@ -273,10 +274,7 @@
         philid: document.getElementById("philid").value.trim(),
         driver_license: document.getElementById("driver_license").value.trim(),
         passport: document.getElementById("passport").value.trim(),
-        num_members: document.getElementById("num_members").value,
-        relation_to_head: document.getElementById("relation_to_head").value.trim(),
-        num_children: document.getElementById("num_children").value,
-        partner_name: document.getElementById("partner_name").value.trim()
+        relation_to_head: document.getElementById("relation_to_head").value.trim()
       };
 
       const members = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "[]");

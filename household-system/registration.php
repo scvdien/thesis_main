@@ -38,7 +38,13 @@ if ($brandCity !== '' && stripos($footerLocationLabel, $brandCity) === false) {
   $footerLocationLabel = trim($footerLocationLabel . ', ' . $brandCity);
 }
 $footerSystemLabel = trim($footerLocationLabel . ' Household Information Management System');
+$editHouseholdId = trim((string) ($_GET['edit'] ?? ''));
+$isRegistrationEditMode = $editHouseholdId !== '';
+$registrationRequiresCredentialUpdate = $authRole === AUTH_ROLE_STAFF && !empty($authUser['requires_credential_update']);
+$registrationCurrentUsername = (string) ($authUser['username'] ?? '');
 $registrationCsrfToken = auth_csrf_token();
+$registrationStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
+$registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-scripts.js') ?: time());
 ?>
 <!DOCTYPE html>
@@ -47,15 +53,21 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="<?= htmlspecialchars($registrationCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+  <meta name="theme-color" content="#0d6efd">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>Household Registration</title>
 
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/registration-style.css">
+  <link rel="stylesheet" href="assets/css/registration-style.css?v=<?= htmlspecialchars($registrationStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 
-<body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
+<body
+  data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-requires-credential-update="<?= $registrationRequiresCredentialUpdate ? 'true' : 'false' ?>"
+  data-current-username="<?= htmlspecialchars($registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?>"
+>
 <?php echo auth_client_role_script($authRole); ?>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
@@ -127,9 +139,13 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
           <div class="content-subtitle content-subtitle-mobile"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></div>
         </div>
       </div>
-      <div class="content-meta">
-        <span class="badge rounded-pill">Required fields are marked *</span>
-      </div>
+        <div class="content-meta">
+          <div class="content-meta-actions">
+            <button type="button" class="btn btn-outline-primary btn-sm" id="loadExistingBtn">
+              <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? 'Back to Registration' : 'Load Existing Household' ?>
+            </button>
+          </div>
+        </div>
     </div>
 
     <form id="censusForm">
@@ -138,7 +154,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
     <div class="card section-card mb-4">
       <div class="card-header section-header d-flex justify-content-between align-items-center">
         <span>A. Household Head Information</span>
-        <span class="badge rounded-pill">Required</span>
+        <span class="badge rounded-pill">Required fields are marked *</span>
       </div>
       <div class="card-body">
         <div class="row g-3">
@@ -277,9 +293,9 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
       <div class="card-header section-header">H. Household Data</div>
       <div class="card-body">
         <div class="row g-3 household-data-primary-row">
-          <div class="col-md-3"><label class="form-label required">No. of Household Members</label><input type="number" class="form-control" name="num_members" required></div>
+          <div class="col-md-3"><label class="form-label required">No. of Household Members</label><input type="number" class="form-control" name="num_members" required readonly></div>
           <div class="col-md-3"><label class="form-label">Relationship to Head</label><input type="text" class="form-control" name="relation_to_head"></div>
-          <div class="col-md-3"><label class="form-label">No. of Children</label><input type="number" class="form-control" name="num_children"></div>
+          <div class="col-md-3"><label class="form-label">No. of Children</label><input type="number" class="form-control" name="num_children" readonly></div>
           <div class="col-md-3"><label class="form-label">Marital Partner Name</label><input type="text" class="form-control" name="partner_name" placeholder="optional"></div>
         </div>
       </div>
@@ -333,14 +349,16 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
     <div class="action-bar">
       <div class="action-buttons">
         <button type="button" class="btn btn-outline-primary" id="previewBtn"><i class="bi bi-eye"></i> Preview</button>
+        <?php if (!$isRegistrationEditMode): ?>
         <button type="button" class="btn btn-secondary" id="clearBtn"><i class="bi bi-x-circle"></i> Clear</button>
+        <?php endif; ?>
         <button type="button" class="btn btn-primary" id="saveBtn"><i class="bi bi-save"></i> Save Registration</button>
       </div>
     </div>
 
     </form>
 
-    <footer class="footer page-footer py-3 text-center mt-4">
+    <footer class="footer page-footer py-3 text-center">
       <div class="footer-inner">
         <p class="mb-1 fw-semibold"><?= htmlspecialchars($footerSystemLabel, ENT_QUOTES, 'UTF-8') ?></p>
         <p class="mb-0 small">&copy; <span id="year"></span> <?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></p>
@@ -384,6 +402,56 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
           <i class="bi bi-trash"></i> Delete
         </button>
         <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Staff Credential Update Modal -->
+<div class="modal fade" id="staffCredentialsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered staff-credentials-dialog">
+    <div class="modal-content modern-modal staff-credentials-modal">
+      <div class="staff-credentials-shell">
+        <div class="staff-credentials-hero">
+          <div class="staff-credentials-icon">
+            <i class="bi bi-shield-lock-fill"></i>
+          </div>
+          <div class="staff-credentials-copy">
+            <span class="staff-credentials-badge">Required Update</span>
+            <h5 class="modal-title">Update Temporary Credentials</h5>
+            <p>Your temporary staff credentials must be updated before you can continue using the registration module.</p>
+          </div>
+        </div>
+
+        <div class="staff-credentials-grid">
+          <div class="staff-credentials-field">
+            <label class="form-label small" for="staffCredentialsCurrentUsername">Current Username</label>
+            <input type="text" class="form-control" id="staffCredentialsCurrentUsername" readonly>
+          </div>
+          <div class="staff-credentials-field">
+            <label class="form-label small" for="staffCredentialsCurrentPassword">Temporary Password</label>
+            <input type="password" class="form-control" id="staffCredentialsCurrentPassword" placeholder="Enter temporary password" autocomplete="current-password">
+          </div>
+          <div class="staff-credentials-field">
+            <label class="form-label small" for="staffCredentialsNewUsername">New Username</label>
+            <input type="text" class="form-control" id="staffCredentialsNewUsername" placeholder="Keep or change username" autocomplete="username">
+          </div>
+          <div class="staff-credentials-field">
+            <label class="form-label small" for="staffCredentialsNewPassword">New Password</label>
+            <input type="password" class="form-control" id="staffCredentialsNewPassword" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
+          </div>
+          <div class="staff-credentials-field staff-credentials-field-full">
+            <label class="form-label small" for="staffCredentialsConfirmPassword">Confirm New Password</label>
+            <input type="password" class="form-control" id="staffCredentialsConfirmPassword" placeholder="Re-type new password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
+          </div>
+        </div>
+
+        <div class="staff-credentials-notice text-muted" id="staffCredentialsNotice" hidden></div>
+
+        <div class="staff-credentials-actions">
+          <a href="logout.php" class="btn btn-secondary btn-modern">Logout</a>
+          <button type="button" class="btn btn-primary btn-modern" id="staffCredentialsSaveBtn">Save New Credentials</button>
+        </div>
       </div>
     </div>
   </div>
@@ -452,6 +520,57 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
       <div class="d-flex justify-content-center gap-2 flex-wrap">
         <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary btn-modern" id="saveConfirm">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Load Existing Household Modal -->
+<div class="modal fade" id="loadHouseholdModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg load-household-dialog">
+    <div class="modal-content modern-modal load-household-modal">
+      <div class="modal-header border-0">
+        <div>
+          <h5 class="modal-title mb-1">Load Existing Household</h5>
+          <p class="text-muted small mb-0">Find a household record by year, household ID, head name, or zone to continue editing.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="load-household-toolbar">
+          <div class="load-household-field">
+            <label for="loadHouseholdYear" class="form-label">Year</label>
+            <select class="form-select" id="loadHouseholdYear"></select>
+          </div>
+          <div class="load-household-field load-household-search-field">
+            <label for="loadHouseholdSearch" class="form-label visually-hidden">Search</label>
+            <div class="load-household-search-wrap">
+              <input
+                type="search"
+                class="form-control"
+                id="loadHouseholdSearch"
+                placeholder="Search head, household ID, or zone"
+                autocomplete="off"
+              >
+              <button type="button" class="btn load-household-inline-btn" id="loadHouseholdSearchBtn" aria-label="Search households">
+                <i class="bi bi-search"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="load-household-status text-muted mb-0 d-none" id="loadHouseholdStatus"></p>
+        <div class="load-household-content">
+          <div class="load-household-empty" id="loadHouseholdEmpty">
+            <div class="load-household-empty-icon">
+              <i class="bi bi-search"></i>
+            </div>
+            <div class="load-household-empty-copy">
+              <div class="load-household-empty-title" id="loadHouseholdEmptyTitle">Ready to search</div>
+              <p class="mb-0" id="loadHouseholdEmptyText">Select a year, enter a search term, then click Search.</p>
+            </div>
+          </div>
+          <div class="load-household-results" id="loadHouseholdResults"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -538,6 +657,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 
 <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
 <script src="assets/js/indexeddb-storage-scripts.js"></script>
+<script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($registrationOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/registration-scripts.js?v=<?= htmlspecialchars($registrationScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 
 </body>

@@ -27,6 +27,7 @@ window.addEventListener('resize', () => {
 
 const API_ENDPOINT = 'registration-sync.php';
 const RESIDENT_FETCH_LIMIT = 1000;
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
 const state = {
   rows: [],
@@ -735,7 +736,8 @@ const postResidentAction = async (payload) => {
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json'
+      Accept: 'application/json',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
     },
     body: JSON.stringify(payload)
   });
@@ -935,11 +937,7 @@ const populateResidentModal = (details, loadErrorMessage = '') => {
     ['rdTIN', 'tin'],
     ['rdPhilID', 'philid'],
     ['rdDriverLicense', 'driver_license'],
-    ['rdPassport', 'passport'],
-    ['rdNumMembers', 'num_members'],
-    ['rdRelationToHead', 'relation_to_head'],
-    ['rdNumChildren', 'num_children'],
-    ['rdPartnerName', 'partner_name']
+    ['rdPassport', 'passport']
   ];
 
   fieldMap.forEach(([elementId, key]) => {

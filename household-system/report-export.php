@@ -2302,7 +2302,7 @@ if ($origin !== '' && in_array($origin, $allowedOrigins, true)) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
     header('Access-Control-Allow-Methods: POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Accept');
+    header('Access-Control-Allow-Headers: Content-Type, Accept, X-CSRF-Token');
 }
 if ($requestMethod === 'OPTIONS') {
     http_response_code(204);
@@ -2312,6 +2312,13 @@ if ($requestMethod === 'OPTIONS') {
 if ($requestMethod !== 'POST') {
     header('Allow: POST');
     respondWithError(405, 'Method not allowed. Use POST.');
+}
+
+if (PHP_SAPI !== 'cli') {
+    $csrfToken = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    if (!auth_csrf_valid($csrfToken)) {
+        respondWithError(419, 'Invalid CSRF token.');
+    }
 }
 
 $raw = file_get_contents('php://input');
