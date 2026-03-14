@@ -81,6 +81,16 @@ const storage = window.createIndexedStorageProxy
 
 const memberDetailsModalEl = document.getElementById('memberDetailsModal');
 const memberDetailsModal = memberDetailsModalEl ? new bootstrap.Modal(memberDetailsModalEl) : null;
+const logoutBtn = document.getElementById('logoutBtn');
+const logoutModalEl = document.getElementById('logoutModal');
+const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
+
+if (logoutBtn && logoutModal) {
+  logoutBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    logoutModal.show();
+  });
+}
 
 const parseHouseholdId = (value) => {
   const match = String(value || '').match(/^HH-(\d{4})-(\d+)$/i);

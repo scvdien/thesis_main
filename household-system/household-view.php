@@ -62,7 +62,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
         <a href="residents.php"><i class="bi bi-people"></i>Residents</a>
         <a href="reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
         <a href="settings.php"><i class="bi bi-gear"></i>Settings</a>
-        <a href="#" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a>
+        <a href="#" class="text-danger" id="logoutBtn"><i class="bi bi-box-arrow-right"></i>Logout</a>
       </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
@@ -437,6 +437,22 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
             <i class="bi bi-trash"></i> Delete Member
           </button>
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="logoutModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning">
+          <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Logout Confirmation</h5>
+        <p class="mb-3">Are you sure you want to log out?</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <a href="logout.php" class="btn btn-danger btn-modern">Logout</a>
         </div>
       </div>
     </div>
