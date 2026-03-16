@@ -110,6 +110,81 @@
   font-size:0.86rem;
 }
 
+.settings-panel--credentials{
+  padding:18px 18px 16px;
+}
+
+.credentials-badge{
+  padding:0.48rem 0.78rem;
+  border-radius:12px;
+  font-size:0.8rem;
+  font-weight:700;
+}
+
+.credentials-start-btn{
+  border-radius:999px;
+  padding:7px 14px;
+  font-size:0.82rem;
+  font-weight:700;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.settings-panel--credentials .section-head{
+  margin-bottom:8px;
+}
+
+.settings-panel--credentials .section-head h5{
+  font-size:1rem;
+}
+
+.settings-panel--credentials .account-form-grid{
+  gap:14px 16px;
+  margin-top:0;
+}
+
+.settings-panel--credentials .form-label{
+  margin-bottom:6px;
+  color:#465644;
+  font-size:0.8rem;
+  font-weight:700;
+}
+
+.settings-panel--credentials .form-control{
+  font-size:0.92rem;
+  background:#f7f9fc;
+}
+
+.settings-panel--credentials #nurseRoleDisplay{
+  background:#f1f5ef;
+  color:#3e4e3b;
+  font-weight:600;
+}
+
+.settings-panel--credentials .account-form-actions{
+  justify-content:space-between;
+  gap:10px;
+  padding-top:12px;
+}
+
+.settings-panel--credentials .account-field-right{
+  grid-column:2;
+}
+
+.settings-panel--credentials .account-helper{
+  max-width:220px;
+  color:#6f7f8c;
+  font-size:0.78rem;
+  line-height:1.35;
+}
+
+.settings-panel--credentials .btn-create-account{
+  padding:9px 20px;
+  font-size:0.92rem;
+  box-shadow:0 10px 20px rgba(33,111,27,0.18);
+}
+
 .section-divider{
   height:1px;
   background:#dbe4ee;
@@ -288,13 +363,6 @@
 
 .settings-panel.is-active{
   display:block;
-}
-
-.nurse-role-note{
-  display:block;
-  margin-top:6px;
-  color:#64748b;
-  font-size:0.78rem;
 }
 
 .edit-actions{
@@ -661,6 +729,15 @@
 
   .account-form-grid{
     grid-template-columns:1fr;
+  }
+
+  .settings-panel--credentials .account-field-right{
+    grid-column:auto;
+  }
+
+  .credentials-start-btn{
+    width:100%;
+    justify-content:center;
   }
 
   .logs-year-filter{

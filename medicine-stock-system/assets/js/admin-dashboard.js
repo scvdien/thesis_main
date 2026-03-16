@@ -62,6 +62,215 @@
     if (!el) return;
     el.innerHTML = value;
   };
+  const MONITORING_SNAPSHOT_STORAGE = "mss_monitoring_snapshot_v1";
+  const readMonitoringSnapshot = () => {
+    try {
+      const raw = localStorage.getItem(MONITORING_SNAPSHOT_STORAGE);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  };
+  const balanceTone = (item) => (item?.isLow ? "low" : item?.isOverstock ? "over" : "balanced");
+  const balanceLabel = (item) => (item?.isLow ? "Low Stock" : item?.isOverstock ? "Overstock" : "Balanced");
+  const stockNote = (item) => {
+    if (!item) return "Monitoring snapshot will appear here.";
+    if (item.isLow) {
+      return `${item.shortName} is below its reorder level and needs replenishment soon.`;
+    }
+    if (item.isOverstock) {
+      return `${item.shortName} is above the monitored stock ceiling and should be watched for slow movement.`;
+    }
+    return `${item.shortName} remains within the monitored stock range for the current cycle.`;
+  };
+  const renderMovementSnapshotItem = (medicine, type) => `
+    <article class="movement-item movement-item--${type}">
+      <div class="movement-item__icon movement-item__icon--${type}">
+        <i class="${medicine.icon || "bi bi-capsule"}"></i>
+      </div>
+      <div class="movement-item__copy">
+        <strong>${medicine.shortName || medicine.name}</strong>
+        <span>${type === "fast" ? "High stock turnover" : "Low stock turnover"}</span>
+      </div>
+      <div class="movement-item__meta">
+        <div class="movement-item__value">
+          <strong>${formatNumber(medicine.monthlyUsage)}</strong>
+          <span>Dispensed</span>
+        </div>
+        <div class="movement-item__status movement-item__status--${type}">
+          <i class="bi ${type === "fast" ? "bi-arrow-up-right" : "bi-arrow-down-right"}"></i>
+          <span>${type === "fast" ? "Fast Moving" : "Slow Moving"}</span>
+        </div>
+      </div>
+    </article>
+  `;
+  const applyLiveMonitoringSnapshot = (snapshot = readMonitoringSnapshot()) => {
+    if (!snapshot) return;
+
+    const fastMovement = Array.isArray(snapshot.movement?.fast) ? snapshot.movement.fast : [];
+    const slowMovement = Array.isArray(snapshot.movement?.slow) ? snapshot.movement.slow : [];
+    if (document.getElementById("stockFastList")) {
+      setText("stockMovementFastCount", `${formatNumber(fastMovement.length)} items`);
+      setText("stockMovementSlowCount", `${formatNumber(slowMovement.length)} items`);
+      setHTML(
+        "stockFastList",
+        fastMovement.length
+          ? fastMovement.map((medicine) => renderMovementSnapshotItem(medicine, "fast")).join("")
+          : '<div class="text-muted small">No dispensing movement yet.</div>'
+      );
+      setHTML(
+        "stockSlowList",
+        slowMovement.length
+          ? slowMovement.map((medicine) => renderMovementSnapshotItem(medicine, "slow")).join("")
+          : '<div class="text-muted small">No slow-moving items yet.</div>'
+      );
+    }
+
+    const expiringMedicines = Array.isArray(snapshot.expiry?.medicines) ? snapshot.expiry.medicines : [];
+    const slowConsumption = Array.isArray(snapshot.expiry?.slowConsumption) ? snapshot.expiry.slowConsumption : [];
+    const riskItem = snapshot.expiry?.riskItem || null;
+    if (document.getElementById("expiryMedicineList")) {
+      setText("expirySoonCount", `${formatNumber(snapshot.expiry?.soonCount || 0)} medicines`);
+      setText("expiryThirtyCount", `${formatNumber(snapshot.expiry?.withinThirtyCount || 0)} medicines`);
+      setText("expiryInventoryTotal", `${formatNumber(snapshot.expiry?.inventoryTotalUnits || 0)} units`);
+      setText("expirySlowCount", `${formatNumber(snapshot.expiry?.slowConsumptionCount || 0)} medicines`);
+      setText("expiryRiskTitle", riskItem?.shortName || riskItem?.name || "No expiry risk");
+      setHTML(
+        "expiryMedicineList",
+        expiringMedicines.length
+          ? expiringMedicines.map((medicine) => `
+              <article class="expiry-medicine-item">
+                <div class="expiry-medicine-item__icon">
+                  <i class="${medicine.icon || "bi bi-capsule"}"></i>
+                </div>
+                <div class="expiry-medicine-item__copy">
+                  <strong>${medicine.shortName || medicine.name}</strong>
+                  <span>Expiry: ${medicine.expiryLabel || "-"}</span>
+                </div>
+                <div class="expiry-days-pill expiry-days-pill--${medicine.expiryTone || "watch"}">
+                  <small>${medicine.daysLeft < 0 ? "Expired" : "Days Left"}</small>
+                  <strong>${formatNumber(Math.abs(medicine.daysLeft))}</strong>
+                </div>
+              </article>
+            `).join("")
+          : '<div class="text-muted small">No expiring medicines within the watch window.</div>'
+      );
+      setHTML(
+        "expiryConsumptionList",
+        slowConsumption.length
+          ? slowConsumption.map((item) => `
+              <article class="expiry-consumption-item">
+                <div class="expiry-consumption-item__left">
+                  <div class="expiry-consumption-item__icon">
+                    <i class="${item.icon || "bi bi-capsule"}"></i>
+                  </div>
+                  <div class="expiry-consumption-item__copy">
+                    <strong>${item.shortName || item.name}</strong>
+                    <span>${formatNumber(item.monthlyUsage)} dispensed / month</span>
+                  </div>
+                </div>
+                <div class="expiry-consumption-item__meta">
+                  <span class="expiry-rate-pill expiry-rate-pill--${item.consumptionTone || "moderate"}">${item.consumptionLevel || "Moderate"}</span>
+                  <span class="expiry-consumption-item__value">${formatNumber(item.monthlyUsage)} / month</span>
+                </div>
+              </article>
+            `).join("")
+          : '<div class="text-muted small">No recent consumption history yet.</div>'
+      );
+      setHTML(
+        "expiryRiskFacts",
+        riskItem
+          ? [
+              { label: "Stock", value: formatNumber(riskItem.stock) },
+              { label: "Consumption", value: riskItem.consumptionLevel || "Moderate" },
+              { label: "Expiry", value: riskItem.daysLeft < 0 ? `Expired ${formatNumber(Math.abs(riskItem.daysLeft))} days ago` : `${formatNumber(riskItem.daysLeft)} days` }
+            ].map((item) => `
+              <div class="expiry-risk-fact">
+                <span>${item.label}</span>
+                <strong>${item.value}</strong>
+              </div>
+            `).join("")
+          : '<div class="text-muted small">No expiry risk detected.</div>'
+      );
+    }
+
+    const balance = snapshot.balance || {};
+    const balanceRows = Array.isArray(balance.rows) ? balance.rows : [];
+    const focusItem = balance.focusItem || balanceRows[0] || null;
+    const comparisonItems = Array.isArray(balance.comparisonItems) && balance.comparisonItems.length
+      ? balance.comparisonItems
+      : balanceRows.slice(0, 3);
+    if (document.getElementById("balanceStockRows")) {
+      const scaleMax = Math.max(
+        1,
+        ...balanceRows.map((item) => Math.max(item.stock || 0, item.overstockThreshold || 0, item.reorderLevel || 0))
+      );
+      const currentPercent = focusItem ? Math.min(100, ((focusItem.stock || 0) / scaleMax) * 100) : 0;
+
+      setText("balanceTotalMedicines", `${formatNumber(balance.totalMedicines || balanceRows.length)} items`);
+      setText("balanceBalancedCount", `${formatNumber(balance.balancedCount || 0)} medicines`);
+      setText("balanceLowCount", `${formatNumber(balance.lowCount || 0)} medicines`);
+      setText("balanceOverstockCount", `${formatNumber(balance.overstockCount || 0)} medicines`);
+      setText("balanceFocusTitle", `${focusItem?.shortName || focusItem?.name || "Medicine"} Stock Level`);
+      setText("balanceFocusValue", `Current Stock: ${formatNumber(focusItem?.stock || 0)}`);
+      setText("balanceFocusNote", stockNote(focusItem));
+
+      const focusFill = document.getElementById("balanceFocusFill");
+      if (focusFill) focusFill.style.width = `${currentPercent}%`;
+
+      setHTML(
+        "balanceStockRows",
+        balanceRows.slice(0, 3).map((item) => `
+          <div class="balance-table__row">
+            <div class="balance-table__medicine">
+              <div class="balance-table__icon">
+                <i class="${item.icon || "bi bi-capsule"}"></i>
+              </div>
+              <div class="balance-table__copy">
+                <strong>${item.shortName || item.name}</strong>
+                <span>Stock</span>
+              </div>
+            </div>
+            <div class="balance-table__stock">${formatNumber(item.stock)}</div>
+            <div class="balance-table__status">
+              <span class="balance-status-pill balance-status-pill--${balanceTone(item)}">${balanceLabel(item)}</span>
+            </div>
+          </div>
+        `).join("")
+      );
+
+      setHTML(
+        "balanceComparisonList",
+        comparisonItems.map((item) => {
+          const currentWidth = Math.min(100, ((item.stock || 0) / scaleMax) * 100);
+          const targetWidth = Math.min(100, (((item.reorderLevel || 0) * 1.5) / scaleMax) * 100);
+          return `
+            <article class="balance-comparison-item">
+              <div class="balance-comparison-item__head">
+                <strong>${item.shortName || item.name}</strong>
+                <span>${balanceLabel(item)}</span>
+              </div>
+              <div class="balance-comparison-bars">
+                <div class="balance-comparison-bar">
+                  <small>Current</small>
+                  <div class="balance-comparison-bar__track">
+                    <span data-tone="current" style="width:${currentWidth}%"></span>
+                  </div>
+                </div>
+                <div class="balance-comparison-bar">
+                  <small>Target</small>
+                  <div class="balance-comparison-bar__track">
+                    <span data-tone="target" style="width:${targetWidth}%"></span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join("")
+      );
+    }
+  };
 
   const movingAverageForecast = (series, windowSize = 3) => {
     const safeSeries = Array.isArray(series) ? series.map(toNumber) : [];
@@ -472,7 +681,7 @@
   const renderSupplyDeliveryScenario = () => {
     const leadTimeChartEl = document.getElementById("supplyLeadTimeChart");
     const supplyScenario = {
-      source: "Ligao City Health Office (RHU)",
+      source: "Ligao City Coastal Rural Health Unit",
       averageLeadTime: 4,
       lastDelivery: "July 8",
       onTimeRate: 92,
@@ -802,6 +1011,17 @@
     if (document.getElementById("supplyLeadTimeChart")) renderSupplyDeliveryScenario();
     if (document.getElementById("expiryMedicineList")) renderExpiryConsumptionScenario();
     if (document.getElementById("balanceStockRows")) renderInventoryBalanceScenario();
+    applyLiveMonitoringSnapshot();
+    window.addEventListener("mss:notifications-synced", (event) => {
+      applyLiveMonitoringSnapshot(event.detail);
+    });
+    window.addEventListener("storage", (event) => {
+      if (event.key !== MONITORING_SNAPSHOT_STORAGE) return;
+      applyLiveMonitoringSnapshot();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") applyLiveMonitoringSnapshot();
+    });
     return;
   }
 
@@ -1280,7 +1500,7 @@
       icon: "bi bi-activity",
       title: `${dominantTrend.label} shows the strongest signal`,
       body: `${dominantTrend.label} accounts for ${formatPercent(dominantShare, 0)} of mapped medicine requests and moved ${formatChange(dominantTrend.growthPercent)} versus the previous quarter.`,
-      meta: "Medicine request frequency mapped to possible illness groups in Brgy. Cabarian"
+      meta: "Medicine request frequency mapped to possible illness groups in Cabarian, Ligao City"
     });
 
     const expiryAlert = expiryRows.find((row) => row.status === "High Risk") || expiryRows[0];

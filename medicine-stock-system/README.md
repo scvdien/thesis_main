@@ -1,6 +1,6 @@
 # medicine-stock-system
 
-Scaffold folder for the Medicine Stock Monitoring System in Barangay Cabarian, Ligao City.
+Scaffold folder for the Medicine Stock Monitoring System of Ligao City Coastal Rural Health Unit, Cabarian, Ligao City.
 
 Suggested next files:
 - `index.php`

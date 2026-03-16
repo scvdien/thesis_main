@@ -1,0 +1,232 @@
+.mss-system-toast-stack{
+  position:fixed;
+  top:112px;
+  right:20px;
+  z-index:1085;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  width:min(360px, calc(100vw - 24px));
+  pointer-events:none;
+}
+
+.mss-system-sound-toggle,
+.mss-system-browser-toggle{
+  pointer-events:auto;
+  border:1px solid #d5e2ca;
+  border-radius:999px;
+  background:rgba(250, 252, 247, 0.96);
+  box-shadow:0 12px 24px rgba(22, 54, 23, 0.12);
+  color:#325a33;
+  min-height:34px;
+  padding:0 12px;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:0.76rem;
+  font-weight:800;
+  letter-spacing:0.02em;
+}
+
+.mss-system-sound-toggle:hover,
+.mss-system-browser-toggle:hover{
+  background:#f2f7ec;
+  color:#214821;
+}
+
+.mss-system-sound-toggle.is-muted,
+.mss-system-browser-toggle.is-muted{
+  color:#7a8476;
+}
+
+.mss-system-toast{
+  pointer-events:auto;
+  position:relative;
+  overflow:hidden;
+  border:1px solid #dbe7d2;
+  border-radius:18px;
+  background:linear-gradient(145deg, rgba(252, 254, 249, 0.98), rgba(244, 249, 239, 0.96));
+  box-shadow:0 18px 36px rgba(22, 54, 23, 0.14);
+  color:#244126;
+  transform:translateY(-8px) scale(0.98);
+  opacity:0;
+  transition:opacity .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+
+.mss-system-toast.is-visible{
+  opacity:1;
+  transform:translateY(0) scale(1);
+}
+
+.mss-system-toast.is-hiding{
+  opacity:0;
+  transform:translateY(-6px) scale(0.98);
+}
+
+.mss-system-toast::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:5px;
+  background:#90b47b;
+}
+
+.mss-system-toast--critical::before{
+  background:#c64535;
+}
+
+.mss-system-toast--high::before{
+  background:#df7b1c;
+}
+
+.mss-system-toast--medium::before{
+  background:#c3a330;
+}
+
+.mss-system-toast--low::before{
+  background:#7ba467;
+}
+
+.mss-system-toast__inner{
+  padding:14px 16px 14px 18px;
+}
+
+.mss-system-toast__head{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+}
+
+.mss-system-toast__eyebrow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:6px;
+  color:#60735a;
+  font-size:0.72rem;
+  font-weight:800;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+}
+
+.mss-system-toast__dot{
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  background:#90b47b;
+  flex:0 0 auto;
+}
+
+.mss-system-toast--critical .mss-system-toast__dot{
+  background:#c64535;
+}
+
+.mss-system-toast--high .mss-system-toast__dot{
+  background:#df7b1c;
+}
+
+.mss-system-toast--medium .mss-system-toast__dot{
+  background:#c3a330;
+}
+
+.mss-system-toast__title{
+  margin:0;
+  color:#244126;
+  font-family:"Sora", sans-serif;
+  font-size:0.98rem;
+  font-weight:700;
+  line-height:1.35;
+}
+
+.mss-system-toast__body{
+  margin:7px 0 0;
+  color:#5d6d57;
+  font-size:0.85rem;
+  line-height:1.5;
+}
+
+.mss-system-toast__meta{
+  margin-top:10px;
+  color:#758670;
+  font-size:0.76rem;
+  font-weight:700;
+}
+
+.mss-system-toast__close{
+  border:none;
+  background:rgba(36, 65, 38, 0.08);
+  color:#4f6549;
+  width:30px;
+  height:30px;
+  border-radius:10px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  transition:background-color .18s ease, color .18s ease, transform .18s ease;
+}
+
+.mss-system-toast__close:hover{
+  background:rgba(36, 65, 38, 0.14);
+  color:#244126;
+  transform:translateY(-1px);
+}
+
+.mss-system-toast__actions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:12px;
+}
+
+.mss-system-toast__badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  background:#ebf4e2;
+  color:#42673d;
+  font-size:0.72rem;
+  font-weight:800;
+  text-transform:capitalize;
+}
+
+.mss-system-toast--critical .mss-system-toast__badge{
+  background:#f9e0dc;
+  color:#a73728;
+}
+
+.mss-system-toast--high .mss-system-toast__badge{
+  background:#faead7;
+  color:#b55d0d;
+}
+
+.mss-system-toast--medium .mss-system-toast__badge{
+  background:#f7efd2;
+  color:#9b7a12;
+}
+
+.mss-system-toast__link{
+  border:none;
+  background:transparent;
+  color:#2f6a2f;
+  font-size:0.8rem;
+  font-weight:800;
+  padding:0;
+}
+
+.mss-system-toast__link:hover{
+  color:#1f4f21;
+}
+
+@media (max-width: 767px){
+  .mss-system-toast-stack{
+    top:96px;
+    right:12px;
+    left:12px;
+    width:auto;
+  }
+}

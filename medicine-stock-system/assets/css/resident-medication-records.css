@@ -1,0 +1,368 @@
+.resident-records-main{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+.resident-records-main .topbar{
+  margin-bottom:9px;
+}
+
+.records-shell{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:24px;
+  padding:18px;
+  box-shadow:0 10px 24px rgba(22, 54, 23, 0.05);
+}
+
+.records-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
+
+.records-search{
+  flex:1 1 320px;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:40px;
+  padding:0 14px;
+  border:1px solid #d7e0cf;
+  border-radius:16px;
+  background:#f7faf3;
+  color:#5a6c52;
+}
+
+.records-search i{
+  font-size:1rem;
+  color:#7b8a74;
+}
+
+.records-search input{
+  width:100%;
+  border:none;
+  background:transparent;
+  color:#244126;
+  font-size:0.9rem;
+  outline:none;
+}
+
+.records-search input::placeholder{
+  color:#7d8b76;
+}
+
+.records-toolbar__controls{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.records-select{
+  width:auto;
+  max-width:100%;
+  min-width:140px;
+  flex:0 0 auto;
+  box-sizing:border-box;
+  min-height:40px;
+  padding:0 34px 0 12px;
+  border:1px solid #d7e0cf;
+  border-radius:16px;
+  background:#f7faf3;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23244126' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 12px center;
+  background-size:14px;
+  color:#244126;
+  font-size:0.84rem;
+  font-weight:600;
+  outline:none;
+  appearance:none;
+  -webkit-appearance:none;
+  -moz-appearance:none;
+}
+
+.records-count-chip{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:32px;
+  padding:0 11px;
+  border-radius:999px;
+  background:#edf4e4;
+  color:#42673d;
+  font-size:0.74rem;
+  font-weight:700;
+  white-space:nowrap;
+}
+
+.records-grid{
+  display:block;
+}
+
+.records-card{
+  border:1px solid #e1ead9;
+  border-radius:22px;
+  background:#fff;
+  min-width:0;
+}
+
+.records-card--full{
+  width:100%;
+}
+
+.records-card__head{
+  padding:16px 18px 12px;
+  border-bottom:1px solid #e4ebdf;
+}
+
+.records-card__head h5{
+  margin:0;
+  color:#223d24;
+  font-size:1rem;
+  font-weight:700;
+}
+
+.resident-list{
+  display:flex;
+  flex-direction:column;
+  max-height:calc(100vh - 280px);
+  overflow:auto;
+}
+
+.resident-list__item{
+  border:none;
+  border-bottom:1px solid #e8eee3;
+  background:transparent;
+  width:100%;
+  text-align:left;
+  padding:14px 16px;
+  cursor:pointer;
+  transition:background-color .18s ease, border-color .18s ease;
+}
+
+.resident-list__item:last-child{
+  border-bottom:none;
+}
+
+.resident-list__item:hover{
+  background:#fbfcf8;
+}
+
+.resident-list__item.is-active{
+  background:#fbfcf8;
+  box-shadow:inset 2px 0 0 #2f8a24;
+}
+
+.resident-list__head{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+}
+
+.resident-list__title{
+  min-width:0;
+}
+
+.resident-list__title strong{
+  display:block;
+  color:#213d24;
+  font-size:0.92rem;
+  font-weight:700;
+}
+
+.resident-list__title span{
+  display:block;
+  margin-top:3px;
+  color:#78836f;
+  font-size:0.74rem;
+  font-weight:600;
+}
+
+.resident-list__meta{
+  margin-top:8px;
+  color:#5d6b55;
+  font-size:0.75rem;
+  font-weight:600;
+}
+
+.resident-list__foot{
+  margin-top:7px;
+  color:#7b8774;
+  font-size:0.72rem;
+  line-height:1.45;
+}
+
+.records-empty{
+  padding:28px 20px;
+  color:#6b7765;
+  font-size:0.86rem;
+  font-weight:600;
+  text-align:center;
+}
+
+.record-detail__title-wrap{
+  min-width:0;
+}
+
+.record-detail__title-wrap h5{
+  margin:0;
+  color:#223d24;
+  font-size:1.08rem;
+  font-weight:700;
+}
+
+.record-detail__title-wrap p{
+  margin:6px 0 0;
+  color:#697665;
+  font-size:0.78rem;
+  line-height:1.5;
+}
+
+.record-detail__submeta{
+  margin-top:8px;
+  color:#7b8774;
+  font-size:0.74rem;
+  font-weight:600;
+  line-height:1.5;
+}
+
+.record-history{
+  border:1px solid #e3ebdd;
+  border-radius:18px;
+  overflow:hidden;
+  background:#fff;
+}
+
+.record-history__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:13px 16px;
+  border-bottom:1px solid #e4ebdf;
+  background:#fff;
+}
+
+.record-history__head h6{
+  margin:0;
+  color:#223d24;
+  font-size:0.9rem;
+  font-weight:700;
+}
+
+.record-history__count{
+  color:#75816f;
+  font-size:0.74rem;
+  font-weight:700;
+}
+
+.record-history__table-wrap{
+  overflow:auto;
+}
+
+.record-history__table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:620px;
+}
+
+.record-history__table th,
+.record-history__table td{
+  padding:13px 16px;
+  border-bottom:1px solid #e8eee3;
+  text-align:left;
+  vertical-align:top;
+}
+
+.record-history__table th{
+  color:#5e6c56;
+  font-size:0.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+  background:#fdfefb;
+}
+
+.record-history__table td{
+  color:#2d4330;
+  font-size:0.8rem;
+  line-height:1.5;
+}
+
+.record-history__table tbody tr:last-child td{
+  border-bottom:none;
+}
+
+.record-history__empty{
+  color:#6b7765;
+  text-align:center;
+  font-weight:600;
+}
+
+.record-history-modal{
+  border:none;
+  border-radius:22px;
+  box-shadow:0 18px 40px rgba(22, 54, 23, 0.12);
+}
+
+.record-history-modal .modal-header,
+.record-history-modal .modal-body{
+  padding-left:22px;
+  padding-right:22px;
+}
+
+.record-history-modal .modal-header{
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding-top:20px;
+}
+
+.record-history-modal .btn-close{
+  margin:2px 0 0 auto;
+}
+
+@media (max-width: 1199px){
+}
+
+@media (max-width: 991px){
+  .resident-list{
+    max-height:none;
+  }
+}
+
+@media (max-width: 767px){
+  .records-shell{
+    padding:14px;
+    border-radius:20px;
+  }
+
+  .records-toolbar{
+    align-items:stretch;
+  }
+
+  .records-search{
+    flex-basis:100%;
+  }
+
+  .records-toolbar__controls{
+    width:100%;
+  }
+
+  .records-select{
+    width:auto;
+    flex:1 1 150px;
+    min-width:0;
+  }
+
+  .records-count-chip{
+    min-width:110px;
+  }
+}

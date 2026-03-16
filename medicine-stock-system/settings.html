@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Settings - Medicine Stock System</title>
+  <title>Settings - Ligao City Coastal RHU</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,24 +12,26 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="assets/css/admin-dashboard.css">
   <link rel="stylesheet" href="assets/css/settings.css">
+  <link rel="stylesheet" href="assets/css/system-notifications.css">
 </head>
 <body>
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
         <div class="brand d-flex align-items-center gap-2 mb-3">
-          <img src="assets/img/CityHealthOffice_LOGO.png" alt="City Health Office Logo">
+          <img src="assets/img/CityHealthOffice_LOGO.png" alt="Ligao City Coastal Rural Health Unit Logo">
           <div class="brand-text-wrap">
-            <span class="brand-title">City Health Office</span>
-            <span class="brand-sub">Medicine Stock Monitoring</span>
+            <span class="brand-title">Ligao City Coastal RHU</span>
+            <span class="brand-sub">Cabarian, Ligao City</span>
           </div>
         </div>
 
         <div class="menu">
           <a href="admin-dashboard.html"><i class="bi bi-speedometer2"></i>Dashboard</a>
-          <a href="#"><i class="bi bi-capsule-pill"></i>Medicine Inventory</a>
-          <a href="#"><i class="bi bi-file-earmark-text"></i>Reports</a>
-          <a href="#"><i class="bi bi-bell"></i>Notifications</a>
+          <a href="medicine-inventory.html"><i class="bi bi-capsule-pill"></i>Medicine Inventory</a>
+          <a href="resident-medication-records.html"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
+          <a href="reports.html"><i class="bi bi-file-earmark-text"></i>Reports</a>
+          <a href="notifications.html"><i class="bi bi-bell"></i>Notifications</a>
           <a href="settings.html" class="active"><i class="bi bi-gear"></i>Settings</a>
           <a href="#" class="text-danger" id="logoutLink"><i class="bi bi-box-arrow-right"></i>Logout</a>
         </div>
@@ -45,11 +47,7 @@
             </button>
             <div>
               <h4 class="mb-0 text-primary">Settings</h4>
-              <small class="text-muted">Nurse-in-Charge account controls, staff administration, and activity monitoring</small>
             </div>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            <span class="small fw-semibold text-muted">Signed in as Nurse-in-Charge</span>
           </div>
         </div>
 
@@ -63,7 +61,7 @@
             </div>
             <div class="settings-nav-group">
               <div class="settings-nav-title">Administration</div>
-              <a href="#manage-staff"><i class="bi bi-person-badge"></i>Manage Staff</a>
+              <a href="#manage-staff"><i class="bi bi-person-badge"></i>Manage BHW</a>
             </div>
             <div class="settings-nav-group">
               <div class="settings-nav-title">Monitoring</div>
@@ -73,57 +71,58 @@
           </aside>
 
           <div class="settings-content">
-            <section class="card-shell settings-panel is-active" id="nurse-credentials">
+            <section class="card-shell settings-panel settings-panel--credentials is-active" id="nurse-credentials">
               <div class="section-head section-head-split">
                 <div>
                   <h5>Admin Credentials</h5>
-                  <p>Update the single admin account used to access the medicine stock system.</p>
                 </div>
-                <span class="badge bg-primary-subtle text-primary">Security</span>
-              </div>
-
-              <form id="nurseSettingsForm" class="account-form-grid" autocomplete="off">
-                <div>
-                  <label for="nurseFullName" class="form-label">Full Name</label>
-                  <input type="text" id="nurseFullName" class="form-control" placeholder="Enter full name" required>
-                </div>
-                <div>
-                  <label for="nurseRoleDisplay" class="form-label">Role</label>
-                  <input type="text" id="nurseRoleDisplay" class="form-control" value="Nurse-in-Charge" readonly>
-                  <span class="nurse-role-note">Primary admin access remains exclusive to one Nurse-in-Charge account.</span>
-                </div>
-                <div>
-                  <label for="nurseUsername" class="form-label">Username</label>
-                  <input type="text" id="nurseUsername" class="form-control" placeholder="Enter username" required>
-                </div>
-                <div>
-                  <label for="nurseContact" class="form-label">Contact Number</label>
-                  <input type="text" id="nurseContact" class="form-control" placeholder="09XX-XXX-XXXX" required>
-                </div>
-                <div>
-                  <label for="nursePassword" class="form-label">New Password</label>
-                  <input type="password" id="nursePassword" class="form-control" placeholder="Leave blank to keep current password" minlength="8">
-                </div>
-                <div>
-                  <label for="nurseConfirmPassword" class="form-label">Confirm New Password</label>
-                  <input type="password" id="nurseConfirmPassword" class="form-control" placeholder="Re-enter new password" minlength="8">
-                </div>
-                <div class="account-form-actions">
-                  <div class="account-helper" id="nurseSettingsNotice">Primary admin access remains assigned to the Nurse-in-Charge only.</div>
-                  <button type="submit" class="btn btn-create-account">
-                    <i class="bi bi-shield-check"></i>Save Credentials
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <span class="badge bg-success-subtle text-success credentials-badge">Security</span>
+                  <button type="button" class="btn btn-outline-success credentials-start-btn d-none" id="nurseCredentialsStartBtn">
+                    <i class="bi bi-key"></i>Change Credentials
                   </button>
                 </div>
-              </form>
+              </div>
+
+              <div id="nurseCredentialsPanel">
+                <form id="nurseSettingsForm" class="account-form-grid" autocomplete="off">
+                  <div>
+                    <label for="nurseFullName" class="form-label">Full Name</label>
+                    <input type="text" id="nurseFullName" class="form-control" placeholder="Full name" required>
+                  </div>
+                  <div>
+                    <label for="nurseRoleDisplay" class="form-label">Role</label>
+                    <input type="text" id="nurseRoleDisplay" class="form-control" value="Nurse-in-Charge" readonly>
+                  </div>
+                  <div>
+                    <label for="nurseUsername" class="form-label">Username</label>
+                    <input type="text" id="nurseUsername" class="form-control" placeholder="Username" required>
+                  </div>
+                  <div>
+                    <label for="nursePassword" class="form-label">New Password</label>
+                    <input type="password" id="nursePassword" class="form-control" placeholder="Enter new password" minlength="8">
+                  </div>
+                  <div class="account-field-right">
+                    <label for="nurseConfirmPassword" class="form-label">Confirm New Password</label>
+                    <input type="password" id="nurseConfirmPassword" class="form-control" placeholder="Confirm password" minlength="8">
+                  </div>
+                  <div class="account-form-actions">
+                    <div class="account-helper" id="nurseSettingsNotice">Admin account only.</div>
+                    <button type="submit" class="btn btn-create-account">
+                      <i class="bi bi-shield-check"></i>Save Credentials
+                    </button>
+                  </div>
+                </form>
+              </div>
             </section>
 
             <section class="card-shell settings-panel" id="manage-staff">
               <div class="section-head section-head-split">
                 <div>
-                  <h5>Create Staff Account</h5>
-                  <p>Nurse-in-Charge creates staff accounts and activates them immediately.</p>
+                  <h5>Create BHW Account</h5>
+                  <p>Nurse-in-Charge creates BHW accounts and activates them immediately.</p>
                 </div>
-                <span class="badge bg-success-subtle text-success">Create Staff Account</span>
+                <span class="badge bg-success-subtle text-success">Create BHW Account</span>
               </div>
 
               <form id="createAccountForm" class="account-form-grid" autocomplete="off">
@@ -133,8 +132,8 @@
                 </div>
                 <div>
                   <label for="accountRoleDisplay" class="form-label">Role</label>
-                  <input type="text" id="accountRoleDisplay" class="form-control" value="Staff" readonly>
-                  <input type="hidden" id="accountRole" value="Staff">
+                  <input type="text" id="accountRoleDisplay" class="form-control" value="BHW" readonly>
+                  <input type="hidden" id="accountRole" value="BHW">
                 </div>
                 <div>
                   <label for="accountUsername" class="form-label">Username</label>
@@ -148,22 +147,16 @@
                   <label for="accountContact" class="form-label">Contact Number</label>
                   <input type="text" id="accountContact" class="form-control" placeholder="09XX-XXX-XXXX" required>
                 </div>
-                <div>
-                  <label for="accountType" class="form-label">Account Type</label>
-                  <select id="accountType" class="form-select" required>
-                    <option value="Staff">Staff</option>
-                    <option value="BHW">BHW</option>
-                  </select>
-                </div>
+                <input type="hidden" id="accountType" value="BHW">
                 <div class="account-form-actions">
-                  <div class="account-helper">Newly created staff accounts are activated immediately.</div>
+                  <div class="account-helper">Newly created BHW accounts are activated immediately.</div>
                   <button type="submit" class="btn btn-create-account">
-                    <i class="bi bi-person-check"></i>Create Staff Account
+                    <i class="bi bi-person-check"></i>Create BHW Account
                   </button>
                 </div>
               </form>
 
-              <div class="small text-muted mt-2" id="usersListNotice">Manage your staff accounts here.</div>
+              <div class="small text-muted mt-2" id="usersListNotice">Manage your BHW accounts here.</div>
               <div class="section-divider"></div>
               <div class="account-list" id="usersList"></div>
             </section>
@@ -256,7 +249,7 @@
     </div>
 
     <footer class="footer text-muted">
-      &copy; <span id="year"></span> City Health Office Medicine Stock Monitoring System. All rights reserved.
+      &copy; <span id="year"></span> Ligao City Coastal RHU Medicine Stock Monitoring System. All rights reserved.
     </footer>
   </div>
 
@@ -265,8 +258,8 @@
       <div class="modal-content modern-modal">
         <div class="modal-header border-0 pb-0">
           <div>
-            <h5 class="modal-title mb-1">View Staff Account</h5>
-            <p class="small text-muted mb-0">Review staff account details and apply account actions.</p>
+            <h5 class="modal-title mb-1">View BHW Account</h5>
+            <p class="small text-muted mb-0">Review BHW account details and apply account actions.</p>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -286,16 +279,10 @@
               <input type="text" id="editContact" class="form-control" required>
             </div>
             <div class="col-md-6">
-              <label for="editType" class="form-label">Account Type</label>
-              <select id="editType" class="form-select">
-                <option value="BHW">BHW</option>
-                <option value="Staff">Staff</option>
-              </select>
-            </div>
-            <div class="col-md-6">
               <label for="editRoleDisplay" class="form-label">Role</label>
               <input type="text" id="editRoleDisplay" class="form-control" readonly>
               <input type="hidden" id="editRole">
+              <input type="hidden" id="editType" value="BHW">
             </div>
             <div class="col-12">
               <div class="edit-actions">
@@ -360,5 +347,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/settings.js"></script>
+  <script src="assets/js/system-notifications.js"></script>
 </body>
 </html>

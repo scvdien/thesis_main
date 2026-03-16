@@ -17,6 +17,8 @@
     usersList: byId("usersList"),
     usersListNotice: byId("usersListNotice"),
     nurseSettingsForm: byId("nurseSettingsForm"),
+    nurseCredentialsPanel: byId("nurseCredentialsPanel"),
+    nurseCredentialsStartBtn: byId("nurseCredentialsStartBtn"),
     nurseFullName: byId("nurseFullName"),
     nurseUsername: byId("nurseUsername"),
     nurseContact: byId("nurseContact"),
@@ -116,6 +118,10 @@
     }).format(parsed);
   };
 
+  const USER_ROLE_ADMIN = "Admin";
+  const USER_ROLE_BHW = "BHW";
+  const normalizeUserRole = (value) => text(value) === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_BHW;
+
   const resolveLogActionType = (value = {}) => {
     const explicitType = keyOf(value.actionType || value.type);
     if (LOG_ACTION_LABELS[explicitType]) return explicitType;
@@ -186,17 +192,40 @@
     window.setTimeout(() => refs.moduleAlert?.classList.add("d-none"), 3200);
   };
 
-  const getAdminUser = () => state.users.find((user) => text(user.role) === "Admin") || null;
+  const hideNotice = () => {
+    refs.moduleAlert?.classList.add("d-none");
+  };
+
+  const normalizeUser = (entry = {}) => {
+    const role = normalizeUserRole(text(entry.role) || text(entry.accountType));
+    return {
+      ...entry,
+      fullName: text(entry.fullName),
+      username: text(entry.username),
+      contact: text(entry.contact),
+      accountType: role === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_BHW,
+      role,
+      status: text(entry.status) || "Active",
+      password: String(entry.password || ""),
+      credentialsUpdatedAt: text(entry.credentialsUpdatedAt),
+      createdAt: text(entry.createdAt) || nowIso(),
+      createdBy: text(entry.createdBy) || "System Seed",
+      updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
+      updatedBy: text(entry.updatedBy) || "System Seed"
+    };
+  };
+
+  const getAdminUser = () => state.users.find((user) => text(user.role) === USER_ROLE_ADMIN) || null;
   const actorName = () => getAdminUser()?.fullName || "Nurse-in-Charge";
-  const roleLabel = (role) => text(role) === "Admin" ? "Nurse-in-Charge" : "Staff";
+  const roleLabel = (role) => text(role) === USER_ROLE_ADMIN ? "Nurse-in-Charge" : "BHW";
   const findUser = (id) => state.users.find((user) => user.id === id) || null;
   const getUsers = () => state.users
-    .filter((user) => text(user.role) !== "Admin")
+    .filter((user) => text(user.role) !== USER_ROLE_ADMIN)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const usernameExists = (username, excludeId = "") => state.users.some((user) => keyOf(user.username) === keyOf(username) && user.id !== excludeId);
-  const accountMeta = (user) => text(user.role) === "Admin"
+  const accountMeta = (user) => text(user.role) === USER_ROLE_ADMIN
     ? "Nurse-in-Charge | Medicine Stock Module"
-    : `${text(user.accountType) === "BHW" ? "BHW Access" : "Staff Access"} | Medicine Stock Module`;
+    : "BHW Access | Medicine Stock Module";
 
   const ensureAdminUser = () => {
     const existing = getAdminUser();
@@ -207,10 +236,11 @@
       fullName: "Nurse-in-Charge",
       username: "nurse.incharge",
       contact: "09170000000",
-      accountType: "Staff",
-      role: "Admin",
+      accountType: USER_ROLE_ADMIN,
+      role: USER_ROLE_ADMIN,
       status: "Active",
       password: "Admin123!",
+      credentialsUpdatedAt: "",
       createdAt: timestamp,
       createdBy: "System Seed",
       updatedAt: timestamp,
@@ -223,10 +253,10 @@
   const seedUsers = () => {
     const timestamp = nowIso();
     state.users = [
-      { id: uid(), fullName: "Maricel Dela Cruz", username: "mdelacruz", contact: "09171234567", accountType: "BHW", role: "Staff", status: "Active", password: "Staff123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
-      { id: uid(), fullName: "Rico L. Ramos", username: "rramos", contact: "09179876543", accountType: "Staff", role: "Admin", status: "Active", password: "Admin123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
-      { id: uid(), fullName: "Ana Mae Santillan", username: "asantillan", contact: "09172345678", accountType: "BHW", role: "Staff", status: "Inactive", password: "Staff123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" }
-    ];
+      { id: uid(), fullName: "Maricel Dela Cruz", username: "mdelacruz", contact: "09171234567", accountType: USER_ROLE_BHW, role: USER_ROLE_BHW, status: "Active", password: "BHW123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
+      { id: uid(), fullName: "Rico L. Ramos", username: "rramos", contact: "09179876543", accountType: USER_ROLE_ADMIN, role: USER_ROLE_ADMIN, status: "Active", password: "Admin123!", credentialsUpdatedAt: "", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
+      { id: uid(), fullName: "Ana Mae Santillan", username: "asantillan", contact: "09172345678", accountType: USER_ROLE_BHW, role: USER_ROLE_BHW, status: "Inactive", password: "BHW123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" }
+    ].map(normalizeUser);
   };
 
   const addLog = ({ actor = actorName(), username = currentActorUsername(), action, actionType = "", target = "", details = "", category = "Settings", resultLabel = "Success", resultTone = "success", ipAddress = currentActorIp(), createdAt = nowIso() }) => {
@@ -266,7 +296,7 @@
       accountType: user.accountType,
       presence: current?.presence || "Online",
       location: current?.location || (text(user.role) === "Admin" ? "Settings Module" : "Medicine Inventory"),
-      deviceLabel: current?.deviceLabel || (text(user.accountType) === "BHW" ? "Android Tablet" : "Desktop Browser"),
+      deviceLabel: current?.deviceLabel || (text(user.role) === "Admin" ? "Desktop Browser" : "Android Tablet"),
       ipAddress: current?.ipAddress || `192.168.10.${15 + (state.sessions.length % 180)}`,
       signedInAt: current?.signedInAt || nowIso(),
       lastSeenAt: current?.lastSeenAt || nowIso(),
@@ -304,7 +334,7 @@
         username: admin?.username || "rramos",
         actionType: "access",
         action: "Login successful",
-        target: "Medicine Stock Monitoring System",
+        target: "Ligao City Coastal RHU Medicine Stock Monitoring System",
         details: "Admin accessed the medicine stock dashboard to review daily inventory movements.",
         resultLabel: "Success",
         resultTone: "success",
@@ -389,7 +419,7 @@
   };
 
   const loadState = () => {
-    state.users = readList(STORAGE.users);
+    state.users = readList(STORAGE.users).map(normalizeUser);
     if (!state.users.length) seedUsers();
     state.logs = readList(STORAGE.logs).map(normalizeLog);
     state.logs = state.logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 60);
@@ -403,6 +433,18 @@
     saveState();
   };
 
+  const hasUpdatedAdminCredentials = (admin) => {
+    if (!admin || text(admin.role) !== "Admin") return false;
+    return Boolean(text(admin.credentialsUpdatedAt) || (text(admin.password) && admin.password !== "Admin123!"));
+  };
+
+  const syncNurseCredentialsVisibility = ({ forceOpen = false } = {}) => {
+    const admin = ensureAdminUser();
+    const shouldHidePanel = hasUpdatedAdminCredentials(admin) && !forceOpen;
+    refs.nurseCredentialsPanel?.classList.toggle("d-none", shouldHidePanel);
+    refs.nurseCredentialsStartBtn?.classList.toggle("d-none", !shouldHidePanel);
+  };
+
   const syncNurseSettingsForm = () => {
     const admin = ensureAdminUser();
     if (!admin) return;
@@ -411,15 +453,16 @@
     if (refs.nurseContact) refs.nurseContact.value = admin.contact || "";
     if (refs.nursePassword) refs.nursePassword.value = "";
     if (refs.nurseConfirmPassword) refs.nurseConfirmPassword.value = "";
-    setNotice(refs.nurseSettingsNotice, "account-helper", "Primary admin access remains assigned to the Nurse-in-Charge only.");
+    setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account only.");
+    syncNurseCredentialsVisibility();
   };
 
   const renderUsers = () => {
     if (!refs.usersList) return;
     const users = getUsers();
     if (!users.length) {
-      refs.usersList.innerHTML = `<div class="account-list-empty"><div class="fw-semibold">No staff accounts yet.</div><div class="small">Create a new staff account to get started.</div></div>`;
-      setNotice(refs.usersListNotice, "small mt-2", "No staff accounts created yet.");
+      refs.usersList.innerHTML = `<div class="account-list-empty"><div class="fw-semibold">No BHW accounts yet.</div><div class="small">Create a new BHW account to get started.</div></div>`;
+      setNotice(refs.usersListNotice, "small mt-2", "No BHW accounts created yet.");
       return;
     }
 
@@ -443,7 +486,7 @@
       </div>
     `).join("");
 
-    setNotice(refs.usersListNotice, "small mt-2", users.length === 1 ? "1 staff account available in this module." : `${users.length} staff accounts available in this module.`);
+    setNotice(refs.usersListNotice, "small mt-2", users.length === 1 ? "1 BHW account available in this module." : `${users.length} BHW accounts available in this module.`);
   };
 
   const renderSessions = () => {
@@ -451,13 +494,11 @@
     const rows = state.users.map((user) => {
       const session = state.sessions.find((entry) => entry.userId === user.id) || null;
       const isOnline = Boolean(session) && text(user.status) === "Active";
-      const roleText = text(user.role) === "Admin"
+      const roleText = text(user.role) === USER_ROLE_ADMIN
         ? "Admin"
-        : text(user.accountType) === "BHW"
-          ? "BHW"
-          : "Staff";
+        : "BHW";
       const moduleName = text(session?.location)
-        || (text(user.role) === "Admin" ? "Admin Dashboard" : "Medicine Inventory");
+        || (text(user.role) === USER_ROLE_ADMIN ? "Admin Dashboard" : "Medicine Inventory");
       const lastSeenText = session?.lastSeenAt
         ? formatDateTime(session.lastSeenAt)
         : "No recent activity";
@@ -601,7 +642,7 @@
         <td><span class="${getLogResultBadgeClass(log.resultTone)}">${esc(log.resultLabel)}</span></td>
         <td>
           <div class="log-detail">${esc(log.details)}</div>
-          <div class="log-detail-sub">${esc(text(log.target) || "Medicine Stock Monitoring System")}</div>
+          <div class="log-detail-sub">${esc(text(log.target) || "Ligao City Coastal RHU Medicine Stock Monitoring System")}</div>
         </td>
         <td class="logs-ip-cell"><span class="logs-ip-text">${esc(log.ipAddress)}</span></td>
       </tr>
@@ -662,7 +703,7 @@
     } else {
       removeSession(user.id);
     }
-    addLog({ action: `${nextStatus === "Active" ? "Activated" : "Deactivated"} staff account`, target: user.fullName, details: `Account @${user.username} was marked as ${nextStatus.toLowerCase()}.`, category: "Access" });
+    addLog({ action: `${nextStatus === "Active" ? "Activated" : "Deactivated"} BHW account`, target: user.fullName, details: `Account @${user.username} was marked as ${nextStatus.toLowerCase()}.`, category: "Access" });
     saveAndRender();
     syncEditActionButtons(user);
     showNotice(`Account ${user.username} is now ${nextStatus}.`);
@@ -677,7 +718,7 @@
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
     upsertSession(user, { presence: "Online", location: "Security Controls", lastSeenAt: user.updatedAt });
-    addLog({ action: "Reset staff password", target: user.fullName, details: `Temporary password issued for @${user.username}.`, category: "Security" });
+    addLog({ action: "Reset BHW password", target: user.fullName, details: `Temporary password issued for @${user.username}.`, category: "Security" });
     saveAndRender();
     showNotice(`Temporary password for ${user.username}: ${temporaryPassword}`, "warning");
   };
@@ -687,8 +728,8 @@
     const fullName = text(byId("accountFullName")?.value);
     const username = text(byId("accountUsername")?.value);
     const contact = text(byId("accountContact")?.value);
-    const accountType = text(byId("accountType")?.value) || "Staff";
-    const role = text(byId("accountRole")?.value) || "Staff";
+    const accountType = USER_ROLE_BHW;
+    const role = normalizeUserRole(text(byId("accountRole")?.value) || USER_ROLE_BHW);
     const password = String(byId("accountPassword")?.value || "");
 
     if (!fullName || !username || !contact || !password) return void showNotice("Please complete all account fields.", "danger");
@@ -698,11 +739,11 @@
     const timestamp = nowIso();
     const user = { id: uid(), fullName, username, contact, accountType, role, status: "Active", password, createdAt: timestamp, createdBy: actorName(), updatedAt: timestamp, updatedBy: actorName() };
     state.users.push(user);
-    upsertSession(user, { presence: "Online", location: "Staff Onboarding", deviceLabel: accountType === "BHW" ? "Android Tablet" : "Desktop Browser", lastSeenAt: timestamp, signedInAt: timestamp });
-    addLog({ action: "Created staff account", target: user.fullName, details: `${accountType} access was provisioned for @${user.username}.`, category: "Staff" });
+    upsertSession(user, { presence: "Online", location: "BHW Onboarding", deviceLabel: "Android Tablet", lastSeenAt: timestamp, signedInAt: timestamp });
+    addLog({ action: "Created BHW account", target: user.fullName, details: `BHW access was provisioned for @${user.username}.`, category: "BHW" });
     saveAndRender();
     refs.createAccountForm?.reset();
-    showNotice(`Staff account created successfully for ${user.fullName}.`);
+    showNotice(`BHW account created successfully for ${user.fullName}.`);
   };
 
   const handleEditAccount = (event) => {
@@ -712,8 +753,8 @@
     const fullName = text(refs.editFullName.value);
     const username = text(refs.editUsername.value);
     const contact = text(refs.editContact.value);
-    const accountType = text(refs.editType.value) || "Staff";
-    const role = text(refs.editRole.value) || "Staff";
+    const accountType = USER_ROLE_BHW;
+    const role = normalizeUserRole(text(refs.editRole.value) || USER_ROLE_BHW);
 
     if (!fullName || !username || !contact) return void showNotice("Please complete all profile fields.", "danger");
     if (usernameExists(username, user.id)) return void showNotice("Username already exists. Please use another username.", "danger");
@@ -726,7 +767,7 @@
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
     upsertSession(user, { presence: "Online", lastSeenAt: user.updatedAt });
-    addLog({ action: "Updated staff profile", target: user.fullName, details: `Profile details for @${user.username} were updated.`, category: "Staff" });
+    addLog({ action: "Updated BHW profile", target: user.fullName, details: `Profile details for @${user.username} were updated.`, category: "BHW" });
     saveAndRender();
     editUserModal?.hide();
     showNotice(`Profile updated for ${user.fullName}.`);
@@ -738,19 +779,29 @@
     const previousName = admin.fullName;
     const fullName = text(refs.nurseFullName?.value);
     const username = text(refs.nurseUsername?.value);
-    const contact = text(refs.nurseContact?.value);
+    const contact = text(refs.nurseContact?.value || admin.contact);
     const password = String(refs.nursePassword?.value || "");
     const confirm = String(refs.nurseConfirmPassword?.value || "");
+    const hasProfileChange = fullName !== text(admin.fullName) || username !== text(admin.username);
+    const hasPasswordChange = Boolean(password || confirm);
 
-    if (!fullName || !username || !contact) {
-      setNotice(refs.nurseSettingsNotice, "account-helper", "Please complete all Nurse-in-Charge fields.", "danger");
-      return void showNotice("Please complete all Nurse-in-Charge fields.", "danger");
+    if (!fullName || !username) {
+      setNotice(refs.nurseSettingsNotice, "account-helper", "Please complete all required fields.", "danger");
+      return void showNotice("Please complete all required fields.", "danger");
+    }
+    if (!hasProfileChange && !hasPasswordChange) {
+      setNotice(refs.nurseSettingsNotice, "account-helper", "No changes to save yet.", "danger");
+      return void showNotice("No changes to save yet.", "danger");
     }
     if (usernameExists(username, admin.id)) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "Username already exists. Please use another username.", "danger");
       return void showNotice("Username already exists. Please use another username.", "danger");
     }
-    if (password || confirm) {
+    if (hasPasswordChange) {
+      if (!password || !confirm) {
+        setNotice(refs.nurseSettingsNotice, "account-helper", "Enter and confirm the new password.", "danger");
+        return void showNotice("Enter and confirm the new password.", "danger");
+      }
       if (password.length < 8) {
         setNotice(refs.nurseSettingsNotice, "account-helper", "Password must be at least 8 characters.", "danger");
         return void showNotice("Password must be at least 8 characters.", "danger");
@@ -764,13 +815,14 @@
         return void showNotice("Password and confirmation do not match.", "danger");
       }
       admin.password = password;
+      admin.credentialsUpdatedAt = nowIso();
     }
 
     admin.fullName = fullName;
     admin.username = username;
     admin.contact = contact;
-    admin.accountType = "Staff";
-    admin.role = "Admin";
+    admin.accountType = USER_ROLE_ADMIN;
+    admin.role = USER_ROLE_ADMIN;
     admin.status = "Active";
     admin.updatedAt = nowIso();
     admin.updatedBy = actorName();
@@ -778,8 +830,7 @@
     addLog({ actor: previousName || "Nurse-in-Charge", action: "Updated Nurse-in-Charge credentials", target: fullName, details: password ? "Primary admin profile and password were updated." : "Primary admin profile details were updated.", category: "Security" });
     saveAndRender();
     syncNurseSettingsForm();
-    setNotice(refs.nurseSettingsNotice, "account-helper", "Nurse-in-Charge credentials updated successfully.", "success");
-    showNotice("Nurse-in-Charge credentials updated successfully.");
+    setNotice(refs.nurseSettingsNotice, "account-helper", "Credentials updated.", "success");
   };
 
   const handleChangePassword = (event) => {
@@ -795,7 +846,7 @@
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
     upsertSession(user, { presence: "Online", location: "Security Controls", lastSeenAt: user.updatedAt });
-    addLog({ action: "Changed staff password", target: user.fullName, details: `Password was updated for @${user.username}.`, category: "Security" });
+    addLog({ action: "Changed BHW password", target: user.fullName, details: `Password was updated for @${user.username}.`, category: "Security" });
     saveAndRender();
     changePasswordModal?.hide();
     showNotice(`Password changed for ${user.username}.`);
@@ -857,6 +908,10 @@
   refs.editToggleStatusBtn?.addEventListener("click", () => toggleUserStatus(text(refs.editUserId.value)));
   refs.editResetPasswordBtn?.addEventListener("click", () => resetUserPassword(text(refs.editUserId.value)));
   refs.editChangePasswordBtn?.addEventListener("click", () => openPasswordModal(text(refs.editUserId.value)));
+  refs.nurseCredentialsStartBtn?.addEventListener("click", () => {
+    hideNotice();
+    syncNurseCredentialsVisibility({ forceOpen: true });
+  });
   refs.activityLogSearch?.addEventListener("input", renderLogs);
   refs.activityLogYearFilter?.addEventListener("change", renderLogs);
   activityLogFilterButtons.forEach((button) => {

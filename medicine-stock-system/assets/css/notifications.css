@@ -1,0 +1,357 @@
+.notifications-main{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+.notifications-main .topbar{
+  margin-bottom:9px;
+}
+
+.notification-panel{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:24px;
+  padding:16px 18px;
+  box-shadow:0 10px 24px rgba(22, 54, 23, 0.05);
+}
+
+.notification-toolbar--simple{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+  padding-bottom:10px;
+  border-bottom:1px solid #e3ebdd;
+}
+
+.notification-toolbar__aside{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-left:auto;
+}
+
+.notification-system-controls{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.notification-quick-filters{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+.notification-filter-pill{
+  border:1px solid #d7e0cf;
+  min-height:32px;
+  padding:0 12px;
+  border-radius:999px;
+  background:#f7faf3;
+  color:#51634a;
+  font-size:0.74rem;
+  font-weight:700;
+  transition:background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+
+.notification-filter-pill.is-active{
+  background:#216f1b;
+  border-color:#216f1b;
+  color:#fff;
+}
+
+.notification-record-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:32px;
+  padding:0 11px;
+  border-radius:999px;
+  background:#edf4e4;
+  color:#42673d;
+  font-size:0.74rem;
+  font-weight:700;
+  white-space:nowrap;
+}
+
+.notification-feed{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+}
+
+.notification-card{
+  padding:14px 2px;
+  border-radius:0;
+  border:none;
+  background:transparent;
+  cursor:pointer;
+  transition:background-color .18s ease, box-shadow .18s ease;
+}
+
+.notification-card:hover{
+  background:#fbfcf8;
+}
+
+.notification-card.is-unread{
+  padding-left:14px;
+  padding-right:14px;
+  border-radius:16px;
+  background:#f7fbf3;
+  box-shadow:inset 3px 0 0 #2f8a24;
+}
+
+.notification-card.is-unread:hover{
+  background:#f2f8ed;
+}
+
+.notification-card + .notification-card{
+  border-top:1px solid #e3ebdd;
+}
+
+.notification-card__head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.notification-card__title{
+  color:#223d24;
+  font-size:0.92rem;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.notification-card__body{
+  margin:6px 0 0;
+  color:#64715d;
+  font-size:0.77rem;
+  line-height:1.45;
+  display:-webkit-box;
+  -webkit-line-clamp:1;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+
+.notification-card__meta{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+  color:#74806f;
+  font-size:0.72rem;
+  font-weight:600;
+}
+
+.notification-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  font-size:0.7rem;
+  font-weight:700;
+  white-space:nowrap;
+  text-transform:capitalize;
+}
+
+.notification-badge--critical{
+  background:rgba(220, 68, 68, 0.14);
+  color:#b62828;
+}
+
+.notification-badge--high{
+  background:rgba(220, 188, 69, 0.2);
+  color:#9e7410;
+}
+
+.notification-badge--medium{
+  background:rgba(37, 99, 235, 0.12);
+  color:#2253b8;
+}
+
+.notification-badge--low,
+.notification-badge--info{
+  background:rgba(82, 164, 64, 0.14);
+  color:#3f8e2f;
+}
+
+.notification-meta-label{
+  color:#55644d;
+  font-size:0.72rem;
+  font-weight:700;
+}
+
+.notification-meta-separator{
+  color:#9aa694;
+}
+
+.notification-unread-dot{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#2253b8;
+  flex:0 0 auto;
+}
+
+.notification-empty{
+  padding:26px 16px;
+  text-align:center;
+  color:#6b7765;
+  font-weight:600;
+}
+
+.notification-message-modal{
+  border:none;
+  border-radius:20px;
+  box-shadow:0 18px 40px rgba(22, 54, 23, 0.12);
+}
+
+.notification-message-modal .modal-header,
+.notification-message-modal .modal-body{
+  padding-left:22px;
+  padding-right:22px;
+}
+
+.notification-message-modal__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  width:100%;
+}
+
+.notification-message-modal__actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.notification-message-modal h5{
+  margin:0;
+  color:#223d24;
+  font-size:1rem;
+  font-weight:700;
+}
+
+.notification-message-modal p{
+  margin:10px 0 0;
+  color:#64715d;
+  font-size:0.82rem;
+  line-height:1.6;
+}
+
+.notification-message-modal__meta{
+  margin-top:18px;
+  padding-top:12px;
+  border-top:1px solid #e2ebdd;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.notification-message-modal__meta span{
+  color:#77836f;
+  font-size:0.72rem;
+  font-weight:700;
+}
+
+.notification-message-modal__meta strong{
+  color:#264028;
+  font-size:0.82rem;
+  font-weight:700;
+}
+
+.notification-message-modal .btn-close{
+  opacity:.6;
+  transition:opacity .18s ease;
+}
+
+.notification-message-modal .btn-close:hover{
+  opacity:1;
+}
+
+.notification-message-modal .notification-meta-label{
+  font-size:0.75rem;
+  letter-spacing:0.02em;
+}
+
+.notification-message-modal .notification-badge{
+  min-height:24px;
+  padding:0 10px;
+  font-size:0.69rem;
+}
+
+.notification-message-modal .modal-body{
+  padding-bottom:22px;
+}
+
+.notification-message-modal .modal-header{
+  padding-top:20px;
+  padding-bottom:8px;
+}
+
+@media (max-width: 992px){
+  .notification-toolbar--simple{
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .notification-toolbar__aside{
+    justify-content:space-between;
+    margin-left:0;
+  }
+
+  .notification-record-count{
+    align-self:flex-start;
+  }
+}
+
+@media (max-width: 768px){
+  .notification-toolbar__aside{
+    width:100%;
+    justify-content:space-between;
+  }
+
+  .notification-system-controls{
+    width:100%;
+    justify-content:flex-start;
+  }
+
+  .notification-panel{
+    padding:16px 14px;
+    border-radius:20px;
+  }
+
+  .notification-card__head{
+    flex-direction:column;
+  }
+
+  .notification-card{
+    padding:14px 0;
+  }
+
+  .notification-message-modal .modal-header,
+  .notification-message-modal .modal-body{
+    padding-left:16px;
+    padding-right:16px;
+  }
+
+  .notification-message-modal__head{
+    align-items:flex-start;
+  }
+}
