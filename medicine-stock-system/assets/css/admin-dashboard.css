@@ -5601,3 +5601,46 @@ body{
     max-height:176px;
   }
 }
+
+.supply-summary-grid{
+  grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.supply-summary-card--rose{
+  background:#f9ecec;
+}
+
+.supply-summary-card--rose .supply-summary-card__icon{
+  color:#b84a4a;
+  background:rgba(184, 74, 74, 0.14);
+}
+
+.supply-request-card__badge--warning{
+  color:#a97708;
+  background:rgba(220, 188, 69, 0.2);
+}
+
+.supply-request-card__badge--pending{
+  color:#55644b;
+  background:rgba(95, 112, 76, 0.12);
+}
+
+.supply-request-step--warning::before{
+  background:rgba(220, 188, 69, 0.35);
+}
+
+.supply-request-step--warning .supply-request-step__dot{
+  background:#d1ab34;
+}
+
+.supply-request-step--warning span{
+  color:#9c7411;
+}
+
+.supply-request-step--pending .supply-request-step__dot{
+  background:#91a183;
+}
+
+.supply-request-step--pending span{
+  color:#5c6b55;
+}

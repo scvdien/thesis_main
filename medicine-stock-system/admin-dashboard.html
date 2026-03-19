@@ -28,7 +28,8 @@
         <div class="menu">
           <a href="admin-dashboard.html" class="active"><i class="bi bi-speedometer2"></i>Dashboard</a>
           <a href="medicine-inventory.html"><i class="bi bi-capsule-pill"></i>Medicine Inventory</a>
-          <a href="resident-medication-records.html"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
+          <a href="cho-request-log.html"><i class="bi bi-clipboard2-plus"></i>CHO Request Log</a>
+          <a href="dispensing-records.html?role=admin"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
           <a href="reports.html"><i class="bi bi-file-earmark-text"></i>Reports</a>
           <a href="notifications.html"><i class="bi bi-bell"></i>Notifications</a>
           <a href="settings.html"><i class="bi bi-gear"></i>Settings</a>
@@ -84,9 +85,7 @@
                 </div>
                 <div class="demand-summary-card__body">
                   <strong id="metricDemandReorder">0</strong>
-    
-    
-                <span>Need Reorder</span>
+                <span>Need Request</span>
                 </div>
               </article>
 
@@ -194,8 +193,8 @@
           <div class="supply-suite__inner">
             <div class="supply-suite__head">
               <div class="supply-suite__title">
-                <h5>Supply Delivery Analytics</h5>
-                <p id="supplySourceLabel">Ligao City Coastal Rural Health Unit</p>
+                <h5>CHO Request Fulfillment Analytics</h5>
+                <p id="supplySourceLabel">City Health Office request-to-delivery monitoring</p>
               </div>
             </div>
 
@@ -212,34 +211,44 @@
 
               <article class="supply-summary-card supply-summary-card--olive">
                 <div class="supply-summary-card__icon">
-                  <i class="bi bi-box-seam-fill"></i>
-                </div>
-                <div class="supply-summary-card__copy">
-                  <span>Last Delivery</span>
-                  <strong id="supplyLastDelivery">Loading</strong>
-                </div>
-              </article>
-
-              <article class="supply-summary-card supply-summary-card--green">
-                <div class="supply-summary-card__icon">
                   <i class="bi bi-check2-circle"></i>
                 </div>
                 <div class="supply-summary-card__copy">
-                  <span>Delivery Reliability</span>
-                  <strong id="supplyDeliveryRate">0%</strong>
+                  <span>On-Time Deliveries</span>
+                  <strong id="supplyOnTimeCount">0</strong>
                 </div>
                 <div class="supply-summary-card__progress">
                   <span id="supplySummaryReliabilityFill"></span>
                 </div>
               </article>
 
-              <article class="supply-summary-card supply-summary-card--gold">
+              <article class="supply-summary-card supply-summary-card--green">
                 <div class="supply-summary-card__icon">
-                  <i class="bi bi-exclamation-triangle-fill"></i>
+                  <i class="bi bi-truck"></i>
                 </div>
                 <div class="supply-summary-card__copy">
                   <span>Delayed Deliveries</span>
                   <strong id="supplyDelayedCount">0</strong>
+                </div>
+              </article>
+
+              <article class="supply-summary-card supply-summary-card--gold">
+                <div class="supply-summary-card__icon">
+                  <i class="bi bi-box-seam"></i>
+                </div>
+                <div class="supply-summary-card__copy">
+                  <span>Incomplete Deliveries</span>
+                  <strong id="supplyIncompleteCount">0</strong>
+                </div>
+              </article>
+
+              <article class="supply-summary-card supply-summary-card--rose">
+                <div class="supply-summary-card__icon">
+                  <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div class="supply-summary-card__copy">
+                  <span>Pending Requests</span>
+                  <strong id="supplyPendingCount">0</strong>
                 </div>
               </article>
             </div>
@@ -247,14 +256,14 @@
             <div class="supply-content-grid">
               <section class="supply-panel supply-panel--timeline">
                 <div class="supply-panel__head">
-                  <h6>Medicine Request Timeline</h6>
+                  <h6>CHO Request Timeline</h6>
                 </div>
                 <div class="supply-request-list" id="supplyRequestList"></div>
               </section>
 
               <section class="supply-panel supply-panel--chart">
                 <div class="supply-panel__head">
-                  <h6>Delivery Lead Time (Days)</h6>
+                  <h6>CHO Response Lead Time (Days)</h6>
                 </div>
                 <div class="supply-chart-wrap">
                   <canvas id="supplyLeadTimeChart"></canvas>
@@ -263,12 +272,12 @@
 
               <section class="supply-panel supply-panel--reliability">
                 <div class="supply-panel__head">
-                  <h6>Delivery Reliability</h6>
+                  <h6>Request Fulfillment Reliability</h6>
                 </div>
                 <div class="supply-reliability-card">
                   <div class="supply-reliability-card__top">
                     <strong id="supplyReliabilityValue">0%</strong>
-                    <span>On-Time Delivery</span>
+                    <span>On-Time Fulfillment</span>
                   </div>
                   <div class="supply-progress">
                     <span id="supplyReliabilityFill"></span>
@@ -499,6 +508,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="assets/js/supply-monitoring.js"></script>
   <script src="assets/js/admin-dashboard.js"></script>
   <script src="assets/js/system-notifications.js"></script>
 </body>

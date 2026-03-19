@@ -169,7 +169,7 @@
 
 .inventory-toolbar{
   display:grid;
-  grid-template-columns:minmax(240px, 1.8fr) repeat(2, minmax(150px, 0.7fr)) auto;
+  grid-template-columns:minmax(240px, 1.75fr) repeat(2, minmax(165px, 0.72fr)) auto;
   gap:10px;
   align-items:center;
   margin-bottom:16px;
@@ -180,38 +180,103 @@
   justify-content:flex-end;
 }
 
-.inventory-search{
-  position:relative;
-  display:block;
+.inventory-searchbar{
+  min-width:0;
 }
 
-.inventory-search i{
-  position:absolute;
-  top:50%;
-  left:14px;
-  transform:translateY(-50%);
-  color:#7d8b74;
-  font-size:0.88rem;
+.inventory-searchbox{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:stretch;
+  overflow:hidden;
+  border:1px solid #cfe1c6;
+  border-radius:16px;
+  background:linear-gradient(180deg, #fbfef9 0%, #f1f8e8 100%);
+  box-shadow:0 14px 28px rgba(33, 88, 25, 0.1);
 }
 
-.inventory-search .form-control{
-  padding-left:42px;
+.inventory-searchbox:focus-within{
+  border-color:#8dbc6f;
+  box-shadow:0 0 0 4px rgba(60, 152, 40, 0.14), 0 14px 28px rgba(33, 88, 25, 0.1);
+}
+
+.inventory-searchfield{
+  display:flex;
+  align-items:center;
+  min-width:0;
+  min-height:40px;
+  margin:0;
+  padding:0 18px;
+}
+
+.inventory-toolbar .inventory-searchfield .form-control,
+.request-toolbar .inventory-searchfield .form-control{
+  flex:1 1 auto;
+  min-width:0;
+  min-height:auto;
+  border:0;
+  border-radius:0;
+  padding:0;
+  background:transparent;
+  color:#244126;
+  font-size:0.94rem;
+  font-weight:500;
+  box-shadow:none;
+}
+
+.inventory-toolbar .inventory-searchfield .form-control::placeholder,
+.request-toolbar .inventory-searchfield .form-control::placeholder{
+  color:#7b8f79;
+  font-weight:500;
+}
+
+.inventory-toolbar .inventory-searchfield .form-control:focus,
+.request-toolbar .inventory-searchfield .form-control:focus{
+  background:transparent;
+  box-shadow:none;
+}
+
+.inventory-searchbtn{
+  min-width:64px;
+  border:0;
+  border-left:1px solid rgba(255, 255, 255, 0.2);
+  background:linear-gradient(135deg, #3a9a45, #4aaa52);
+  color:#fff;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.35rem;
+  transition:filter .18s ease, transform .18s ease;
+}
+
+.inventory-searchbtn:hover,
+.inventory-searchbtn:focus{
+  color:#fff;
+  filter:brightness(1.04);
+}
+
+.inventory-searchbtn:active{
+  transform:scale(0.98);
 }
 
 .inventory-toolbar .form-control,
 .inventory-toolbar .form-select,
+.request-toolbar .form-control,
+.request-toolbar .form-select,
 .inventory-form-grid .form-control,
 .inventory-form-grid .form-select{
   min-height:40px;
   border-radius:14px;
   border:1px solid #d7e0cf;
   background:#f7faf3;
-  font-size:0.88rem;
+  font-size:0.84rem;
   font-weight:600;
 }
 
 .inventory-toolbar .form-control:focus,
 .inventory-toolbar .form-select:focus,
+.request-toolbar .form-control:focus,
+.request-toolbar .form-select:focus,
 .inventory-form-grid .form-control:focus,
 .inventory-form-grid .form-select:focus{
   border-color:#8dbc6f;
@@ -222,28 +287,30 @@
 .inventory-table-shell{
   border:1px solid #dce6d4;
   border-radius:20px;
-  overflow:hidden;
+  overflow-x:auto;
+  overflow-y:hidden;
 }
 
 .inventory-table{
   --bs-table-bg:transparent;
   --bs-table-border-color:#e3ebdd;
+  min-width:1120px;
 }
 
 .inventory-table thead th{
-  padding:13px 15px;
+  padding:11px 12px;
   border-bottom-width:1px;
   background:#f1f5eb;
   color:#607055;
-  font-size:0.72rem;
+  font-size:0.67rem;
   font-weight:800;
-  letter-spacing:0.05em;
+  letter-spacing:0.04em;
   text-transform:uppercase;
   white-space:nowrap;
 }
 
 .inventory-table tbody td{
-  padding:13px 15px;
+  padding:11px 12px;
   vertical-align:top;
   background:#fff;
 }
@@ -251,8 +318,8 @@
 .inventory-medicine-cell{
   display:grid;
   grid-template-columns:40px minmax(0, 1fr);
-  gap:12px;
-  min-width:240px;
+  gap:10px;
+  min-width:215px;
 }
 
 .inventory-medicine-icon{
@@ -276,7 +343,7 @@
 .inventory-medicine-copy strong{
   display:block;
   color:#223d24;
-  font-size:0.96rem;
+  font-size:0.9rem;
   font-weight:700;
 }
 
@@ -288,35 +355,35 @@
 
 .inventory-medicine-copy span{
   margin-top:2px;
-  font-size:0.78rem;
+  font-size:0.74rem;
   font-weight:600;
 }
 
 .inventory-medicine-copy small{
   margin-top:4px;
-  font-size:0.72rem;
+  font-size:0.68rem;
 }
 
 .inventory-category-pill{
   display:inline-flex;
   align-items:center;
-  min-height:30px;
-  padding:0 10px;
+  min-height:28px;
+  padding:0 9px;
   border-radius:999px;
   background:#eef4e8;
   color:#4e6247;
-  font-size:0.74rem;
+  font-size:0.7rem;
   font-weight:700;
 }
 
 .inventory-stock{
-  min-width:104px;
+  min-width:88px;
 }
 
 .inventory-stock strong{
   display:block;
   color:#1f3922;
-  font-size:1rem;
+  font-size:0.92rem;
   font-weight:800;
 }
 
@@ -326,7 +393,7 @@
   display:block;
   margin-top:4px;
   color:#6c7867;
-  font-size:0.72rem;
+  font-size:0.68rem;
   font-weight:600;
 }
 
@@ -334,17 +401,17 @@
 .inventory-supplier strong{
   display:block;
   color:#233e26;
-  font-size:0.9rem;
+  font-size:0.84rem;
   font-weight:700;
 }
 
 .inventory-status{
   display:inline-flex;
   align-items:center;
-  min-height:32px;
-  padding:0 12px;
+  min-height:29px;
+  padding:0 10px;
   border-radius:999px;
-  font-size:0.74rem;
+  font-size:0.69rem;
   font-weight:800;
   white-space:nowrap;
 }
@@ -364,10 +431,15 @@
   color:#b62828;
 }
 
+.inventory-status--olive{
+  background:rgba(95, 112, 76, 0.12);
+  color:#506246;
+}
+
 .inventory-actions{
   display:grid;
-  gap:8px;
-  min-width:112px;
+  gap:6px;
+  min-width:96px;
 }
 
 .table-action-btn{
@@ -377,6 +449,7 @@
   gap:6px;
   border-radius:10px;
   font-weight:700;
+  font-size:0.72rem;
   white-space:nowrap;
 }
 
@@ -625,6 +698,14 @@
   font-weight:800;
 }
 
+.inventory-field-hint{
+  display:block;
+  margin-top:6px;
+  color:#6a7764;
+  font-size:0.7rem;
+  font-weight:600;
+}
+
 .inventory-dispense-card{
   display:flex;
   flex-direction:column;
@@ -814,6 +895,11 @@
 
   .inventory-toolbar{
     grid-template-columns:1fr;
+  }
+
+  .inventory-searchbtn{
+    min-width:56px;
+    font-size:1.15rem;
   }
 
   .inventory-toolbar__action{

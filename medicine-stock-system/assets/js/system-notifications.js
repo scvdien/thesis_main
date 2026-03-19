@@ -625,6 +625,18 @@
     updateBrowserToggle();
     return button;
   };
+  const openNotificationCenter = () => {
+    if (typeof window.MSSOpenNotificationCenter === "function") {
+      try {
+        window.MSSOpenNotificationCenter();
+        return;
+      } catch (error) {
+        // Fall back to the default notification page if a page-specific handler fails.
+      }
+    }
+
+    window.location.href = "notifications.html";
+  };
   const showBrowserNotification = (notification, extraCount = 0) => {
     if (!canSendBrowserAlerts()) return;
 
@@ -646,7 +658,7 @@
 
       browserNotice.onclick = () => {
         window.focus();
-        window.location.href = "notifications.html";
+        openNotificationCenter();
         browserNotice.close();
       };
     } catch (error) {
@@ -758,7 +770,7 @@
     const openButton = toast.querySelector(".mss-system-toast__link");
     closeButton?.addEventListener("click", () => hideToast(toast));
     openButton?.addEventListener("click", () => {
-      window.location.href = "notifications.html";
+      openNotificationCenter();
     });
 
     container.appendChild(toast);

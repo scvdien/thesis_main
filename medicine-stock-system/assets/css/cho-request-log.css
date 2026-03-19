@@ -1,0 +1,495 @@
+.request-main{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+.request-overview{
+  display:grid;
+  grid-template-columns:repeat(5, minmax(0, 1fr));
+  gap:10px;
+}
+
+.request-overview .inventory-metric-card{
+  min-width:0;
+  grid-template-columns:46px minmax(0, 1fr);
+  gap:8px;
+  padding:12px;
+  border-radius:18px;
+}
+
+.request-overview .inventory-metric-card__icon{
+  width:46px;
+  height:46px;
+  border-radius:14px;
+  font-size:1.06rem;
+}
+
+.request-overview .inventory-metric-card__copy span{
+  font-size:0.68rem;
+  line-height:1.25;
+}
+
+.request-overview .inventory-metric-card__copy strong{
+  font-size:0.96rem;
+}
+
+.request-overview .inventory-metric-card__copy small{
+  font-size:0.64rem;
+  line-height:1.28;
+}
+
+.request-toolbar{
+  display:grid;
+  grid-template-columns:minmax(260px, 1fr) minmax(180px, 220px) auto;
+  gap:10px;
+  align-items:center;
+  margin-bottom:16px;
+}
+
+.request-items-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+
+.request-items-panel{
+  padding:18px 20px;
+  border:1px solid #dfe7d6;
+  border-radius:20px;
+  background:#fbfcf8;
+}
+
+.request-item-add-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  min-height:40px;
+  padding:0 16px;
+  border-radius:14px;
+  border:1px solid #dbe4d3;
+  background:#fff;
+  color:#244327;
+  font-size:0.84rem;
+  font-weight:700;
+}
+
+.request-details-view{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+.request-details-meta{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0, 1fr));
+  gap:12px;
+}
+
+.request-details-meta__card{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:14px 16px;
+  border:1px solid #dfe7d6;
+  border-radius:18px;
+  background:#fbfcf8;
+}
+
+.request-details-meta__card span{
+  font-size:0.72rem;
+  font-weight:800;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  color:#6c8165;
+}
+
+.request-details-meta__card strong{
+  color:#223d24;
+  font-size:0.98rem;
+  font-weight:800;
+}
+
+.request-detail-section{
+  border:1px solid #dfe7d6;
+  border-radius:20px;
+  background:#fbfcf8;
+  overflow:hidden;
+}
+
+.request-detail-section__head{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:18px 20px 14px;
+  border-bottom:1px solid #e8eee1;
+}
+
+.request-detail-section__head h6{
+  margin:0;
+  color:#244327;
+  font-size:1rem;
+  font-weight:800;
+}
+
+.request-detail-section__head p{
+  margin:0;
+  color:#6a7764;
+  font-size:0.8rem;
+}
+
+.request-detail-table{
+  min-width:620px;
+}
+
+.request-detail-table thead th{
+  padding:12px 20px;
+  border-bottom:1px solid #e8eee1;
+  color:#698061;
+  font-size:0.74rem;
+  font-weight:800;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  background:#fbfcf8;
+}
+
+.request-detail-table tbody td{
+  padding:14px 20px;
+  vertical-align:top;
+  border-bottom:1px solid #edf2e8;
+  color:#30462f;
+  font-size:0.88rem;
+}
+
+.request-detail-table tbody tr:last-child td{
+  border-bottom:none;
+}
+
+.request-detail-medicine{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.request-detail-medicine strong{
+  font-size:0.92rem;
+  color:#223d24;
+}
+
+.request-detail-medicine small,
+.request-detail-quantity small{
+  color:#6c7768;
+  font-size:0.76rem;
+}
+
+.request-detail-quantity{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.request-detail-quantity strong{
+  font-size:0.92rem;
+  color:#223d24;
+}
+
+.request-detail-footer{
+  display:flex;
+  justify-content:flex-end;
+}
+
+.request-detail-footer .btn{
+  min-width:108px;
+  border-radius:12px;
+  font-weight:700;
+}
+
+.request-items-grid-head{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 190px 52px;
+  gap:14px;
+  padding:0 4px 10px;
+  border-bottom:1px solid #e6ede0;
+  font-size:0.74rem;
+  font-weight:800;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  color:#698061;
+}
+
+.request-items-grid-head__action{
+  text-align:center;
+}
+
+.request-items-list{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+}
+
+.request-item-row{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 190px 52px;
+  gap:14px;
+  align-items:start;
+  padding:14px 4px;
+  border-bottom:1px solid #edf2e8;
+}
+
+.request-item-row:last-child{
+  border-bottom:none;
+}
+
+.request-item-control{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+}
+
+.request-item-control::before{
+  display:none;
+  content:attr(data-label);
+  margin-bottom:6px;
+  font-size:0.74rem;
+  font-weight:700;
+  color:#5d7657;
+}
+
+.request-item-meta{
+  display:block;
+  margin-top:6px;
+  font-size:0.72rem;
+  color:#6b7665;
+}
+
+.request-item-meta:empty{
+  display:none;
+}
+
+.request-item-remove{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:0;
+  width:42px;
+  height:40px;
+  min-width:0;
+  min-height:40px;
+  padding:0;
+  border-radius:12px;
+  border:1px solid #f0cfcf;
+  background:#fff;
+  font-size:0.95rem;
+  color:#b64747;
+  box-shadow:none;
+  transition:background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.request-item-remove:hover:not(:disabled),
+.request-item-remove:focus-visible:not(:disabled){
+  background:#fff3f3;
+  border-color:#e7b0b0;
+  color:#a83838;
+}
+
+.request-item-remove:disabled{
+  opacity:0.45;
+}
+
+.request-item-control--remove{
+  align-items:center;
+  justify-content:center;
+}
+
+.request-table-shell .inventory-table{
+  min-width:1320px;
+}
+
+.request-medicine-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-width:220px;
+}
+
+.request-medicine-line{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+
+.request-medicine-line strong{
+  font-size:0.88rem;
+  line-height:1.3;
+}
+
+.request-medicine-line small{
+  font-size:0.75rem;
+  color:#6c7768;
+}
+
+.request-table th:last-child,
+.request-table td:last-child{
+  width:132px;
+  min-width:132px;
+}
+
+.request-table th:last-child{
+  text-align:center;
+}
+
+.request-table td:last-child{
+  text-align:center;
+}
+
+.request-table .inventory-actions{
+  width:100%;
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.request-table .inventory-stock,
+.request-table .inventory-expiry{
+  min-width:118px;
+}
+
+.request-table .table-action-btn{
+  width:auto;
+}
+
+.request-table .inventory-actions > .table-action-btn{
+  min-width:108px;
+}
+
+.request-action-menu{
+  margin:0 auto;
+}
+
+.request-action-toggle{
+  width:42px !important;
+  min-width:42px;
+  padding-inline:0;
+}
+
+.request-action-toggle::after{
+  display:none;
+}
+
+.request-action-toggle i{
+  font-size:0.96rem;
+}
+
+.request-action-dropdown{
+  min-width:150px;
+  padding:6px;
+  border:1px solid #dce6d4;
+  border-radius:14px;
+  box-shadow:0 14px 28px rgba(22, 54, 23, 0.12);
+}
+
+.request-action-item{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border-radius:10px;
+  color:#223d24;
+  font-size:0.78rem;
+  font-weight:700;
+  padding:9px 11px;
+}
+
+.request-action-item i{
+  font-size:0.88rem;
+}
+
+.request-action-item:hover,
+.request-action-item:focus{
+  background:#f3f7ed;
+  color:#223d24;
+}
+
+.request-action-item.text-danger:hover,
+.request-action-item.text-danger:focus{
+  background:#fff3f3;
+  color:#c23333;
+}
+
+@media (max-width: 1199px){
+  .request-overview{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+
+  .request-toolbar{
+    grid-template-columns:minmax(0, 1fr) minmax(180px, 220px);
+  }
+
+  .request-details-meta{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+
+  .request-items-grid-head{
+    grid-template-columns:minmax(0, 1fr) 170px 52px;
+  }
+
+  .request-item-row{
+    grid-template-columns:minmax(0, 1fr) 170px 52px;
+  }
+
+  .request-toolbar .inventory-toolbar__action{
+    grid-column:1 / -1;
+    justify-content:flex-start;
+  }
+}
+
+@media (max-width: 767px){
+  .request-overview{
+    grid-template-columns:1fr;
+  }
+
+  .request-toolbar{
+    grid-template-columns:1fr;
+  }
+
+  .request-items-head{
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .request-details-meta{
+    grid-template-columns:1fr;
+  }
+
+  .request-items-grid-head{
+    display:none;
+  }
+
+  .request-item-row{
+    grid-template-columns:1fr;
+    gap:12px;
+    padding:14px 0;
+  }
+
+  .request-item-control::before{
+    display:block;
+  }
+
+  .request-item-remove{
+    width:100%;
+  }
+
+  .request-item-control--remove{
+    align-items:stretch;
+  }
+
+  .request-toolbar .inventory-toolbar__action{
+    justify-content:stretch;
+  }
+
+  .request-toolbar .btn-add-medicine{
+    width:100%;
+  }
+}

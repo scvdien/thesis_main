@@ -11,8 +11,10 @@
     sidebar: byId("sidebar"),
     sidebarBackdrop: byId("sidebarBackdrop"),
     sidebarToggle: byId("sidebarToggle"),
+    roleMenu: byId("roleMenu"),
     logoutLink: byId("logoutLink"),
     residentSearchInput: byId("residentSearchInput"),
+    residentSearchBtn: byId("residentSearchBtn"),
     barangayFilter: byId("barangayFilter"),
     residentCountChip: byId("residentCountChip"),
     residentList: byId("residentList"),
@@ -30,6 +32,7 @@
 
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  const pageRole = keyOf(new URLSearchParams(window.location.search).get("role")) === "staff" ? "staff" : "admin";
   const numeric = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -61,6 +64,37 @@
     if (diffMinutes < 1440) return `${Math.round(diffMinutes / 60)} hr ago`;
     const diffDays = Math.round(diffMinutes / 1440);
     return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  };
+  const renderRoleMenu = () => {
+    if (!refs.roleMenu) return;
+
+    const items = pageRole === "staff"
+      ? [
+          { href: "staff.html#staff-dashboard", icon: "bi bi-speedometer2", label: "Dashboard" },
+          { href: "staff.html#patient-profiles", icon: "bi bi-person-vcard", label: "Patient Profiles" },
+          { href: "dispensing-records.html?role=staff", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
+          { href: "staff.html#notifications", icon: "bi bi-bell", label: "Notifications" },
+          { href: "staff.html#my-settings", icon: "bi bi-gear", label: "Settings" },
+          { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
+        ]
+      : [
+          { href: "admin-dashboard.html", icon: "bi bi-speedometer2", label: "Dashboard" },
+          { href: "medicine-inventory.html", icon: "bi bi-capsule-pill", label: "Medicine Inventory" },
+          { href: "cho-request-log.html", icon: "bi bi-clipboard2-plus", label: "CHO Request Log" },
+          { href: "dispensing-records.html?role=admin", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
+          { href: "reports.html", icon: "bi bi-file-earmark-text", label: "Reports" },
+          { href: "notifications.html", icon: "bi bi-bell", label: "Notifications" },
+          { href: "settings.html", icon: "bi bi-gear", label: "Settings" },
+          { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
+        ];
+
+    refs.roleMenu.innerHTML = items.map((item) => `
+      <a href="${esc(item.href)}"${item.active ? ' class="active"' : item.danger ? ' class="text-danger"' : ""}${item.id ? ` id="${esc(item.id)}"` : ""}>
+        <i class="${esc(item.icon)}"></i>${esc(item.label)}
+      </a>
+    `).join("");
+
+    refs.logoutLink = byId("logoutLink");
   };
 
   const readList = (key) => {
@@ -514,6 +548,8 @@
     renderResidentList(visibleRecords);
   };
 
+  renderRoleMenu();
+
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
   refs.sidebarBackdrop?.addEventListener("click", closeMobileSidebar);
   refs.logoutLink?.addEventListener("click", (event) => {
@@ -527,6 +563,11 @@
 
   refs.residentSearchInput?.addEventListener("input", (event) => {
     uiState.search = text(event.target.value);
+    renderAll();
+  });
+
+  refs.residentSearchBtn?.addEventListener("click", () => {
+    uiState.search = text(refs.residentSearchInput?.value);
     renderAll();
   });
 

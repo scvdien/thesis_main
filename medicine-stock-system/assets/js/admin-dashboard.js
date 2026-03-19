@@ -12,6 +12,7 @@
 
   const refreshModal = refreshModalEl && window.bootstrap ? new window.bootstrap.Modal(refreshModalEl) : null;
   const logoutModal = logoutModalEl && window.bootstrap ? new window.bootstrap.Modal(logoutModalEl) : null;
+  const supplyMonitoring = window.MSSSupplyMonitoring;
 
   if (yearEl) yearEl.textContent = String(currentYear);
 
@@ -50,6 +51,21 @@
     currency: "PHP",
     maximumFractionDigits: 0
   }).format(toNumber(value));
+  const formatDate = (value) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "-";
+    return new Intl.DateTimeFormat("en-PH", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric"
+    }).format(parsed);
+  };
+  const esc = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -77,7 +93,7 @@
   const stockNote = (item) => {
     if (!item) return "Monitoring snapshot will appear here.";
     if (item.isLow) {
-      return `${item.shortName} is below its reorder level and needs replenishment soon.`;
+      return `${item.shortName} is below its request point and needs a CHO request soon.`;
     }
     if (item.isOverstock) {
       return `${item.shortName} is above the monitored stock ceiling and should be watched for slow movement.`;
@@ -292,11 +308,11 @@
     "High Risk": "status-pill status-pill--danger",
     Watch: "status-pill status-pill--warning",
     Healthy: "status-pill status-pill--success",
-    "Reorder Now": "status-pill status-pill--danger",
+    "Request Now": "status-pill status-pill--danger",
     "Monitor Weekly": "status-pill status-pill--warning",
     "Overstock / Hold": "status-pill status-pill--info",
     Balanced: "status-pill status-pill--success",
-    "Early Reorder": "status-pill status-pill--danger",
+    "Early Request": "status-pill status-pill--danger",
     "Build Buffer": "status-pill status-pill--warning",
     Ready: "status-pill status-pill--success"
   };
@@ -393,8 +409,8 @@
       let actionNote = `Stock cover ${formatDecimal(coverageMonths, 1)} months`;
 
       if (suggestedOrder > 0) {
-        action = "Early Reorder";
-        actionNote = `Magdagdag ng ${formatNumber(suggestedOrder)} units bago ang peak month`;
+        action = "Early Request";
+        actionNote = `Mag-request ng ${formatNumber(suggestedOrder)} units bago ang peak month`;
       } else if (rainyUplift >= 20 && medicine.stockOnHand < forecast * 2.4) {
         action = "Build Buffer";
         actionNote = `Maghanda para sa ${formatPercent(rainyUplift, 0)} rainy-season increase`;
@@ -426,7 +442,7 @@
     const totalRainyAverage = average(rainyMonthIndexes.map((index) => aggregateDemand[index]));
     const totalDryAverage = average(dryMonthIndexes.map((index) => aggregateDemand[index]));
     const rainyUplift = totalDryAverage > 0 ? ((totalRainyAverage - totalDryAverage) / totalDryAverage) * 100 : 0;
-    const earlyReorderCount = medicineForecasts.filter((medicine) => medicine.action === "Early Reorder").length;
+    const earlyReorderCount = medicineForecasts.filter((medicine) => medicine.action === "Early Request").length;
     const sortedMedicines = [...medicineForecasts].sort((left, right) => right.forecast - left.forecast);
     setText("metricDemandForecast", formatNumber(combinedForecast));
     setText("metricDemandUplift", `${rainyUplift >= 0 ? "+" : ""}${formatPercent(rainyUplift, 0)}`);
@@ -442,16 +458,16 @@
         .map((medicine) => `
         <article class="demand-priority-item">
           <div class="demand-priority-item__left">
-            <div class="demand-priority-item__icon demand-priority-item__icon--${medicine.action === "Early Reorder" ? "warning" : "success"}">
+            <div class="demand-priority-item__icon demand-priority-item__icon--${medicine.action === "Early Request" ? "warning" : "success"}">
               <i class="${medicine.name === "Lagundi" ? "bi bi-capsule-pill" : "bi bi-capsule"}"></i>
             </div>
             <div class="demand-priority-item__copy">
               <strong>${medicine.name}</strong>
-              <span>${medicine.action === "Early Reorder" ? "Reorder Soon" : medicine.name === "Paracetamol" ? "High Demand" : "Increasing"}</span>
+              <span>${medicine.action === "Early Request" ? "Request Soon" : medicine.name === "Paracetamol" ? "High Demand" : "Increasing"}</span>
             </div>
           </div>
-          <div class="demand-priority-item__badge demand-priority-item__badge--${medicine.action === "Early Reorder" ? "warning" : "success"}">
-            <i class="${medicine.action === "Early Reorder" ? "bi bi-exclamation-lg" : "bi bi-arrow-up"}"></i>
+          <div class="demand-priority-item__badge demand-priority-item__badge--${medicine.action === "Early Request" ? "warning" : "success"}">
+            <i class="${medicine.action === "Early Request" ? "bi bi-exclamation-lg" : "bi bi-arrow-up"}"></i>
           </div>
         </article>
       `).join("")
@@ -680,91 +696,126 @@
 
   const renderSupplyDeliveryScenario = () => {
     const leadTimeChartEl = document.getElementById("supplyLeadTimeChart");
-    const supplyScenario = {
-      source: "Ligao City Coastal Rural Health Unit",
-      averageLeadTime: 4,
-      lastDelivery: "July 8",
-      onTimeRate: 92,
-      delayedCount: 1,
-      leadTimeTrend: [3.2, 3.6, 4.1, 3.5, 4.0, 3.7, 4.2, 4.3, 4.9, 5.0, 4.6, 4.8],
-      requests: [
-        {
-          batch: "Paracetamol + ORS",
-          note: "Routine monthly replenishment",
-          requested: "June 1",
-          expected: "June 5",
-          delivered: "June 5",
-          status: "Delivered"
-        },
-        {
-          batch: "Lagundi + Amoxicillin",
-          note: "Rainy season support batch",
-          requested: "June 15",
-          expected: "June 18",
-          delivered: "June 18",
-          status: "Delivered"
-        },
-        {
-          batch: "Cetirizine + Zinc Sulfate",
-          note: "Follow-up request with supplier delay",
-          requested: "July 2",
-          expected: "July 5",
-          delivered: "July 8",
-          status: "Delayed",
-          delayDays: 3
-        }
-      ]
+    const analytics = supplyMonitoring ? supplyMonitoring.buildSupplyAnalytics() : {
+      rows: [],
+      recentRows: [],
+      monthlyLeadTimes: Array(12).fill(0),
+      summary: {
+        averageLeadTime: 0,
+        onTimeCount: 0,
+        delayedCount: 0,
+        incompleteCount: 0,
+        pendingCount: 0,
+        completedCount: 0,
+        onTimeRate: 0
+      }
     };
 
-    const deliveredOnTimeCount = Math.round((supplyScenario.onTimeRate / 100) * 12);
+    const summary = analytics.summary;
+    const sourceLabel = analytics.rows.length
+      ? "City Health Office request-to-delivery monitoring"
+      : "Log CHO requests and link received deliveries to monitor supply lead time and delivery reliability.";
 
-    setText("supplySourceLabel", supplyScenario.source);
-    setText("supplyAvgLeadTime", `${formatNumber(supplyScenario.averageLeadTime)} days`);
-    setText("supplyLastDelivery", supplyScenario.lastDelivery);
-    setText("supplyDeliveryRate", formatPercent(supplyScenario.onTimeRate, 0));
-    setText("supplyDelayedCount", formatNumber(supplyScenario.delayedCount));
-    setText("supplyReliabilityValue", formatPercent(supplyScenario.onTimeRate, 0));
-    setText("supplyReliabilityNote", `${formatNumber(deliveredOnTimeCount)} of 12 deliveries arrived on time this cycle.`);
+    setText("supplySourceLabel", sourceLabel);
+    setText(
+      "supplyAvgLeadTime",
+      summary.completedCount ? `${formatDecimal(summary.averageLeadTime, 1)} days` : "No data yet"
+    );
+    setText("supplyOnTimeCount", formatNumber(summary.onTimeCount));
+    setText("supplyDelayedCount", formatNumber(summary.delayedCount));
+    setText("supplyIncompleteCount", formatNumber(summary.incompleteCount));
+    setText("supplyPendingCount", formatNumber(summary.pendingCount));
+    setText("supplyReliabilityValue", formatPercent(summary.onTimeRate, 0));
+    setText(
+      "supplyReliabilityNote",
+      summary.completedCount
+        ? `${formatNumber(summary.onTimeCount)} of ${formatNumber(summary.completedCount)} completed CHO requests were fulfilled on or before target date.`
+        : "No completed CHO requests yet. Generate a request first, then link the received delivery from Medicine Inventory."
+    );
+
     setHTML(
       "supplyRequestList",
-      supplyScenario.requests
-        .map((request) => `
-          <article class="supply-request-card">
-            <div class="supply-request-card__head">
-              <div class="supply-request-card__copy">
-                <strong>${request.batch}</strong>
-                <span>${request.note}</span>
-              </div>
-              <div class="supply-request-card__badge supply-request-card__badge--${request.status === "Delayed" ? "delay" : "done"}">
-                ${request.status}
-              </div>
-            </div>
-            <div class="supply-request-steps">
-              <div class="supply-request-step supply-request-step--done">
-                <span class="supply-request-step__dot"></span>
-                <small>${request.requested}</small>
-                <span>Request Sent</span>
-              </div>
-              <div class="supply-request-step supply-request-step--done">
-                <span class="supply-request-step__dot"></span>
-                <small>${request.expected}</small>
-                <span>Expected Date</span>
-              </div>
-              <div class="supply-request-step supply-request-step--${request.status === "Delayed" ? "delay" : "done"}">
-                <span class="supply-request-step__dot"></span>
-                <small>${request.delivered}</small>
-                <span>${request.status === "Delayed" ? "Delivered Late" : "Delivered"}</span>
-              </div>
-            </div>
-          </article>
-        `)
-        .join("")
+      analytics.recentRows.length
+        ? analytics.recentRows
+          .map((request) => {
+            const badgeTone = request.onTime
+              ? "done"
+              : request.delayed
+                ? "delay"
+                : request.incomplete || request.statusKey === "partial"
+                  ? "warning"
+                  : "pending";
+            const targetStepTone = request.delayed
+              ? "delay"
+              : (request.isComplete || request.hasDelivery ? "done" : "pending");
+            const deliveryStepTone = request.onTime
+              ? "done"
+              : request.delayed
+                ? "delay"
+                  : request.incomplete || request.statusKey === "partial"
+                    ? "warning"
+                    : "pending";
+            const medicinePreview = Array.isArray(request.items) && request.items.length
+              ? `${request.items.slice(0, 2).map((item) => item.medicineName).join(", ")}${request.items.length > 2 ? ` +${request.items.length - 2} more` : ""}`
+              : request.medicineSummary || "No medicines listed";
+            const requestNote = [
+              `${formatNumber(request.itemCount || 0)} medicine line${request.itemCount === 1 ? "" : "s"}`,
+              request.completedItems > 0
+                ? `${formatNumber(request.completedItems)} completed`
+                : "Awaiting delivery"
+            ].join(" | ");
+            const deliveryDate = request.completionDate || request.lastReceivedDate || "";
+            const deliveryDateLabel = deliveryDate ? formatDate(deliveryDate) : (request.delayed ? `Overdue ${formatNumber(request.overdueDays)} day(s)` : "Waiting");
+            const deliveryStatusLabel = request.onTime
+              ? "Completed"
+              : request.delayed && request.isComplete
+                ? "Completed Late"
+                : request.delayed
+                  ? "Overdue"
+                  : request.incomplete || request.statusKey === "partial"
+                    ? "Partially Received"
+                    : "Pending";
+
+            return `
+              <article class="supply-request-card">
+                <div class="supply-request-card__head">
+                  <div class="supply-request-card__copy">
+                    <strong>${esc(request.requestCode)} - ${esc(formatNumber(request.itemCount || 0))} medicine${request.itemCount === 1 ? "" : "s"}</strong>
+                    <span>${esc(medicinePreview)}</span>
+                    <span>${esc(requestNote)}</span>
+                  </div>
+                  <div class="supply-request-card__badge supply-request-card__badge--${badgeTone}">
+                    ${esc(request.statusLabel)}
+                  </div>
+                </div>
+                <div class="supply-request-steps">
+                  <div class="supply-request-step supply-request-step--done">
+                    <span class="supply-request-step__dot"></span>
+                    <small>${esc(formatDate(request.requestDate))}</small>
+                    <span>Request Logged</span>
+                  </div>
+                  <div class="supply-request-step supply-request-step--${targetStepTone}">
+                    <span class="supply-request-step__dot"></span>
+                    <small>${esc(formatDate(request.expectedDate))}</small>
+                    <span>Target Date</span>
+                  </div>
+                  <div class="supply-request-step supply-request-step--${deliveryStepTone}">
+                    <span class="supply-request-step__dot"></span>
+                    <small>${esc(deliveryDateLabel)}</small>
+                    <span>${esc(deliveryStatusLabel)}</span>
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join("")
+        : '<div class="text-muted small">No CHO requests logged yet.</div>'
     );
 
     ["supplySummaryReliabilityFill", "supplyReliabilityFill"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.style.width = `${Math.max(0, Math.min(100, supplyScenario.onTimeRate))}%`;
+      el.style.width = `${Math.max(0, Math.min(100, summary.onTimeRate))}%`;
     });
 
     if (leadTimeChartEl && window.Chart) {
@@ -775,7 +826,7 @@
         data: {
           labels: months,
           datasets: [{
-            data: supplyScenario.leadTimeTrend,
+            data: analytics.monthlyLeadTimes,
             borderColor: "#6fa45a",
             backgroundColor: "rgba(111, 164, 90, 0.18)",
             fill: true,
@@ -806,7 +857,7 @@
             },
             y: {
               beginAtZero: true,
-              suggestedMax: 6,
+              suggestedMax: Math.max(6, ...analytics.monthlyLeadTimes.map((value) => Math.ceil(value || 0))),
               ticks: {
                 stepSize: 1,
                 precision: 0,
@@ -1048,22 +1099,22 @@
 
   const supplierTemplates = [
     {
-      name: "City Health Depot",
+      name: "Routine CHO Request",
       targetLeadTime: 5,
       leadTimeTrend: -0.12,
-      monthlyLeadTimes: [4.4, 4.2, 4.8, 4.3, 4.6, 4.5, 4.7, 4.4, 4.8, 4.5, 4.3, 4.4]
+      monthlyLeadTimes: [4.6, 4.4, 4.8, 4.5, 4.7, 4.9, 4.8, 4.6, 5.0, 4.8, 4.5, 4.7]
     },
     {
-      name: "Ligao Pharma Hub",
-      targetLeadTime: 6,
+      name: "Urgent CHO Follow-up",
+      targetLeadTime: 4,
       leadTimeTrend: -0.08,
-      monthlyLeadTimes: [6.1, 6.4, 6.0, 5.8, 6.5, 6.2, 6.1, 6.6, 6.3, 6.2, 5.9, 6.1]
+      monthlyLeadTimes: [4.2, 4.6, 4.1, 4.0, 4.8, 4.5, 4.4, 4.9, 4.6, 4.5, 4.2, 4.4]
     },
     {
-      name: "Bicol Medline",
-      targetLeadTime: 5,
+      name: "Program Allocation",
+      targetLeadTime: 7,
       leadTimeTrend: -0.05,
-      monthlyLeadTimes: [6.3, 6.5, 6.0, 5.9, 6.7, 6.8, 6.2, 6.4, 6.5, 6.1, 6.0, 6.4]
+      monthlyLeadTimes: [6.6, 6.9, 6.4, 6.2, 7.1, 7.0, 6.8, 7.2, 7.0, 6.7, 6.5, 6.8]
     }
   ];
 
@@ -1072,7 +1123,7 @@
       name: "Paracetamol 500mg",
       category: "Analgesics",
       condition: "URI / Cough-Cold",
-      supplier: "City Health Depot",
+      supplier: "Routine CHO Request",
       unitCost: 2.2,
       safetyStock: 180,
       stockOnHand: 210,
@@ -1090,7 +1141,7 @@
       name: "Amoxicillin 500mg",
       category: "Antibiotics",
       condition: "URI / Cough-Cold",
-      supplier: "Ligao Pharma Hub",
+      supplier: "Urgent CHO Follow-up",
       unitCost: 6.5,
       safetyStock: 120,
       stockOnHand: 180,
@@ -1108,7 +1159,7 @@
       name: "Cetirizine 10mg",
       category: "Antihistamines",
       condition: "URI / Cough-Cold",
-      supplier: "Bicol Medline",
+      supplier: "Urgent CHO Follow-up",
       unitCost: 4.4,
       safetyStock: 90,
       stockOnHand: 140,
@@ -1126,7 +1177,7 @@
       name: "ORS Sachet",
       category: "Rehydration",
       condition: "Diarrheal Disease",
-      supplier: "City Health Depot",
+      supplier: "Routine CHO Request",
       unitCost: 7.5,
       safetyStock: 70,
       stockOnHand: 480,
@@ -1144,7 +1195,7 @@
       name: "Zinc Sulfate",
       category: "Pediatric Support",
       condition: "Diarrheal Disease",
-      supplier: "City Health Depot",
+      supplier: "Routine CHO Request",
       unitCost: 3.6,
       safetyStock: 55,
       stockOnHand: 82,
@@ -1162,7 +1213,7 @@
       name: "Salbutamol Syrup",
       category: "Respiratory",
       condition: "Respiratory / Asthma",
-      supplier: "Bicol Medline",
+      supplier: "Urgent CHO Follow-up",
       unitCost: 18.5,
       safetyStock: 50,
       stockOnHand: 52,
@@ -1180,7 +1231,7 @@
       name: "Losartan 50mg",
       category: "Maintenance",
       condition: "Hypertension",
-      supplier: "Ligao Pharma Hub",
+      supplier: "Program Allocation",
       unitCost: 5.2,
       safetyStock: 140,
       stockOnHand: 720,
@@ -1198,7 +1249,7 @@
       name: "Amlodipine 5mg",
       category: "Maintenance",
       condition: "Hypertension",
-      supplier: "Ligao Pharma Hub",
+      supplier: "Program Allocation",
       unitCost: 4.8,
       safetyStock: 110,
       stockOnHand: 150,
@@ -1216,7 +1267,7 @@
       name: "Metformin 500mg",
       category: "Maintenance",
       condition: "Diabetes",
-      supplier: "City Health Depot",
+      supplier: "Routine CHO Request",
       unitCost: 6.0,
       safetyStock: 95,
       stockOnHand: 90,
@@ -1234,7 +1285,7 @@
       name: "Multivitamins",
       category: "Wellness",
       condition: "Wellness Support",
-      supplier: "Ligao Pharma Hub",
+      supplier: "Program Allocation",
       unitCost: 3.0,
       safetyStock: 80,
       stockOnHand: 530,
@@ -1427,9 +1478,9 @@
         let actionNote = `Coverage ${formatDecimal(coverageMonths, 1)} months`;
 
         if (medicine.stockOnHand <= reorderPoint) {
-          action = "Reorder Now";
+          action = "Request Now";
           priority = 1;
-          actionNote = `Suggest +${formatNumber(suggestedQty)} units`;
+          actionNote = `Suggest CHO request of ${formatNumber(suggestedQty)} units`;
         } else if (medicine.stockOnHand >= maxStockLevel) {
           action = "Overstock / Hold";
           priority = 2;
@@ -1455,7 +1506,7 @@
       .sort((left, right) => left.priority - right.priority || right.reorderPoint - left.reorderPoint);
 
     const reorderRows = allReorderRows.slice(0, 6);
-    const understockItems = allReorderRows.filter((row) => row.action === "Reorder Now").length;
+    const understockItems = allReorderRows.filter((row) => row.action === "Request Now").length;
     const monitorItems = allReorderRows.filter((row) => row.action === "Monitor Weekly").length;
     const balancedItems = allReorderRows.filter((row) => row.action === "Balanced").length;
     const overstockItems = allReorderRows.filter((row) => row.action === "Overstock / Hold").length;
@@ -1473,15 +1524,15 @@
     const forecastNote = `MA ${formatNumber(movingAverage)} | ES ${formatNumber(exponentialSmoothing)} from the last 12 months of dispensing and prescription demand`;
 
     const alerts = [];
-    const reorderAlert = reorderRows.find((row) => row.action === "Reorder Now");
+    const reorderAlert = reorderRows.find((row) => row.action === "Request Now");
     if (reorderAlert) {
       alerts.push({
         tone: "danger",
         label: "Shortage Alert",
         icon: "bi bi-exclamation-triangle-fill",
-        title: `${reorderAlert.medicine} is below reorder point`,
-        body: `${reorderAlert.medicine} is at ${formatNumber(reorderAlert.stockOnHand)} units versus an ROP of ${formatNumber(reorderAlert.reorderPoint)}. ${reorderAlert.actionNote}.`,
-        meta: "Reorder point with safety stock logic"
+        title: `${reorderAlert.medicine} needs a CHO request`,
+        body: `${reorderAlert.medicine} is at ${formatNumber(reorderAlert.stockOnHand)} units versus a request point of ${formatNumber(reorderAlert.reorderPoint)}. ${reorderAlert.actionNote}.`,
+        meta: "Request point with safety stock logic"
       });
     }
 
@@ -1518,11 +1569,11 @@
     if (weakestSupplier) {
       alerts.push({
         tone: "success",
-        label: "Lead Time Review",
+        label: "Fulfillment Review",
         icon: "bi bi-truck",
-        title: `${weakestSupplier.name} needs delivery monitoring`,
-        body: `${weakestSupplier.name} averages ${formatDecimal(weakestSupplier.averageLeadTime, 1)} days with an on-time rate of ${formatPercent(weakestSupplier.onTimeRate, 0)}.`,
-        meta: "Request module delivery reliability"
+        title: `${weakestSupplier.name} needs follow-up`,
+        body: `${weakestSupplier.name} averages ${formatDecimal(weakestSupplier.averageLeadTime, 1)} days with an on-time fulfillment rate of ${formatPercent(weakestSupplier.onTimeRate, 0)}.`,
+        meta: "CHO request turnaround monitoring"
       });
     }
 
@@ -1748,7 +1799,7 @@
           datasets: [
             {
               type: "bar",
-              label: "Avg Lead Time (days)",
+              label: "Avg Response Lead Time (days)",
               data: supplierTemplates.map(() => 0),
               yAxisID: "y",
               backgroundColor: [palette.greenSoft, palette.gold, palette.red],
@@ -1756,7 +1807,7 @@
             },
             {
               type: "line",
-              label: "On-time Rate (%)",
+              label: "On-time Fulfillment (%)",
               data: supplierTemplates.map(() => 0),
               yAxisID: "y1",
               borderColor: palette.blue,
@@ -1801,7 +1852,7 @@
               },
               title: {
                 display: true,
-                text: "On-time %"
+                 text: "Fulfillment %"
               }
             }
           }
@@ -1871,7 +1922,7 @@
           </td>
           <td>
             <span class="cell-title">${formatNumber(row.stockOnHand)} / ${formatNumber(row.reorderPoint)}</span>
-            <span class="cell-sub">Stock on hand / reorder point</span>
+            <span class="cell-sub">Stock on hand / request point</span>
           </td>
           <td>
             <span class="cell-title">${formatDecimal(row.coverageMonths, 1)} months</span>
@@ -1994,6 +2045,7 @@
     updateCards(data);
     updateListsAndTables(data);
     updateCharts(data);
+    if (document.getElementById("supplyLeadTimeChart")) renderSupplyDeliveryScenario();
   };
 
   if (yearSelect) {
@@ -2019,4 +2071,9 @@
 
   initCharts();
   loadDashboard(Number(yearSelect?.value) || currentYear);
+  window.addEventListener("storage", (event) => {
+    if (!supplyMonitoring) return;
+    if (![supplyMonitoring.STORAGE.requests, supplyMonitoring.STORAGE.movements].includes(event.key)) return;
+    renderSupplyDeliveryScenario();
+  });
 })();

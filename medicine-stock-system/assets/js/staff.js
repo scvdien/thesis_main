@@ -7,6 +7,7 @@
   const ACTIVITY_LOG_STORAGE = "mss_activity_logs_v1";
   const USERS_STORAGE = "mss_users_v1";
   const SESSIONS_STORAGE = "mss_active_sessions_v1";
+  const NOTIFICATION_STORAGE = "mss_notifications_v2";
 
   const HOUSEHOLD_RESIDENT_API = "../household-system/registration-sync.php";
 
@@ -18,13 +19,60 @@
     sidebarToggle: byId("sidebarToggle"),
     logoutLink: byId("logoutLink"),
     moduleAlert: byId("moduleAlert"),
+    staffSidebarNotifications: byId("staffSidebarNotifications"),
+    staffSidebarNotificationBadge: byId("staffSidebarNotificationBadge"),
+    staffAccountToggle: byId("staffAccountToggle"),
+    staffAccountName: byId("staffAccountName"),
+    staffAccountMeta: byId("staffAccountMeta"),
+    staffAccountStatus: byId("staffAccountStatus"),
+    dispenseSuccessModal: byId("dispenseSuccessModal"),
+    dispenseSuccessTitle: byId("dispenseSuccessTitle"),
+    dispenseSuccessBody: byId("dispenseSuccessBody"),
+    dashboardLowCount: byId("dashboardLowCount"),
+    dashboardExpiringCount: byId("dashboardExpiringCount"),
+    dashboardReleasedToday: byId("dashboardReleasedToday"),
+    dashboardResidentCount: byId("dashboardResidentCount"),
+    dashboardDispenseBtn: byId("dashboardDispenseBtn"),
+    staffNotificationCount: byId("staffNotificationCount"),
+    staffNotificationFeed: byId("staffNotificationFeed"),
+    staffNotificationModalPriority: byId("staffNotificationModalPriority"),
+    staffNotificationModalCategory: byId("staffNotificationModalCategory"),
+    staffNotificationModalTitle: byId("staffNotificationModalTitle"),
+    staffNotificationModalBody: byId("staffNotificationModalBody"),
+    staffNotificationModalTime: byId("staffNotificationModalTime"),
     residentSearchInput: byId("residentSearchInput"),
+    residentBarangayFilter: byId("residentBarangayFilter"),
+    residentSortFilter: byId("residentSortFilter"),
+    residentLookupCount: byId("residentLookupCount"),
     residentLookupResults: byId("residentLookupResults"),
+    patientProfileSearchInput: byId("patientProfileSearchInput"),
+    patientProfileSearchBtn: byId("patientProfileSearchBtn"),
+    patientProfileCount: byId("patientProfileCount"),
+    patientProfileList: byId("patientProfileList"),
+    dispenseResidentSearchBox: byId("dispenseResidentSearchBox"),
+    dispenseResidentSearch: byId("dispenseResidentSearch"),
+    dispenseResidentSearchBtn: byId("dispenseResidentSearchBtn"),
+    dispenseResidentPreview: byId("dispenseResidentPreview"),
+    dispenseResidentResults: byId("dispenseResidentResults"),
+    dispenseMedicineCard: byId("dispenseMedicineCard"),
+    residentFormModal: byId("residentFormModal"),
+    residentHouseholdPanel: byId("residentHouseholdPanel"),
+    residentModeCabarianBtn: byId("residentModeCabarianBtn"),
+    residentModeManualBtn: byId("residentModeManualBtn"),
+    residentCabarianSearch: byId("residentCabarianSearch"),
+    residentCabarianSearchBtn: byId("residentCabarianSearchBtn"),
+    residentCabarianCount: byId("residentCabarianCount"),
+    residentCabarianResults: byId("residentCabarianResults"),
+    residentSummaryModal: byId("residentSummaryModal"),
     selectedResidentCard: byId("selectedResidentCard"),
     selectedResidentName: byId("selectedResidentName"),
     selectedResidentMeta: byId("selectedResidentMeta"),
-    selectedResidentLast: byId("selectedResidentLast"),
-    clearSelectedResidentBtn: byId("clearSelectedResidentBtn"),
+    selectedResidentSource: byId("selectedResidentSource"),
+    selectedResidentStatus: byId("selectedResidentStatus"),
+    selectedResidentReleaseCount: byId("selectedResidentReleaseCount"),
+    selectedResidentLastMedicineValue: byId("selectedResidentLastMedicineValue"),
+    selectedResidentLastReleaseValue: byId("selectedResidentLastReleaseValue"),
+    selectedResidentUseBtn: byId("selectedResidentUseBtn"),
     toggleResidentFormBtn: byId("toggleResidentFormBtn"),
     closeResidentFormBtn: byId("closeResidentFormBtn"),
     residentFormPanel: byId("residentFormPanel"),
@@ -34,39 +82,44 @@
     quickResidentZone: byId("quickResidentZone"),
     quickResidentCity: byId("quickResidentCity"),
     dispenseForm: byId("dispenseForm"),
-    dispenseResidentHint: byId("dispenseResidentHint"),
-    dispenseRole: byId("dispenseRole"),
-    dispenseUser: byId("dispenseUser"),
+    dispenseMedicineSearch: byId("dispenseMedicineSearch"),
     dispenseMedicine: byId("dispenseMedicine"),
+    dispenseMedicineResults: byId("dispenseMedicineResults"),
     dispenseStockPreview: byId("dispenseStockPreview"),
+    dispenseDiseaseCategory: byId("dispenseDiseaseCategory"),
+    dispenseIllness: byId("dispenseIllness"),
     dispenseQuantity: byId("dispenseQuantity"),
     dispenseDate: byId("dispenseDate"),
-    dispenseNote: byId("dispenseNote"),
+    dispenseCancelBtn: byId("dispenseCancelBtn"),
     dispenseSubmitBtn: byId("dispenseSubmitBtn"),
     historyTitle: byId("historyTitle"),
     historySubtitle: byId("historySubtitle"),
     historyCount: byId("historyCount"),
     historyList: byId("historyList"),
+    settingsSummaryView: byId("settingsSummaryView"),
+    settingsCredentialsPanel: byId("settingsCredentialsPanel"),
     settingsForm: byId("settingsForm"),
-    settingsProfileCard: byId("settingsProfileCard"),
-    settingsProfileName: byId("settingsProfileName"),
-    settingsProfileMeta: byId("settingsProfileMeta"),
-    settingsRoleChip: byId("settingsRoleChip"),
-    settingsSessionChip: byId("settingsSessionChip"),
     settingsStatusChip: byId("settingsStatusChip"),
+    settingsChangeBtn: byId("settingsChangeBtn"),
     settingsFullName: byId("settingsFullName"),
-    settingsContact: byId("settingsContact"),
     settingsUsername: byId("settingsUsername"),
-    settingsRole: byId("settingsRole"),
     settingsPassword: byId("settingsPassword"),
     settingsConfirmPassword: byId("settingsConfirmPassword"),
-    settingsHelperText: byId("settingsHelperText"),
-    settingsSubmitBtn: byId("settingsSubmitBtn")
+    settingsSubmitBtn: byId("settingsSubmitBtn"),
+    settingsNotice: byId("settingsNotice"),
+    settingsContact: byId("settingsContact"),
+    settingsRole: byId("settingsRole")
   };
   const staffNavLinks = Array.from(document.querySelectorAll("#sidebar .menu a[href^='#']"));
   const staffSections = Array.from(document.querySelectorAll("[data-staff-section]"));
 
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
+  const dispenseSuccessModal = refs.dispenseSuccessModal && window.bootstrap
+    ? new window.bootstrap.Modal(refs.dispenseSuccessModal, { backdrop: false, keyboard: false })
+    : null;
+  const staffNotificationMessageModal = byId("staffNotificationMessageModal") && window.bootstrap ? new window.bootstrap.Modal(byId("staffNotificationMessageModal")) : null;
+  const residentFormModal = refs.residentFormModal && window.bootstrap ? new window.bootstrap.Modal(refs.residentFormModal) : null;
+  const residentSummaryModal = refs.residentSummaryModal && window.bootstrap ? new window.bootstrap.Modal(refs.residentSummaryModal) : null;
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
 
@@ -75,13 +128,21 @@
     movements: [],
     residentAccounts: [],
     residentSearch: "",
+    patientProfileSearch: "",
+    dispenseResidentSearch: "",
+    residentBarangayFilter: "all",
+    residentSort: "recent",
     selectedResidentId: "",
     currentUserId: "",
     residentFormOpen: false,
-    householdResidentsLoaded: false
+    residentFormMode: "cabarian",
+    residentCabarianSearch: "",
+    householdResidentsLoaded: false,
+    householdResidentsSyncing: false
   };
 
   let alertTimer = 0;
+  let dispenseSuccessTimer = 0;
 
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -143,6 +204,167 @@
       return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       return [];
+    }
+  };
+
+  const relativeTime = (value) => {
+    const timestamp = new Date(value).getTime();
+    if (Number.isNaN(timestamp)) return "Just now";
+    const diffMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+    if (diffMinutes < 1) return "Just now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    const diffDays = Math.round(diffHours / 24);
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  };
+
+  const notificationPriorityWeight = {
+    critical: 4,
+    high: 3,
+    medium: 2,
+    low: 1
+  };
+
+  const badgeClass = (priority) => `notification-badge notification-badge--${
+    priority === "critical" ? "critical" : priority === "high" ? "high" : priority === "medium" ? "medium" : "low"
+  }`;
+
+  const normalizeNotification = (entry = {}) => {
+    const priority = ["critical", "high", "medium", "low"].includes(keyOf(entry.priority)) ? keyOf(entry.priority) : "medium";
+    return {
+      id: text(entry.id) || uid(),
+      category: text(entry.category) || "Medicine Status",
+      priority,
+      title: text(entry.title) || "Medicine alert",
+      body: text(entry.body) || "Review the medicine notification.",
+      createdAt: text(entry.createdAt) || nowIso(),
+      updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
+      read: Boolean(entry.read),
+      signature: text(entry.signature)
+    };
+  };
+
+  const getStoredNotifications = () => readList(NOTIFICATION_STORAGE)
+    .map(normalizeNotification)
+    .sort((left, right) => {
+      if (left.read !== right.read) return left.read ? 1 : -1;
+      const priorityDelta = (notificationPriorityWeight[right.priority] || 0) - (notificationPriorityWeight[left.priority] || 0);
+      if (priorityDelta) return priorityDelta;
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    });
+
+  const updateStoredNotification = (id, updater) => {
+    let updatedNotification = null;
+    const nextItems = readList(NOTIFICATION_STORAGE).map((entry) => {
+      const normalized = normalizeNotification(entry);
+      if (text(normalized.id) !== text(id)) return entry;
+
+      const draft = { ...normalized };
+      updater(draft);
+      draft.updatedAt = nowIso();
+      updatedNotification = draft;
+      return { ...entry, ...draft };
+    });
+
+    if (!updatedNotification) return null;
+    localStorage.setItem(NOTIFICATION_STORAGE, JSON.stringify(nextItems));
+    return updatedNotification;
+  };
+
+  const openStaffNotificationCenter = () => {
+    renderStaffNotifications();
+    openSection("notifications");
+  };
+
+  const openStaffNotificationDetail = (notification) => {
+    if (!notification) return;
+    if (refs.staffNotificationModalPriority) {
+      refs.staffNotificationModalPriority.className = badgeClass(notification.priority);
+      refs.staffNotificationModalPriority.textContent = notification.priority;
+    }
+    if (refs.staffNotificationModalCategory) refs.staffNotificationModalCategory.textContent = notification.category;
+    if (refs.staffNotificationModalTitle) refs.staffNotificationModalTitle.textContent = notification.title;
+    if (refs.staffNotificationModalBody) refs.staffNotificationModalBody.textContent = notification.body;
+    if (refs.staffNotificationModalTime) refs.staffNotificationModalTime.textContent = formatDateTime(notification.createdAt);
+    staffNotificationMessageModal?.show();
+  };
+
+  const renderStaffNotifications = () => {
+    const notifications = getStoredNotifications();
+    const unreadCount = notifications.filter((entry) => !entry.read).length;
+
+    [refs.staffSidebarNotificationBadge].forEach((badge) => {
+      if (!badge) return;
+      badge.textContent = formatNumber(unreadCount);
+      badge.classList.toggle("d-none", unreadCount <= 0);
+    });
+
+    if (refs.staffNotificationCount) {
+      refs.staffNotificationCount.textContent = `${formatNumber(notifications.length)} alert${notifications.length === 1 ? "" : "s"}`;
+    }
+
+    if (!refs.staffNotificationFeed) return;
+
+    if (!notifications.length) {
+      refs.staffNotificationFeed.innerHTML = '<div class="notification-empty">No notifications yet for this dashboard.</div>';
+      return;
+    }
+
+    refs.staffNotificationFeed.innerHTML = notifications.map((notification) => {
+      const unreadDot = !notification.read
+        ? '<span class="notification-unread-dot" aria-hidden="true"></span>'
+        : "";
+      const unreadClass = notification.read ? "" : " is-unread";
+
+      return `
+        <article class="notification-card${unreadClass}" data-staff-notification-id="${esc(notification.id)}">
+          <div class="notification-card__head">
+            <div>
+              <div class="notification-card__title">${unreadDot}${esc(notification.title)}</div>
+              <p class="notification-card__body">${esc(notification.body)}</p>
+            </div>
+            <span class="${esc(badgeClass(notification.priority))}">${esc(notification.priority)}</span>
+          </div>
+          <div class="notification-card__meta">
+            <span class="notification-meta-label">${esc(notification.category)}</span>
+            <span class="notification-meta-separator" aria-hidden="true">|</span>
+            <span>${esc(formatDateTime(notification.createdAt))}</span>
+            <span class="notification-meta-separator" aria-hidden="true">|</span>
+            <span>${esc(relativeTime(notification.createdAt))}</span>
+          </div>
+        </article>
+      `;
+    }).join("");
+  };
+
+  const accountRoleLabel = (value) => keyOf(value) === "staff" ? "Staff" : "Barangay Health Worker";
+  const accountPresenceLabel = (value) => {
+    const normalized = text(value);
+    if (!normalized) return "Offline";
+    if (keyOf(normalized) === "active") return "Active";
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+  };
+  const renderTopbarAccount = () => {
+    const user = getCurrentBhwUser();
+    const session = user ? getCurrentBhwSession(user.id) : null;
+    const resolvedPresence = text(session?.presence) || (text(user?.status) === "Active" ? "Online" : text(user?.status));
+
+    if (!user) {
+      if (refs.staffAccountName) refs.staffAccountName.textContent = "Staff Account";
+      if (refs.staffAccountMeta) refs.staffAccountMeta.textContent = "Barangay Health Worker";
+      if (refs.staffAccountStatus) {
+        refs.staffAccountStatus.textContent = "Not linked";
+        refs.staffAccountStatus.dataset.state = "not-linked";
+      }
+      return;
+    }
+
+    if (refs.staffAccountName) refs.staffAccountName.textContent = user.fullName || "Assigned Staff";
+    if (refs.staffAccountMeta) refs.staffAccountMeta.textContent = accountRoleLabel(user.role);
+    if (refs.staffAccountStatus) {
+      refs.staffAccountStatus.textContent = accountPresenceLabel(resolvedPresence || "Online");
+      refs.staffAccountStatus.dataset.state = keyOf(resolvedPresence || "online") || "online";
     }
   };
 
@@ -226,13 +448,17 @@
 
   const getCurrentBhwSession = (userId) => getStoredSessions().find((session) => text(session.userId) === text(userId)) || null;
 
+  const setSettingsEditorOpen = (open) => {
+    refs.settingsSummaryView?.classList.toggle("d-none", open);
+    refs.settingsCredentialsPanel?.classList.toggle("d-none", !open);
+  };
+
   const setSettingsDisabled = (disabled) => {
-    if (!refs.settingsForm) return;
-    refs.settingsForm.querySelectorAll("input, button").forEach((field) => {
+    refs.settingsForm?.querySelectorAll("input, button").forEach((field) => {
       field.disabled = disabled;
     });
+    if (refs.settingsChangeBtn) refs.settingsChangeBtn.disabled = disabled;
     if (!disabled) {
-      if (refs.settingsUsername) refs.settingsUsername.disabled = false;
       if (refs.settingsRole) refs.settingsRole.disabled = false;
     }
   };
@@ -287,6 +513,53 @@
     alertTimer = window.setTimeout(() => refs.moduleAlert?.classList.add("d-none"), 3200);
   };
 
+  const clearNotice = () => {
+    window.clearTimeout(alertTimer);
+    refs.moduleAlert?.classList.add("d-none");
+  };
+
+  const setSettingsNotice = (message, tone = "muted") => {
+    if (!refs.settingsNotice) return;
+    refs.settingsNotice.textContent = message;
+    refs.settingsNotice.classList.remove("is-muted", "is-danger", "is-success");
+    refs.settingsNotice.classList.add(
+      tone === "danger" ? "is-danger" : tone === "success" ? "is-success" : "is-muted"
+    );
+  };
+
+  const showTransientSuccess = ({ title = "Success", body = "Action completed successfully.", fallback = "Saved successfully." } = {}) => {
+    if (!dispenseSuccessModal) {
+      showNotice(fallback);
+      return;
+    }
+
+    window.clearTimeout(alertTimer);
+    refs.moduleAlert?.classList.add("d-none");
+
+    if (refs.dispenseSuccessTitle) refs.dispenseSuccessTitle.textContent = title;
+    if (refs.dispenseSuccessBody) refs.dispenseSuccessBody.textContent = body;
+
+    window.clearTimeout(dispenseSuccessTimer);
+    dispenseSuccessModal.show();
+    dispenseSuccessTimer = window.setTimeout(() => dispenseSuccessModal.hide(), 1500);
+  };
+
+  const showDispenseSuccess = ({ medicineName = "Medicine", residentName = "Resident", quantity = 0, unit = "units" } = {}) => {
+    showTransientSuccess({
+      title: "Successfully Dispensed",
+      body: `${medicineName} was dispensed to ${residentName} (${formatNumber(quantity)} ${unit}).`,
+      fallback: `${medicineName} dispensed to ${residentName}.`
+    });
+  };
+
+  const showResidentSelectedSuccess = ({ residentName = "Resident" } = {}) => {
+    showTransientSuccess({
+      title: "Resident Selected",
+      body: `${residentName} is ready for dispensing.`,
+      fallback: `${residentName} is ready for dispensing.`
+    });
+  };
+
   const closeMobileSidebar = () => {
     refs.sidebar?.classList.remove("open");
     refs.sidebarBackdrop?.classList.remove("show");
@@ -298,6 +571,14 @@
     const nextId = staffSections.some((section) => section.id === sectionId) ? sectionId : fallbackId;
     if (!nextId) return;
 
+    if (nextId !== "my-settings") {
+      setSettingsEditorOpen(false);
+    }
+
+    if (nextId === "notifications") {
+      renderStaffNotifications();
+    }
+
     staffSections.forEach((section) => {
       section.classList.toggle("is-active", section.id === nextId);
     });
@@ -305,6 +586,15 @@
     staffNavLinks.forEach((link) => {
       link.classList.toggle("active", text(link.getAttribute("href")).replace(/^#/, "") === nextId);
     });
+  };
+
+  const openSection = (sectionId) => {
+    if (!sectionId) return;
+    setActiveSection(sectionId);
+    if (history.replaceState) {
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${sectionId}`);
+    }
+    closeMobileSidebar();
   };
 
   const toggleSidebar = () => {
@@ -351,6 +641,8 @@
     medicineName: text(entry.medicineName),
     actionType: text(entry.actionType) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
+    diseaseCategory: text(entry.diseaseCategory),
+    illness: text(entry.illness),
     note: text(entry.note) || "Inventory movement recorded.",
     stockBefore: Math.max(0, Math.round(numeric(entry.stockBefore))),
     stockAfter: Math.max(0, Math.round(numeric(entry.stockAfter))),
@@ -385,6 +677,81 @@
   ].filter(Boolean).join(", ");
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
+  const medicinePickerMeta = (medicine) => [
+    text(medicine.genericName),
+    text(medicine.form),
+    text(medicine.batchNumber) ? `Batch ${text(medicine.batchNumber)}` : ""
+  ].filter(Boolean).join(" | ");
+  const medicineSearchText = (medicine) => [
+    medicineLabel(medicine),
+    text(medicine.genericName),
+    text(medicine.category),
+    text(medicine.form),
+    text(medicine.strength),
+    text(medicine.batchNumber),
+    text(medicine.unit)
+  ].join(" ").toLowerCase();
+  const getSortedMedicines = () => [...state.inventory].sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
+  const movementConditionLabel = (movement) => {
+    const diseaseCategory = text(movement?.diseaseCategory);
+    const illness = text(movement?.illness);
+    if (diseaseCategory && illness) return `${diseaseCategory} | ${illness}`;
+    return diseaseCategory || illness || "";
+  };
+  const getDispenseMovements = () => state.movements
+    .filter((movement) => keyOf(movement.actionType) === "dispense")
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const movementMatchesResident = (movement, resident) => (
+    text(movement.recipientId).toLowerCase() === text(resident.residentId).toLowerCase()
+    || (
+      !text(movement.recipientId)
+      && text(movement.recipientName).toLowerCase() === text(resident.fullName).toLowerCase()
+    )
+  );
+  const getResidentDispenseHistory = (resident) => {
+    if (!resident) return [];
+    return getDispenseMovements().filter((movement) => movementMatchesResident(movement, resident));
+  };
+  const getResidentStatusMeta = ({ totalReleases = 0, lastMovement = null } = {}) => {
+    if (!lastMovement || totalReleases <= 0) {
+      return { label: "New", tone: "neutral", helper: "No recorded dispense yet." };
+    }
+
+    const daysSinceLastRelease = Math.max(0, Math.round((Date.now() - new Date(lastMovement.createdAt).getTime()) / 86400000));
+    if (daysSinceLastRelease <= 7) {
+      return { label: "Recent", tone: "success", helper: "Dispensed within the last 7 days." };
+    }
+    if (totalReleases >= 5) {
+      return { label: "Frequent", tone: "success", helper: "Multiple dispensing records on file." };
+    }
+    if (daysSinceLastRelease <= 30) {
+      return { label: "Active", tone: "success", helper: "Dispensed within the last 30 days." };
+    }
+    return { label: "Follow-up", tone: "warning", helper: "No recent medicine dispensing recorded." };
+  };
+  const getResidentStats = (resident) => {
+    const history = getResidentDispenseHistory(resident);
+    const lastMovement = history[0] || null;
+    return {
+      history,
+      totalReleases: history.length,
+      totalUnits: history.reduce((total, movement) => total + Math.max(0, numeric(movement.quantity)), 0),
+      lastMovement,
+      lastMedicine: text(lastMovement?.medicineName) || text(resident?.lastDispensedMedicine) || "-",
+      lastReleaseAt: text(lastMovement?.createdAt) || text(resident?.lastDispensedAt),
+      status: getResidentStatusMeta({ totalReleases: history.length, lastMovement })
+    };
+  };
+  const residentStatusChipClass = (tone) => {
+    if (tone === "warning") return "staff-chip staff-chip--warning";
+    if (tone === "neutral") return "staff-chip staff-chip--neutral";
+    return "staff-chip";
+  };
+  const stockStatusChipClass = (tone) => {
+    if (tone === "warning") return "staff-chip staff-chip--warning";
+    if (tone === "danger") return "staff-chip staff-chip--danger";
+    return "staff-chip";
+  };
 
   const seedInventory = () => ([
     {
@@ -590,6 +957,8 @@
         medicineName: "ORS",
         actionType: "dispense",
         quantity: 18,
+        diseaseCategory: "Diarrhea",
+        illness: "Acute diarrhea",
         stockBefore: 80,
         stockAfter: 62,
         createdAt: new Date(Date.now() - (5 * 3600000)).toISOString(),
@@ -604,10 +973,12 @@
         medicineName: "Lagundi",
         actionType: "dispense",
         quantity: 6,
+        diseaseCategory: "Cough / Cold",
+        illness: "Cough and colds",
         stockBefore: 34,
         stockAfter: 28,
         createdAt: new Date(Date.now() - (9 * 3600000)).toISOString(),
-        note: "Released for cough and colds consultations.",
+        note: "Dispensed for cough and colds consultations.",
         recipientId: "MSR-2026-0001",
         recipientName: "Lorna Reyes",
         recipientBarangay: "Bonga",
@@ -710,6 +1081,8 @@
   const syncHouseholdResidents = async () => {
     if (state.householdResidentsLoaded) return;
     state.householdResidentsLoaded = true;
+    state.householdResidentsSyncing = true;
+    renderCabarianResidentResults();
 
     try {
       const items = [];
@@ -762,9 +1135,15 @@
       if (mergeResidentAccounts(normalized)) {
         saveState();
         renderResidentSearchResults();
+        renderPatientProfiles();
+        renderCabarianResidentResults();
+        renderDashboard();
       }
     } catch (error) {
       // Keep local resident lookup available even if sync fails.
+    } finally {
+      state.householdResidentsSyncing = false;
+      renderCabarianResidentResults();
     }
   };
 
@@ -796,6 +1175,26 @@
     return { key: "healthy", label: "Healthy", tone: "success", note: "Stock within target range" };
   };
 
+  const renderDashboard = () => {
+    const today = todayInputValue();
+    const dispenseMovements = getDispenseMovements();
+    const lowStockItems = state.inventory.filter((medicine) => {
+      const statusKey = getStatus(medicine).key;
+      return statusKey === "out-of-stock" || statusKey === "critical" || statusKey === "low-stock";
+    });
+    const expiringItems = state.inventory.filter((medicine) => {
+      const remainingDays = daysUntil(medicine.expiryDate);
+      return remainingDays >= 0 && remainingDays <= 30;
+    });
+    const releasesToday = dispenseMovements.filter((movement) => text(movement.createdAt).slice(0, 10) === today);
+    const profilesWithHistory = state.residentAccounts.filter((resident) => getResidentStats(resident).totalReleases > 0);
+
+    if (refs.dashboardLowCount) refs.dashboardLowCount.textContent = formatNumber(lowStockItems.length);
+    if (refs.dashboardExpiringCount) refs.dashboardExpiringCount.textContent = formatNumber(expiringItems.length);
+    if (refs.dashboardReleasedToday) refs.dashboardReleasedToday.textContent = formatNumber(releasesToday.length);
+    if (refs.dashboardResidentCount) refs.dashboardResidentCount.textContent = formatNumber(profilesWithHistory.length);
+  };
+
   const findMedicine = (id) => state.inventory.find((medicine) => medicine.id === id) || null;
   const findResidentAccount = (id) => state.residentAccounts.find((resident) =>
     text(resident.id) === text(id) || text(resident.residentId) === text(id)
@@ -806,33 +1205,34 @@
     if (refs.quickResidentCity) refs.quickResidentCity.value = "Ligao City";
   };
 
-  const toggleResidentForm = (forceOpen = null) => {
-    state.residentFormOpen = typeof forceOpen === "boolean" ? forceOpen : !state.residentFormOpen;
-    refs.residentFormPanel?.classList.toggle("d-none", !state.residentFormOpen);
-    if (refs.toggleResidentFormBtn) {
-      refs.toggleResidentFormBtn.textContent = state.residentFormOpen ? "Hide Form" : "New Account";
-    }
-    if (!state.residentFormOpen) clearResidentForm();
+  const getResidentFormFocusTarget = () => {
+    if (state.residentFormMode === "manual") return refs.quickResidentName;
+    return refs.residentCabarianSearch;
   };
 
-  const setSelectedResident = (resident) => {
-    state.selectedResidentId = resident?.id || "";
-    if (refs.residentSearchInput && resident) {
-      refs.residentSearchInput.value = resident.fullName;
-      state.residentSearch = resident.fullName;
+  const setResidentFormMode = (mode = "cabarian") => {
+    state.residentFormMode = mode === "manual" ? "manual" : "cabarian";
+    const isCabarian = state.residentFormMode === "cabarian";
+
+    refs.residentHouseholdPanel?.classList.toggle("d-none", !isCabarian);
+    refs.residentFormPanel?.classList.toggle("d-none", isCabarian);
+
+    if (refs.residentModeCabarianBtn) {
+      refs.residentModeCabarianBtn.classList.toggle("is-active", isCabarian);
+      refs.residentModeCabarianBtn.setAttribute("aria-pressed", String(isCabarian));
     }
-    toggleResidentForm(false);
-    renderSelectedResident();
-    renderResidentSearchResults();
-    renderHistory();
+    if (refs.residentModeManualBtn) {
+      refs.residentModeManualBtn.classList.toggle("is-active", !isCabarian);
+      refs.residentModeManualBtn.setAttribute("aria-pressed", String(!isCabarian));
+    }
   };
 
-  const sortedResidentAccounts = () => {
-    const query = text(state.residentSearch).toLowerCase();
-    const selectedId = text(state.selectedResidentId);
-
-    return [...state.residentAccounts]
+  const filteredCabarianResidents = () => {
+    const query = text(state.residentCabarianSearch).toLowerCase();
+    return state.residentAccounts
+      .filter((resident) => resident.source === "household-system")
       .filter((resident) => {
+        if (!query) return true;
         const haystack = [
           resident.residentId,
           resident.householdId,
@@ -841,79 +1241,533 @@
           resident.zone,
           resident.city
         ].join(" ").toLowerCase();
+        return haystack.includes(query);
+      })
+      .sort((left, right) => text(left.fullName).localeCompare(text(right.fullName)));
+  };
+
+  const renderResidentBarangayOptions = () => {
+    if (!refs.residentBarangayFilter) return;
+
+    const currentValue = text(state.residentBarangayFilter) || "all";
+    const barangays = Array.from(new Set(
+      state.residentAccounts
+        .map((resident) => text(resident.barangay))
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right))
+    ));
+
+    const options = [
+      { value: "all", label: "All Barangays" },
+      ...barangays.map((barangay) => ({
+        value: keyOf(barangay),
+        label: barangay
+      }))
+    ];
+
+    const hasCurrent = options.some((option) => option.value === currentValue);
+    const nextValue = hasCurrent ? currentValue : "all";
+    state.residentBarangayFilter = nextValue;
+
+    refs.residentBarangayFilter.innerHTML = options.map((option) => `
+      <option value="${esc(option.value)}"${option.value === nextValue ? " selected" : ""}>${esc(option.label)}</option>
+    `).join("");
+  };
+
+  const renderCabarianResidentResults = () => {
+    if (!refs.residentCabarianResults) return;
+    const query = text(state.residentCabarianSearch);
+
+    if (!query) {
+      refs.residentCabarianResults.innerHTML = '<div class="staff-empty">Search a resident name, resident ID, or household ID to view matches.</div>';
+      if (refs.residentCabarianCount) refs.residentCabarianCount.textContent = "";
+      return;
+    }
+
+    if (state.householdResidentsSyncing) {
+      refs.residentCabarianResults.innerHTML = '<div class="staff-empty">Loading Cabarian residents...</div>';
+      if (refs.residentCabarianCount) refs.residentCabarianCount.textContent = "Syncing";
+      return;
+    }
+
+    const matches = filteredCabarianResidents();
+    if (refs.residentCabarianCount) {
+      refs.residentCabarianCount.textContent = `${formatNumber(matches.length)} resident${matches.length === 1 ? "" : "s"}`;
+    }
+
+    if (!matches.length) {
+      refs.residentCabarianResults.innerHTML = '<div class="staff-empty">No matching Cabarian resident found in the household system.</div>';
+      return;
+    }
+
+    refs.residentCabarianResults.innerHTML = matches.slice(0, 24).map((resident) => {
+      const meta = [resident.residentId, text(resident.householdId)].filter(Boolean).join(" | ");
+      const address = residentAddressLabel(resident) || "Cabarian, Ligao City";
+      return `
+        <button type="button" class="staff-account-result" data-cabarian-resident-id="${esc(resident.id)}">
+          <span class="staff-account-result__main">
+            <strong>${esc(resident.fullName)}</strong>
+            <small>${esc(meta || "Household resident")}</small>
+          </span>
+          <span class="staff-account-result__tail">
+            <span>${esc(address)}</span>
+            <small>Select resident</small>
+          </span>
+        </button>
+      `;
+    }).join("");
+  };
+
+  const toggleResidentForm = (forceOpen = null) => {
+    const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !state.residentFormOpen;
+    state.residentFormOpen = shouldOpen;
+
+    if (residentFormModal) {
+      if (shouldOpen) {
+        state.residentCabarianSearch = "";
+        if (refs.residentCabarianSearch) refs.residentCabarianSearch.value = "";
+        setResidentFormMode("cabarian");
+        void syncHouseholdResidents();
+        renderCabarianResidentResults();
+        residentFormModal.show();
+      } else {
+        residentFormModal.hide();
+      }
+      return;
+    }
+
+    refs.residentFormPanel?.classList.toggle("d-none", !shouldOpen);
+    if (shouldOpen) {
+      window.setTimeout(() => refs.quickResidentName?.focus(), 180);
+      return;
+    }
+
+    clearResidentForm();
+  };
+
+  const setSelectedResident = (resident, { openModal = false } = {}) => {
+    state.selectedResidentId = resident?.id || "";
+    toggleResidentForm(false);
+    renderSelectedResident();
+    renderResidentSearchResults();
+    renderHistory();
+    if (openModal && resident) residentSummaryModal?.show();
+  };
+
+  const filteredResidentAccounts = () => {
+    const query = text(state.residentSearch).toLowerCase();
+    const selectedId = text(state.selectedResidentId);
+    const barangayFilter = keyOf(state.residentBarangayFilter);
+    const sortKey = keyOf(state.residentSort);
+
+    return state.residentAccounts
+      .map((resident) => ({
+        resident,
+        stats: getResidentStats(resident)
+      }))
+      .filter(({ resident, stats }) => {
+        const haystack = [
+          resident.residentId,
+          resident.householdId,
+          resident.fullName,
+          resident.barangay,
+          resident.zone,
+          resident.city
+        ].join(" ").toLowerCase();
+
+        if (query && !haystack.includes(query)) return false;
+        if (barangayFilter !== "all" && keyOf(resident.barangay) !== barangayFilter) return false;
+
+        return true;
+      })
+      .sort((left, right) => {
+        if (text(left.resident.id) === selectedId) return -1;
+        if (text(right.resident.id) === selectedId) return 1;
+
+        if (sortKey === "name") {
+          return text(left.resident.fullName).localeCompare(text(right.resident.fullName));
+        }
+
+        if (sortKey === "releases") {
+          if (left.stats.totalReleases !== right.stats.totalReleases) {
+            return right.stats.totalReleases - left.stats.totalReleases;
+          }
+          const leftRecent = new Date(text(left.stats.lastReleaseAt) || 0).getTime();
+          const rightRecent = new Date(text(right.stats.lastReleaseAt) || 0).getTime();
+          return rightRecent - leftRecent;
+        }
+
+        const leftRecent = new Date(text(left.stats.lastReleaseAt) || 0).getTime();
+        const rightRecent = new Date(text(right.stats.lastReleaseAt) || 0).getTime();
+        if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+
+        if (left.stats.totalReleases !== right.stats.totalReleases) {
+          return right.stats.totalReleases - left.stats.totalReleases;
+        }
+
+        return text(left.resident.fullName).localeCompare(text(right.resident.fullName));
+      });
+  };
+
+  const filteredPatientProfiles = () => {
+    const query = text(state.patientProfileSearch).toLowerCase();
+    const selectedId = text(state.selectedResidentId);
+
+    return state.residentAccounts
+      .map((resident) => ({
+        resident,
+        stats: getResidentStats(resident)
+      }))
+      .filter(({ stats }) => stats.totalReleases > 0)
+      .filter(({ resident, stats }) => {
+        const haystack = [
+          resident.residentId,
+          resident.householdId,
+          resident.fullName,
+          resident.barangay,
+          resident.zone,
+          resident.city,
+          stats.lastMedicine,
+          movementConditionLabel(stats.lastMovement)
+        ].join(" ").toLowerCase();
+
         return !query || haystack.includes(query);
       })
       .sort((left, right) => {
-        if (text(left.id) === selectedId) return -1;
-        if (text(right.id) === selectedId) return 1;
-        if (text(left.lastDispensedAt) !== text(right.lastDispensedAt)) {
-          return new Date(text(right.lastDispensedAt) || 0).getTime() - new Date(text(left.lastDispensedAt) || 0).getTime();
+        if (text(left.resident.id) === selectedId) return -1;
+        if (text(right.resident.id) === selectedId) return 1;
+
+        const leftRecent = new Date(text(left.stats.lastReleaseAt) || 0).getTime();
+        const rightRecent = new Date(text(right.stats.lastReleaseAt) || 0).getTime();
+        if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+
+        if (left.stats.totalReleases !== right.stats.totalReleases) {
+          return right.stats.totalReleases - left.stats.totalReleases;
         }
-        return text(left.fullName).localeCompare(text(right.fullName));
+
+        return text(left.resident.fullName).localeCompare(text(right.resident.fullName));
+      });
+  };
+
+  const renderPatientProfiles = () => {
+    if (!refs.patientProfileList) return;
+
+    const profiles = filteredPatientProfiles();
+    if (refs.patientProfileCount) {
+      refs.patientProfileCount.textContent = `${formatNumber(profiles.length)} profile${profiles.length === 1 ? "" : "s"}`;
+    }
+
+    if (!profiles.length) {
+      refs.patientProfileList.innerHTML = `<div class="staff-empty">${
+        text(state.patientProfileSearch)
+          ? "No matching patient profile with dispense records."
+          : "No patient profiles with dispense records yet."
+      }</div>`;
+      return;
+    }
+
+    refs.patientProfileList.innerHTML = profiles.map(({ resident, stats }) => {
+      const isActive = text(resident.id) === text(state.selectedResidentId) ? " is-active" : "";
+      const address = residentAddressLabel(resident) || resident.barangay || "Resident account";
+      const lastDispense = stats.lastReleaseAt ? formatDateTime(stats.lastReleaseAt) : "No recent dispense";
+      const patientMeta = [resident.residentId, text(resident.householdId)].filter(Boolean).join(" | ");
+
+      return `
+        <button type="button" class="staff-profile-row${isActive}" data-profile-resident-id="${esc(resident.id)}">
+          <span class="staff-profile-row__patient">
+            <strong>${esc(resident.fullName)}</strong>
+            <small>${esc(patientMeta || "Resident profile")}</small>
+          </span>
+          <span class="staff-profile-row__text">${esc(address)}</span>
+          <span class="staff-profile-row__text">${esc(stats.lastMedicine || "-")}</span>
+          <span class="staff-profile-row__text">${esc(lastDispense)}</span>
+          <span class="staff-profile-row__count">${esc(formatNumber(stats.totalReleases))}</span>
+          <span class="staff-profile-row__action">
+            <span class="staff-chip staff-chip--neutral">View Profile</span>
+          </span>
+        </button>
+      `;
+    }).join("");
+  };
+
+  const filteredDispenseResidents = () => {
+    const query = keyOf(state.dispenseResidentSearch);
+    const selectedId = text(state.selectedResidentId);
+
+    return state.residentAccounts
+      .map((resident) => ({
+        resident,
+        stats: getResidentStats(resident)
+      }))
+      .filter(({ resident }) => {
+        if (!query) return true;
+        const haystack = [
+          resident.residentId,
+          resident.householdId,
+          resident.fullName,
+          resident.barangay,
+          resident.zone,
+          resident.city
+        ].join(" ").toLowerCase();
+        return haystack.includes(query);
       })
-      .slice(0, 8);
+      .sort((left, right) => {
+        const leftSelected = text(left.resident.id) === selectedId ? 1 : 0;
+        const rightSelected = text(right.resident.id) === selectedId ? 1 : 0;
+        if (leftSelected !== rightSelected) return rightSelected - leftSelected;
+
+        const leftRecent = new Date(text(left.stats.lastReleaseAt) || 0).getTime();
+        const rightRecent = new Date(text(right.stats.lastReleaseAt) || 0).getTime();
+        if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+
+        return text(left.resident.fullName).localeCompare(text(right.resident.fullName));
+      });
+  };
+
+  const renderDispenseResidentPicker = () => {
+    const resident = findResidentAccount(state.selectedResidentId);
+    const query = text(state.dispenseResidentSearch);
+
+    if (refs.dispenseResidentSearchBox) {
+      refs.dispenseResidentSearchBox.classList.toggle("d-none", Boolean(resident));
+    }
+
+    if (refs.dispenseResidentPreview) {
+      if (!resident) {
+        refs.dispenseResidentPreview.className = "staff-dispense-patient-preview d-none";
+        refs.dispenseResidentPreview.innerHTML = "";
+      } else {
+        const stats = getResidentStats(resident);
+        const latest = stats.lastReleaseAt ? `Last dispense ${formatDateTime(stats.lastReleaseAt)}` : "No dispense history yet";
+        refs.dispenseResidentPreview.className = "staff-dispense-patient-preview is-active";
+        refs.dispenseResidentPreview.innerHTML = `
+          <div class="staff-dispense-patient-preview__head">
+            <strong>Selected Patient</strong>
+            <button type="button" class="btn btn-sm btn-light" data-change-dispense-resident>Change</button>
+          </div>
+          <span>${esc(resident.fullName)}</span>
+          <small>${esc([resident.residentId, residentAddressLabel(resident)].filter(Boolean).join(" | "))}</small>
+          <small>${esc(latest)}</small>
+        `;
+      }
+    }
+
+    if (!refs.dispenseResidentResults) return;
+
+    if (!query) {
+      refs.dispenseResidentResults.classList.add("d-none");
+      refs.dispenseResidentResults.innerHTML = "";
+      return;
+    }
+
+    refs.dispenseResidentResults.classList.remove("d-none");
+
+    const residents = filteredDispenseResidents();
+    if (!residents.length) {
+      refs.dispenseResidentResults.innerHTML = '<div class="staff-empty">No matching patient account found.</div>';
+      return;
+    }
+
+    refs.dispenseResidentResults.innerHTML = residents.slice(0, 6).map(({ resident, stats }) => {
+      const isActive = text(resident.id) === text(state.selectedResidentId);
+      const meta = [resident.residentId, text(resident.householdId)].filter(Boolean).join(" | ");
+      return `
+        <button type="button" class="staff-account-result${isActive ? " is-active" : ""}" data-dispense-resident-id="${esc(resident.id)}">
+          <span class="staff-account-result__main">
+            <strong>${esc(resident.fullName)}</strong>
+            <small>${esc(meta || "Resident account")}</small>
+          </span>
+          <span class="staff-account-result__tail">
+            <span>${esc(residentAddressLabel(resident) || resident.barangay || "Ligao City")}</span>
+            <small>${esc(isActive ? "Selected" : "Select patient")}</small>
+          </span>
+        </button>
+      `;
+    }).join("");
   };
 
   const updateDispenseFormState = () => {
     const resident = findResidentAccount(state.selectedResidentId);
     const hasResident = Boolean(resident);
-    if (refs.dispenseSubmitBtn) refs.dispenseSubmitBtn.disabled = !hasResident;
-
-    if (!refs.dispenseResidentHint) return;
-    if (!resident) {
-      refs.dispenseResidentHint.innerHTML = "<strong>No resident selected</strong><span>Select a resident account first.</span>";
-      return;
+    if (!hasResident) {
+      updateDispenseMedicineSelection("");
     }
-
-    const meta = [resident.residentId, residentAddressLabel(resident)].filter(Boolean).join(" | ");
-    refs.dispenseResidentHint.innerHTML = `<strong>${esc(resident.fullName)}</strong><span>${esc(meta || "Resident account")}</span>`;
+    if (refs.dispenseMedicineCard) {
+      refs.dispenseMedicineCard.classList.toggle("is-disabled", !hasResident);
+    }
+    if (refs.dispenseMedicineSearch) {
+      refs.dispenseMedicineSearch.disabled = !hasResident;
+      refs.dispenseMedicineSearch.placeholder = hasResident
+        ? "Search medicine, form, strength, or batch"
+        : "Select patient first";
+    }
+    if (refs.dispenseMedicine) refs.dispenseMedicine.disabled = !hasResident;
+    if (refs.dispenseSubmitBtn) refs.dispenseSubmitBtn.disabled = !hasResident;
+    renderMedicineSearchResults();
+    renderStockPreview();
   };
 
   const renderSelectedResident = () => {
     const resident = findResidentAccount(state.selectedResidentId);
-    const hasResident = Boolean(resident);
-    refs.selectedResidentCard?.classList.toggle("d-none", !hasResident);
-
-    if (!hasResident || !resident) {
+    if (!resident) {
+      if (refs.selectedResidentName) refs.selectedResidentName.textContent = "No patient selected";
+      if (refs.selectedResidentMeta) refs.selectedResidentMeta.textContent = "Choose a resident from the directory to review patient details.";
+      if (refs.selectedResidentSource) {
+        refs.selectedResidentSource.className = "staff-chip staff-chip--neutral";
+        refs.selectedResidentSource.textContent = "Directory";
+      }
+      if (refs.selectedResidentStatus) {
+        refs.selectedResidentStatus.className = "staff-chip staff-chip--neutral";
+        refs.selectedResidentStatus.textContent = "Waiting";
+      }
+      if (refs.selectedResidentReleaseCount) refs.selectedResidentReleaseCount.textContent = "0";
+      if (refs.selectedResidentLastMedicineValue) refs.selectedResidentLastMedicineValue.textContent = "-";
+      if (refs.selectedResidentLastReleaseValue) refs.selectedResidentLastReleaseValue.textContent = "-";
+      if (refs.selectedResidentUseBtn) refs.selectedResidentUseBtn.disabled = true;
       updateDispenseFormState();
+      renderDispenseResidentPicker();
+      renderPatientProfiles();
+      renderDashboard();
       return;
     }
 
+    const stats = getResidentStats(resident);
+    const sourceLabel = resident.source === "household-system" ? "Household" : "Manual Entry";
+    const statusClass = residentStatusChipClass(stats.status.tone);
+
     if (refs.selectedResidentName) refs.selectedResidentName.textContent = resident.fullName;
     if (refs.selectedResidentMeta) {
-      refs.selectedResidentMeta.textContent = [resident.residentId, residentAddressLabel(resident)].filter(Boolean).join(" | ");
+      refs.selectedResidentMeta.textContent = [
+        resident.residentId,
+        text(resident.householdId),
+        residentAddressLabel(resident)
+      ].filter(Boolean).join(" | ");
     }
-    if (refs.selectedResidentLast) {
-      refs.selectedResidentLast.textContent = resident.lastDispensedAt
-        ? `Last release: ${resident.lastDispensedMedicine || "Medicine"} on ${formatDateTime(resident.lastDispensedAt)}`
-        : "No release history yet.";
+    if (refs.selectedResidentSource) {
+      refs.selectedResidentSource.className = resident.source === "household-system" ? "staff-chip" : "staff-chip staff-chip--neutral";
+      refs.selectedResidentSource.textContent = sourceLabel;
     }
+    if (refs.selectedResidentStatus) {
+      refs.selectedResidentStatus.className = statusClass;
+      refs.selectedResidentStatus.textContent = stats.status.label;
+    }
+    if (refs.selectedResidentReleaseCount) refs.selectedResidentReleaseCount.textContent = formatNumber(stats.totalReleases);
+    if (refs.selectedResidentLastMedicineValue) refs.selectedResidentLastMedicineValue.textContent = stats.lastMedicine || "-";
+    if (refs.selectedResidentLastReleaseValue) {
+      refs.selectedResidentLastReleaseValue.textContent = stats.lastReleaseAt ? formatDateTime(stats.lastReleaseAt) : "-";
+    }
+    if (refs.selectedResidentUseBtn) refs.selectedResidentUseBtn.disabled = false;
 
     updateDispenseFormState();
+    renderDispenseResidentPicker();
+    renderPatientProfiles();
+    renderDashboard();
   };
 
   const renderResidentSearchResults = () => {
     if (!refs.residentLookupResults) return;
-    const results = sortedResidentAccounts();
+    renderResidentBarangayOptions();
+    const results = filteredResidentAccounts();
+    if (refs.residentLookupCount) {
+      refs.residentLookupCount.textContent = `${formatNumber(results.length)} record${results.length === 1 ? "" : "s"}`;
+    }
 
     if (!results.length) {
       refs.residentLookupResults.innerHTML = '<div class="staff-empty">No matching resident account.</div>';
       return;
     }
 
-    refs.residentLookupResults.innerHTML = results.map((resident) => {
+    refs.residentLookupResults.innerHTML = results.map(({ resident, stats }) => {
       const isActive = text(resident.id) === text(state.selectedResidentId) ? " is-active" : "";
       const location = residentAddressLabel(resident) || resident.barangay || "Resident account";
-      const sourceLabel = resident.source === "household-system" ? "Resident" : "Saved";
+      const statusClass = residentStatusChipClass(stats.status.tone);
+      const sourceLabel = resident.source === "household-system" ? "Household" : "Manual";
+      const lastMedicine = stats.totalReleases > 0 ? stats.lastMedicine : "No dispense yet";
+      const lastRelease = stats.lastReleaseAt ? formatDateTime(stats.lastReleaseAt) : "No dispense yet";
 
       return `
-        <button type="button" class="staff-resident-option${isActive}" data-resident-id="${esc(resident.id)}">
-          <div>
+        <button type="button" class="staff-resident-row${isActive}" data-resident-id="${esc(resident.id)}">
+          <span class="staff-resident-row__patient">
             <strong>${esc(resident.fullName)}</strong>
-            <span>${esc(resident.residentId)}${text(resident.householdId) ? ` | ${esc(resident.householdId)}` : ""}</span>
-            <small>${esc(location)}</small>
+            <small>${esc(resident.residentId)}${text(resident.householdId) ? ` | ${esc(resident.householdId)}` : ""} | ${esc(sourceLabel)}</small>
+          </span>
+          <span class="staff-resident-row__text">${esc(location)}</span>
+          <span class="staff-resident-row__text">${esc(lastMedicine)}</span>
+          <span class="staff-resident-row__text">${esc(lastRelease)}</span>
+          <span class="staff-resident-row__count">${esc(formatNumber(stats.totalReleases))}</span>
+          <span class="${esc(statusClass)}">${esc(stats.status.label)}</span>
+        </button>
+      `;
+    }).join("");
+  };
+
+  const updateDispenseMedicineSelection = (medicineId, { syncInput = true } = {}) => {
+    if (!refs.dispenseMedicine) return;
+    const nextMedicine = findMedicine(text(medicineId));
+    refs.dispenseMedicine.value = nextMedicine?.id || "";
+    if (syncInput && refs.dispenseMedicineSearch) {
+      refs.dispenseMedicineSearch.value = nextMedicine ? medicineLabel(nextMedicine) : "";
+    }
+    renderMedicineSearchResults();
+    renderStockPreview();
+  };
+
+  const renderMedicineSearchResults = () => {
+    if (!refs.dispenseMedicineResults) return;
+    const resident = findResidentAccount(state.selectedResidentId);
+
+    if (!resident) {
+      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">Select a patient first to unlock medicine selection.</div>';
+      return;
+    }
+
+    const medicines = getSortedMedicines();
+    const query = keyOf(refs.dispenseMedicineSearch?.value);
+    const selectedMedicine = findMedicine(text(refs.dispenseMedicine?.value));
+
+    if (!medicines.length) {
+      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No medicine available in inventory.</div>';
+      return;
+    }
+
+    if (selectedMedicine && (!query || query === keyOf(medicineLabel(selectedMedicine)))) {
+      const status = getStatus(selectedMedicine);
+      refs.dispenseMedicineResults.innerHTML = `
+        <article class="staff-medicine-selected">
+          <div class="staff-medicine-selected__main">
+            <strong>${esc(medicineLabel(selectedMedicine))}</strong>
+            <small>${esc(medicinePickerMeta(selectedMedicine) || "Inventory medicine")}</small>
           </div>
-          <span class="staff-chip">${esc(sourceLabel)}</span>
+          <div class="staff-medicine-selected__tail">
+            <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
+            <button type="button" class="btn btn-sm btn-light" data-clear-dispense-medicine>Change</button>
+          </div>
+        </article>
+      `;
+      return;
+    }
+
+    const matches = medicines
+      .filter((medicine) => !query || medicineSearchText(medicine).includes(query))
+      .slice(0, 6);
+
+    if (!matches.length) {
+      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No matching medicine found in inventory.</div>';
+      return;
+    }
+
+    refs.dispenseMedicineResults.innerHTML = matches.map((medicine) => {
+      const status = getStatus(medicine);
+      return `
+        <button type="button" class="staff-medicine-result" data-dispense-medicine-id="${esc(medicine.id)}">
+          <span class="staff-medicine-result__main">
+            <strong>${esc(medicineLabel(medicine))}</strong>
+            <small>${esc(medicinePickerMeta(medicine) || "Inventory medicine")}</small>
+          </span>
+          <span class="staff-medicine-result__tail">
+            <small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)}</small>
+            <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
+          </span>
         </button>
       `;
     }).join("");
@@ -922,7 +1776,7 @@
   const renderMedicineOptions = () => {
     if (!refs.dispenseMedicine) return;
     const current = text(refs.dispenseMedicine.value);
-    const medicines = [...state.inventory].sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
+    const medicines = getSortedMedicines();
 
     refs.dispenseMedicine.innerHTML = [
       '<option value="">Select medicine</option>',
@@ -934,11 +1788,21 @@
 
     const hasCurrent = medicines.some((medicine) => medicine.id === current);
     refs.dispenseMedicine.value = hasCurrent ? current : "";
+    if (refs.dispenseMedicineSearch && !hasCurrent) refs.dispenseMedicineSearch.value = "";
+    renderMedicineSearchResults();
     renderStockPreview();
   };
 
   const renderStockPreview = () => {
     if (!refs.dispenseStockPreview) return;
+    const resident = findResidentAccount(state.selectedResidentId);
+
+    if (!resident) {
+      refs.dispenseStockPreview.className = "staff-stock-preview";
+      refs.dispenseStockPreview.innerHTML = "<strong>Medicine selection locked</strong><span>Select a patient first before choosing a medicine.</span>";
+      return;
+    }
+
     const medicine = findMedicine(text(refs.dispenseMedicine?.value));
 
     if (!medicine) {
@@ -955,88 +1819,81 @@
     `;
   };
 
-  const syncDispenseUserPlaceholder = ({ previousName = "", force = false } = {}) => {
-    if (!refs.dispenseUser) return;
-    refs.dispenseUser.placeholder = roleName(refs.dispenseRole?.value) === "Staff"
-      ? "Assigned staff name"
-      : "Assigned BHW name";
-
-    if (roleName(refs.dispenseRole?.value) !== "BHW") return;
+  const getCurrentDispenseActor = () => {
     const user = getCurrentBhwUser();
-    if (!user) return;
+    if (!user) return null;
 
-    const currentValue = text(refs.dispenseUser.value);
-    if (force || !currentValue || (previousName && keyOf(currentValue) === keyOf(previousName))) {
-      refs.dispenseUser.value = user.fullName;
-    }
+    return {
+      user,
+      role: roleName(user.role),
+      name: text(user.fullName) || "Assigned Staff"
+    };
   };
 
   const renderSettings = () => {
     const user = getCurrentBhwUser();
-    const session = user ? getCurrentBhwSession(user.id) : null;
 
     if (!user) {
-      if (refs.settingsProfileName) refs.settingsProfileName.textContent = "No BHW account linked";
-      if (refs.settingsProfileMeta) refs.settingsProfileMeta.textContent = "Admin needs to create a BHW account before personal settings can be updated.";
-      if (refs.settingsRoleChip) refs.settingsRoleChip.textContent = "BHW";
-      if (refs.settingsSessionChip) refs.settingsSessionChip.textContent = "Not linked";
-      if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Pending";
-      if (refs.settingsHelperText) refs.settingsHelperText.textContent = "Ask the Nurse-in-Charge to create your BHW account first.";
+      if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Security";
       refs.settingsForm?.reset();
+      if (refs.settingsFullName) refs.settingsFullName.value = "";
       if (refs.settingsUsername) refs.settingsUsername.value = "";
-      if (refs.settingsRole) refs.settingsRole.value = "BHW";
+      if (refs.settingsPassword) refs.settingsPassword.value = "";
+      if (refs.settingsConfirmPassword) refs.settingsConfirmPassword.value = "";
+      if (refs.settingsContact) refs.settingsContact.value = "";
+      if (refs.settingsRole) refs.settingsRole.value = "Staff";
+      setSettingsNotice("Admin needs to create your staff account first.", "danger");
+      setSettingsEditorOpen(false);
       setSettingsDisabled(true);
+      renderTopbarAccount();
       return;
     }
 
-    const statusLabel = text(user.status) || "Active";
-    const presenceLabel = text(session?.presence) || statusLabel;
-    const meta = [
-      user.username ? `@${user.username}` : "",
-      user.contact || "No contact number",
-      text(session?.location) ? `Current module: ${text(session.location)}` : ""
-    ].filter(Boolean).join(" | ");
-
-    if (refs.settingsProfileName) refs.settingsProfileName.textContent = user.fullName || "Assigned BHW";
-    if (refs.settingsProfileMeta) refs.settingsProfileMeta.textContent = meta || "BHW account is ready.";
-    if (refs.settingsRoleChip) refs.settingsRoleChip.textContent = roleName(user.role);
-    if (refs.settingsSessionChip) refs.settingsSessionChip.textContent = text(user.status) === "Active" ? presenceLabel : statusLabel;
-    if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Personal";
+    if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Security";
     if (refs.settingsFullName) refs.settingsFullName.value = user.fullName || "";
-    if (refs.settingsContact) refs.settingsContact.value = user.contact || "";
     if (refs.settingsUsername) refs.settingsUsername.value = user.username || "";
-    if (refs.settingsRole) refs.settingsRole.value = roleName(user.role);
     if (refs.settingsPassword) refs.settingsPassword.value = "";
     if (refs.settingsConfirmPassword) refs.settingsConfirmPassword.value = "";
-    if (refs.settingsHelperText) refs.settingsHelperText.textContent = "You can update your own profile and password here.";
+    if (refs.settingsContact) refs.settingsContact.value = user.contact || "";
+    if (refs.settingsRole) refs.settingsRole.value = roleName(user.role);
+    setSettingsNotice("Staff account only.");
 
     setSettingsDisabled(false);
-    syncDispenseUserPlaceholder();
+    renderTopbarAccount();
+  };
+
+  const resetDispenseForm = () => {
+    updateDispenseMedicineSelection("");
+    if (refs.dispenseQuantity) refs.dispenseQuantity.value = "";
+    if (refs.dispenseDiseaseCategory) refs.dispenseDiseaseCategory.value = "";
+    if (refs.dispenseIllness) refs.dispenseIllness.value = "";
+    if (refs.dispenseDate) refs.dispenseDate.value = todayInputValue();
+  };
+
+  const resetDispenseResidentSelection = () => {
+    state.selectedResidentId = "";
+    state.dispenseResidentSearch = "";
+    if (refs.dispenseResidentSearch) refs.dispenseResidentSearch.value = "";
+    renderSelectedResident();
+    renderResidentSearchResults();
+    renderHistory();
   };
 
   const renderHistory = () => {
     if (!refs.historyList) return;
     const resident = findResidentAccount(state.selectedResidentId);
-    const allDispense = state.movements
-      .filter((movement) => text(movement.actionType).toLowerCase() === "dispense")
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+    const allDispense = getDispenseMovements();
 
     const filtered = resident
-      ? allDispense.filter((movement) =>
-        text(movement.recipientId).toLowerCase() === text(resident.residentId).toLowerCase()
-        || (
-          !text(movement.recipientId)
-          && text(movement.recipientName).toLowerCase() === text(resident.fullName).toLowerCase()
-        )
-      )
+      ? allDispense.filter((movement) => movementMatchesResident(movement, resident))
       : allDispense;
 
     const items = filtered.slice(0, 8);
-    if (refs.historyTitle) refs.historyTitle.textContent = resident ? "Resident History" : "Recent Releases";
+    if (refs.historyTitle) refs.historyTitle.textContent = resident ? "Resident Dispensing Records" : "Dispensing Records";
     if (refs.historySubtitle) {
       refs.historySubtitle.textContent = resident
-        ? `Latest releases recorded for ${resident.fullName}.`
-        : "Latest medicine releases recorded by BHW.";
+        ? `Latest dispensing records for ${resident.fullName}.`
+        : "Latest medicine dispensing records recorded by BHW.";
     }
     if (refs.historyCount) refs.historyCount.textContent = `${formatNumber(filtered.length)} entr${filtered.length === 1 ? "y" : "ies"}`;
 
@@ -1050,12 +1907,14 @@
         .filter(Boolean)
         .join(" | ");
       const residentMeta = [text(movement.recipientName), text(movement.recipientBarangay)].filter(Boolean).join(" | ");
+      const caseLabel = movementConditionLabel(movement);
       return `
         <article class="staff-history-item">
           <div class="staff-history-item__meta">
-            <strong>${esc(movement.medicineName || "Medicine Release")}</strong>
+            <strong>${esc(movement.medicineName || "Medicine Dispensed")}</strong>
             <span>${esc(formatNumber(movement.quantity))} unit${numeric(movement.quantity) === 1 ? "" : "s"} dispensed</span>
             <small>${esc(residentMeta || "Resident account")}</small>
+            ${caseLabel ? `<small>${esc(caseLabel)}</small>` : ""}
             <small>${esc(movement.note || "Dispensing record saved.")}</small>
           </div>
           <div class="staff-history-item__tail">
@@ -1094,6 +1953,7 @@
     saveState();
     clearResidentForm();
     renderResidentSearchResults();
+    renderCabarianResidentResults();
     setSelectedResident(resident);
     showNotice(`${resident.fullName} was added to resident accounts.`);
     return resident;
@@ -1101,7 +1961,8 @@
 
   const handleResidentFormSubmit = (event) => {
     event.preventDefault();
-    void createResidentAccount();
+    const resident = createResidentAccount();
+    if (resident) openSection("dispense-medicine");
   };
 
   const handleDispenseSubmit = (event) => {
@@ -1109,39 +1970,51 @@
     const resident = findResidentAccount(state.selectedResidentId);
     const medicine = findMedicine(text(refs.dispenseMedicine?.value));
     const quantity = Math.max(0, Math.round(numeric(refs.dispenseQuantity?.value)));
-    const releasedByRole = roleName(refs.dispenseRole?.value);
-    const releasedByName = text(refs.dispenseUser?.value);
+    const diseaseCategory = text(refs.dispenseDiseaseCategory?.value);
+    const illness = text(refs.dispenseIllness?.value);
+    const dispenseActor = getCurrentDispenseActor();
     const actionDate = text(refs.dispenseDate?.value) || todayInputValue();
-    const note = text(refs.dispenseNote?.value);
 
     if (!resident) {
-      showNotice("Select or create a resident account before releasing medicine.", "danger");
+      showNotice("Select or create a resident account before dispensing medicine.", "danger");
       return;
     }
 
     if (!medicine) {
-      showNotice("Select a medicine to release.", "danger");
+      showNotice("Select a medicine to dispense.", "danger");
       return;
     }
 
-    if (!releasedByName) {
-      showNotice(`Enter the assigned ${releasedByRole === "Staff" ? "staff" : "BHW"} name.`, "danger");
+    if (!dispenseActor?.name) {
+      showNotice("No active staff account is linked for dispensing.", "danger");
+      return;
+    }
+
+    if (!diseaseCategory) {
+      showNotice("Select the disease category for this dispensing entry.", "danger");
+      return;
+    }
+
+    if (!illness) {
+      showNotice("Enter the illness or complaint for this dispensing entry.", "danger");
       return;
     }
 
     if (quantity <= 0) {
-      showNotice("Enter a valid quantity to release.", "danger");
+      showNotice("Enter a valid quantity to dispense.", "danger");
       return;
     }
 
     if (quantity > medicine.stockOnHand) {
-      showNotice("Release quantity cannot be greater than available stock.", "danger");
+      showNotice("Dispense quantity cannot be greater than available stock.", "danger");
       return;
     }
 
     const stockBefore = medicine.stockOnHand;
     const stockAfter = stockBefore - quantity;
     const createdAt = `${actionDate}T08:00:00`;
+    const releasedByRole = dispenseActor.role;
+    const releasedByName = dispenseActor.name;
 
     medicine.stockOnHand = stockAfter;
     medicine.lastUpdatedAt = createdAt;
@@ -1155,9 +2028,11 @@
       medicineName: medicineLabel(medicine),
       actionType: "dispense",
       quantity,
+      diseaseCategory,
+      illness,
       stockBefore,
       stockAfter,
-      note: note || `Dispensed to ${resident.fullName}${resident.residentId ? ` (${resident.residentId})` : ""}.`,
+      note: `Dispensed for ${illness} to ${resident.fullName}${resident.residentId ? ` (${resident.residentId})` : ""}.`,
       createdAt,
       user: releasedByName,
       recipientId: resident.residentId,
@@ -1173,13 +2048,10 @@
     const residentLabel = resident.residentId ? `${resident.fullName} (${resident.residentId})` : resident.fullName;
     const detailParts = [
       `${formatNumber(quantity)} ${medicine.unit} dispensed to ${residentLabel}.`,
-      `Released by ${releasedByRole}: ${releasedByName}.`,
+      `Case: ${diseaseCategory}${illness ? ` | ${illness}` : ""}.`,
+      `Dispensed by ${releasedByRole}: ${releasedByName}.`,
       `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
     ];
-
-    if (note) {
-      detailParts.push(`Note: ${note}`);
-    }
 
     appendActivityLog({
       actor: releasedByName,
@@ -1189,7 +2061,7 @@
       target: medicineLabel(medicine),
       details: detailParts.join(" "),
       category: "Dispensing",
-      resultLabel: "Released",
+      resultLabel: "Dispensed",
       resultTone: "success",
       createdAt,
       ipAddress
@@ -1202,21 +2074,26 @@
     renderHistory();
     emitInventoryNotificationRefresh();
 
-    if (refs.dispenseQuantity) refs.dispenseQuantity.value = "";
-    if (refs.dispenseNote) refs.dispenseNote.value = "";
-    if (refs.dispenseDate) refs.dispenseDate.value = todayInputValue();
-    renderStockPreview();
+    resetDispenseForm();
+    resetDispenseResidentSelection();
 
-    showNotice(`${medicine.name} released to ${resident.fullName}.`);
+    openSection("staff-dashboard");
+    showDispenseSuccess({
+      medicineName: medicineLabel(medicine),
+      residentName: resident.fullName,
+      quantity,
+      unit: medicine.unit
+    });
   };
 
   const handleSettingsSubmit = (event) => {
     event.preventDefault();
+    clearNotice();
 
     const users = getStoredUsers();
     const userIndex = users.findIndex((user) => text(user.id) === text(state.currentUserId) && text(user.role) !== USER_ROLE_ADMIN);
     if (userIndex < 0) {
-      showNotice("No active BHW account is available for this module.", "danger");
+      setSettingsNotice("No active staff account is available for this module.", "danger");
       renderSettings();
       return;
     }
@@ -1224,37 +2101,43 @@
     const currentUser = users[userIndex];
     const previousName = currentUser.fullName;
     const fullName = text(refs.settingsFullName?.value);
-    const contact = text(refs.settingsContact?.value);
+    const username = text(refs.settingsUsername?.value);
     const password = String(refs.settingsPassword?.value || "");
     const confirm = String(refs.settingsConfirmPassword?.value || "");
-    const profileChanged = fullName !== text(currentUser.fullName) || contact !== text(currentUser.contact);
+    const profileChanged = fullName !== text(currentUser.fullName) || username !== text(currentUser.username);
     const passwordChanged = Boolean(password || confirm);
 
-    if (!fullName || !contact) {
-      showNotice("Complete your full name and contact number first.", "danger");
+    if (!fullName || !username) {
+      setSettingsNotice("Complete the full name and username first.", "danger");
       return;
     }
 
     if (!profileChanged && !passwordChanged) {
-      showNotice("No changes to save yet.", "danger");
+      setSettingsNotice("No changes to save yet.", "danger");
+      return;
+    }
+
+    const duplicateUsername = users.some((user, index) => index !== userIndex && keyOf(user.username) === keyOf(username));
+    if (duplicateUsername) {
+      setSettingsNotice("Username is already in use. Choose another one.", "danger");
       return;
     }
 
     if (passwordChanged) {
       if (!password || !confirm) {
-        showNotice("Enter and confirm the new password.", "danger");
+        setSettingsNotice("Enter and confirm the new password.", "danger");
         return;
       }
       if (password.length < 8) {
-        showNotice("New password must be at least 8 characters.", "danger");
+        setSettingsNotice("New password must be at least 8 characters.", "danger");
         return;
       }
       if (!/[^A-Za-z0-9]/.test(password)) {
-        showNotice("Password must include at least 1 special character.", "danger");
+        setSettingsNotice("Password must include at least 1 special character.", "danger");
         return;
       }
       if (password !== confirm) {
-        showNotice("Password and confirmation do not match.", "danger");
+        setSettingsNotice("Password and confirmation do not match.", "danger");
         return;
       }
     }
@@ -1263,7 +2146,7 @@
     const nextUser = {
       ...currentUser,
       fullName,
-      contact,
+      username,
       updatedAt,
       updatedBy: previousName || "BHW Self-Service"
     };
@@ -1285,7 +2168,7 @@
         role: nextUser.role,
         accountType: nextUser.accountType,
         presence: text(sessions[sessionIndex].presence) || "Online",
-        location: "BHW Settings",
+        location: "Staff Credentials",
         lastSeenAt: updatedAt
       };
     } else {
@@ -1297,7 +2180,7 @@
         role: nextUser.role,
         accountType: nextUser.accountType,
         presence: "Online",
-        location: "BHW Settings",
+        location: "Staff Credentials",
         deviceLabel: "Android Tablet",
         ipAddress: defaultIpForRole(nextUser.role),
         signedInAt: updatedAt,
@@ -1308,21 +2191,21 @@
     writeStoredSessions(sessions);
 
     const detailParts = [];
-    if (profileChanged) detailParts.push("Profile details were updated from My Settings.");
-    if (passwordChanged) detailParts.push("Password was changed from My Settings.");
+    if (profileChanged) detailParts.push("Staff credentials were updated from the staff settings panel.");
+    if (passwordChanged) detailParts.push("Password was changed from the staff settings panel.");
 
     appendActivityLog({
       actor: nextUser.fullName,
       username: nextUser.username || makeUsername(nextUser.fullName, defaultUsernameForRole(nextUser.role)),
       action: passwordChanged && profileChanged
-        ? "Updated BHW profile and password"
+        ? "Updated staff profile and password"
         : passwordChanged
-          ? "Changed BHW password"
-          : "Updated BHW profile",
+          ? "Changed staff password"
+          : "Updated staff profile",
       actionType: passwordChanged ? "security" : "updated",
       target: nextUser.fullName,
       details: detailParts.join(" "),
-      category: passwordChanged ? "Security" : "BHW Settings",
+      category: "Security",
       resultLabel: "Saved",
       resultTone: "success",
       createdAt: updatedAt,
@@ -1330,9 +2213,9 @@
     });
 
     state.currentUserId = nextUser.id;
-    syncDispenseUserPlaceholder({ previousName, force: true });
     renderSettings();
-    showNotice("My settings updated successfully.");
+    setSettingsEditorOpen(false);
+    showNotice("Staff credentials updated successfully.");
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1346,8 +2229,125 @@
     if (!isMobile()) closeMobileSidebar();
   });
 
+  window.MSSOpenNotificationCenter = openStaffNotificationCenter;
+
+  refs.staffNotificationFeed?.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-staff-notification-id]");
+    if (!card) return;
+
+    const notificationId = text(card.getAttribute("data-staff-notification-id"));
+    let notification = getStoredNotifications().find((entry) => text(entry.id) === notificationId) || null;
+    if (!notification) return;
+
+    if (!notification.read) {
+      notification = updateStoredNotification(notificationId, (entry) => {
+        entry.read = true;
+      }) || notification;
+      renderStaffNotifications();
+    }
+
+    openStaffNotificationDetail(notification);
+  });
+
+  window.addEventListener("mss:notifications-synced", () => {
+    renderStaffNotifications();
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (text(event.key) !== NOTIFICATION_STORAGE) return;
+    renderStaffNotifications();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") renderStaffNotifications();
+  });
+
+  refs.residentFormModal?.addEventListener("shown.bs.modal", () => {
+    state.residentFormOpen = true;
+    renderCabarianResidentResults();
+    const target = getResidentFormFocusTarget();
+    window.setTimeout(() => target?.focus(), 120);
+  });
+
+  refs.residentFormModal?.addEventListener("hidden.bs.modal", () => {
+    state.residentFormOpen = false;
+    state.residentCabarianSearch = "";
+    if (refs.residentCabarianSearch) refs.residentCabarianSearch.value = "";
+    setResidentFormMode("cabarian");
+    clearResidentForm();
+    renderCabarianResidentResults();
+  });
+
+  refs.dispenseSuccessModal?.addEventListener("hidden.bs.modal", () => {
+    window.clearTimeout(dispenseSuccessTimer);
+  });
+
   refs.residentSearchInput?.addEventListener("input", (event) => {
     state.residentSearch = text(event.target.value);
+    renderResidentSearchResults();
+  });
+
+  refs.patientProfileSearchInput?.addEventListener("input", (event) => {
+    state.patientProfileSearch = text(event.target.value);
+    renderPatientProfiles();
+  });
+
+  refs.patientProfileSearchBtn?.addEventListener("click", () => {
+    state.patientProfileSearch = text(refs.patientProfileSearchInput?.value);
+    renderPatientProfiles();
+    refs.patientProfileSearchInput?.focus();
+  });
+
+  refs.dispenseResidentSearch?.addEventListener("input", (event) => {
+    state.dispenseResidentSearch = text(event.target.value);
+    renderDispenseResidentPicker();
+  });
+
+  refs.dispenseResidentSearchBtn?.addEventListener("click", () => {
+    state.dispenseResidentSearch = text(refs.dispenseResidentSearch?.value);
+    renderDispenseResidentPicker();
+    refs.dispenseResidentSearch?.focus();
+  });
+
+  refs.residentModeCabarianBtn?.addEventListener("click", () => {
+    setResidentFormMode("cabarian");
+    renderCabarianResidentResults();
+    window.setTimeout(() => refs.residentCabarianSearch?.focus(), 120);
+  });
+
+  refs.residentModeManualBtn?.addEventListener("click", () => {
+    setResidentFormMode("manual");
+    window.setTimeout(() => refs.quickResidentName?.focus(), 120);
+  });
+
+  refs.residentCabarianSearch?.addEventListener("input", (event) => {
+    state.residentCabarianSearch = text(event.target.value);
+    renderCabarianResidentResults();
+  });
+
+  refs.residentCabarianSearchBtn?.addEventListener("click", () => {
+    state.residentCabarianSearch = text(refs.residentCabarianSearch?.value);
+    renderCabarianResidentResults();
+    refs.residentCabarianSearch?.focus();
+  });
+
+  refs.dispenseMedicineSearch?.addEventListener("input", (event) => {
+    const query = text(event.target.value);
+    const selectedMedicine = findMedicine(text(refs.dispenseMedicine?.value));
+    if (selectedMedicine && keyOf(query) !== keyOf(medicineLabel(selectedMedicine))) {
+      if (refs.dispenseMedicine) refs.dispenseMedicine.value = "";
+    }
+    renderMedicineSearchResults();
+    renderStockPreview();
+  });
+
+  refs.residentBarangayFilter?.addEventListener("change", (event) => {
+    state.residentBarangayFilter = text(event.target.value) || "all";
+    renderResidentSearchResults();
+  });
+
+  refs.residentSortFilter?.addEventListener("change", (event) => {
+    state.residentSort = text(event.target.value) || "recent";
     renderResidentSearchResults();
   });
 
@@ -1356,35 +2356,126 @@
     if (!button) return;
     const resident = findResidentAccount(text(button.getAttribute("data-resident-id")));
     if (!resident) return;
+    setSelectedResident(resident, { openModal: true });
+  });
+
+  refs.patientProfileList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-profile-resident-id]");
+    if (!button) return;
+    const resident = findResidentAccount(text(button.getAttribute("data-profile-resident-id")));
+    if (!resident) return;
+    setSelectedResident(resident, { openModal: true });
+  });
+
+  refs.dispenseResidentResults?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-dispense-resident-id]");
+    if (!button) return;
+
+    const resident = findResidentAccount(text(button.getAttribute("data-dispense-resident-id")));
+    if (!resident) return;
+
+    state.dispenseResidentSearch = "";
+    if (refs.dispenseResidentSearch) refs.dispenseResidentSearch.value = "";
+    clearNotice();
     setSelectedResident(resident);
+    window.setTimeout(() => refs.dispenseMedicineSearch?.focus(), 120);
   });
 
-  refs.clearSelectedResidentBtn?.addEventListener("click", () => {
-    state.selectedResidentId = "";
-    state.residentSearch = "";
-    if (refs.residentSearchInput) refs.residentSearchInput.value = "";
-    renderSelectedResident();
-    renderResidentSearchResults();
-    renderHistory();
+  refs.dispenseResidentPreview?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-change-dispense-resident]");
+    if (!button) return;
+
+    resetDispenseResidentSelection();
+    clearNotice();
+    window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
   });
 
+  refs.residentCabarianResults?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cabarian-resident-id]");
+    if (!button) return;
+    const resident = findResidentAccount(text(button.getAttribute("data-cabarian-resident-id")));
+    if (!resident) return;
+    setSelectedResident(resident);
+    residentFormModal?.hide();
+    openSection("dispense-medicine");
+    window.setTimeout(() => {
+      showResidentSelectedSuccess({ residentName: resident.fullName });
+    }, 180);
+  });
+
+  refs.dispenseMedicineResults?.addEventListener("click", (event) => {
+    if (!findResidentAccount(state.selectedResidentId)) return;
+
+    const clearButton = event.target.closest("[data-clear-dispense-medicine]");
+    if (clearButton) {
+      updateDispenseMedicineSelection("");
+      refs.dispenseMedicineSearch?.focus();
+      return;
+    }
+
+    const button = event.target.closest("[data-dispense-medicine-id]");
+    if (!button) return;
+    updateDispenseMedicineSelection(text(button.getAttribute("data-dispense-medicine-id")));
+  });
+
+  refs.selectedResidentUseBtn?.addEventListener("click", () => {
+    if (!findResidentAccount(state.selectedResidentId)) return;
+    residentSummaryModal?.hide();
+    openSection("dispense-medicine");
+  });
+  refs.dashboardDispenseBtn?.addEventListener("click", () => {
+    resetDispenseResidentSelection();
+    resetDispenseForm();
+    clearNotice();
+    openSection("dispense-medicine");
+    window.setTimeout(() => {
+      refs.dispenseResidentSearch?.focus();
+    }, 120);
+  });
   refs.toggleResidentFormBtn?.addEventListener("click", () => toggleResidentForm());
   refs.closeResidentFormBtn?.addEventListener("click", () => toggleResidentForm(false));
   refs.residentForm?.addEventListener("submit", handleResidentFormSubmit);
-  refs.dispenseMedicine?.addEventListener("change", renderStockPreview);
-  refs.dispenseRole?.addEventListener("change", syncDispenseUserPlaceholder);
+  refs.dispenseMedicine?.addEventListener("change", () => {
+    const selectedMedicine = findMedicine(text(refs.dispenseMedicine?.value));
+    if (refs.dispenseMedicineSearch && selectedMedicine) {
+      refs.dispenseMedicineSearch.value = medicineLabel(selectedMedicine);
+    }
+    renderMedicineSearchResults();
+    renderStockPreview();
+  });
   refs.dispenseForm?.addEventListener("submit", handleDispenseSubmit);
+  refs.dispenseCancelBtn?.addEventListener("click", () => {
+    resetDispenseForm();
+    resetDispenseResidentSelection();
+    clearNotice();
+    openSection("staff-dashboard");
+  });
   refs.settingsForm?.addEventListener("submit", handleSettingsSubmit);
+  refs.settingsChangeBtn?.addEventListener("click", () => {
+    if (refs.settingsChangeBtn?.disabled) return;
+    clearNotice();
+    openSection("my-settings");
+    renderSettings();
+    setSettingsEditorOpen(true);
+    window.setTimeout(() => refs.settingsUsername?.focus(), 120);
+  });
+  refs.staffAccountToggle?.addEventListener("click", () => {
+    clearNotice();
+    openSection("my-settings");
+    renderSettings();
+    setSettingsEditorOpen(false);
+    window.setTimeout(() => refs.settingsChangeBtn?.focus(), 120);
+  });
   staffNavLinks.forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
       const targetId = text(link.getAttribute("href")).replace(/^#/, "");
       if (!targetId) return;
-      setActiveSection(targetId);
-      if (history.replaceState) {
-        history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${targetId}`);
+      openSection(targetId);
+      if (targetId === "my-settings") {
+        renderSettings();
+        setSettingsEditorOpen(false);
       }
-      closeMobileSidebar();
     });
   });
 
@@ -1395,10 +2486,12 @@
   ensureSeedData();
   renderMedicineOptions();
   renderSettings();
-  syncDispenseUserPlaceholder();
+  renderTopbarAccount();
   renderSelectedResident();
   renderResidentSearchResults();
+  renderPatientProfiles();
   renderHistory();
-  setActiveSection(text(window.location.hash).replace(/^#/, "") || "resident-account");
+  renderStaffNotifications();
+  setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
   void syncHouseholdResidents();
 })();

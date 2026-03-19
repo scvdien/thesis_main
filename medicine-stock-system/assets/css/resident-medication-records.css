@@ -25,36 +25,77 @@
   margin-bottom:14px;
 }
 
-.records-search{
+.records-searchbar{
   flex:1 1 320px;
   min-width:0;
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-height:40px;
-  padding:0 14px;
+}
+
+.records-searchbox{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:stretch;
+  overflow:hidden;
   border:1px solid #d7e0cf;
   border-radius:16px;
-  background:#f7faf3;
-  color:#5a6c52;
+  background:linear-gradient(180deg, #fcfef9 0%, #f2f7eb 100%);
+  box-shadow:0 14px 28px rgba(33, 88, 25, 0.1);
 }
 
-.records-search i{
-  font-size:1rem;
-  color:#7b8a74;
+.records-searchbox:focus-within{
+  border-color:#8fbc82;
+  box-shadow:0 16px 30px rgba(33, 88, 25, 0.14);
 }
 
-.records-search input{
+.records-searchfield{
+  display:flex;
+  align-items:center;
+  min-width:0;
+  min-height:40px;
+  margin:0;
+  padding:0 18px;
+}
+
+.records-searchfield input{
   width:100%;
+  min-width:0;
   border:none;
+  padding:0;
   background:transparent;
   color:#244126;
-  font-size:0.9rem;
+  font-size:0.92rem;
+  font-weight:500;
   outline:none;
 }
 
-.records-search input::placeholder{
-  color:#7d8b76;
+.records-searchfield input::placeholder{
+  color:#718a70;
+}
+
+.records-searchfield input:focus{
+  background:transparent;
+}
+
+.records-searchbtn{
+  min-width:56px;
+  border:0;
+  border-left:1px solid rgba(255, 255, 255, 0.2);
+  background:linear-gradient(135deg, #37953c 0%, #4fb64f 100%);
+  color:#fff;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.2rem;
+  transition:filter .18s ease, transform .18s ease;
+}
+
+.records-searchbtn:hover,
+.records-searchbtn:focus{
+  color:#fff;
+  filter:brightness(1.04);
+}
+
+.records-searchbtn:active{
+  transform:scale(0.98);
 }
 
 .records-toolbar__controls{
@@ -348,8 +389,18 @@
     align-items:stretch;
   }
 
-  .records-search{
+  .records-searchbar{
     flex-basis:100%;
+  }
+
+  .records-searchfield{
+    min-height:40px;
+    padding:0 16px;
+  }
+
+  .records-searchbtn{
+    min-width:56px;
+    font-size:1.15rem;
   }
 
   .records-toolbar__controls{

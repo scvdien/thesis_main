@@ -775,6 +775,7 @@
 
   const handleNurseSettingsSave = (event) => {
     event.preventDefault();
+    hideNotice();
     const admin = ensureAdminUser();
     const previousName = admin.fullName;
     const fullName = text(refs.nurseFullName?.value);
@@ -787,32 +788,32 @@
 
     if (!fullName || !username) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "Please complete all required fields.", "danger");
-      return void showNotice("Please complete all required fields.", "danger");
+      return;
     }
     if (!hasProfileChange && !hasPasswordChange) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "No changes to save yet.", "danger");
-      return void showNotice("No changes to save yet.", "danger");
+      return;
     }
     if (usernameExists(username, admin.id)) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "Username already exists. Please use another username.", "danger");
-      return void showNotice("Username already exists. Please use another username.", "danger");
+      return;
     }
     if (hasPasswordChange) {
       if (!password || !confirm) {
         setNotice(refs.nurseSettingsNotice, "account-helper", "Enter and confirm the new password.", "danger");
-        return void showNotice("Enter and confirm the new password.", "danger");
+        return;
       }
       if (password.length < 8) {
         setNotice(refs.nurseSettingsNotice, "account-helper", "Password must be at least 8 characters.", "danger");
-        return void showNotice("Password must be at least 8 characters.", "danger");
+        return;
       }
       if (!/[^A-Za-z0-9]/.test(password)) {
         setNotice(refs.nurseSettingsNotice, "account-helper", "Password must include at least 1 special character.", "danger");
-        return void showNotice("Password must include at least 1 special character.", "danger");
+        return;
       }
       if (password !== confirm) {
         setNotice(refs.nurseSettingsNotice, "account-helper", "Password and confirmation do not match.", "danger");
-        return void showNotice("Password and confirmation do not match.", "danger");
+        return;
       }
       admin.password = password;
       admin.credentialsUpdatedAt = nowIso();

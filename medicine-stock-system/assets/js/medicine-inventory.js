@@ -1,4 +1,5 @@
 (() => {
+  const supplyMonitoring = window.MSSSupplyMonitoring;
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
     movements: "mss_inventory_movements_v1",
@@ -25,6 +26,7 @@
     metricExpiringSoon: byId("metricExpiringSoon"),
     inventoryCount: byId("inventoryCount"),
     inventorySearch: byId("inventorySearch"),
+    inventorySearchBtn: byId("inventorySearchBtn"),
     categoryFilter: byId("categoryFilter"),
     statusFilter: byId("statusFilter"),
     inventoryTableBody: byId("inventoryTableBody"),
@@ -46,9 +48,6 @@
     reorderLevel: byId("reorderLevel"),
     batchNumber: byId("batchNumber"),
     expiryDate: byId("expiryDate"),
-    supplierName: byId("supplierName"),
-    storageLocation: byId("storageLocation"),
-    unitCost: byId("unitCost"),
     stockActionForm: byId("stockActionForm"),
     stockMedicineId: byId("stockMedicineId"),
     stockActionMedicineLabel: byId("stockActionMedicineLabel"),
@@ -56,6 +55,9 @@
     stockActionType: byId("stockActionType"),
     stockActionQuantity: byId("stockActionQuantity"),
     stockActionDate: byId("stockActionDate"),
+    stockLinkedRequestGroup: byId("stockLinkedRequestGroup"),
+    stockLinkedRequestId: byId("stockLinkedRequestId"),
+    stockLinkedRequestHint: byId("stockLinkedRequestHint"),
     stockActionNoteGroup: byId("stockActionNoteGroup"),
     stockActionNoteLabel: byId("stockActionNoteLabel"),
     stockActionNote: byId("stockActionNote"),
@@ -84,6 +86,7 @@
     inventory: [],
     movements: [],
     residentAccounts: [],
+    choRequests: [],
     householdResidentsLoaded: false
   };
 
@@ -105,9 +108,38 @@
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  const titleCase = (value) => {
+    const normalized = text(value).toLowerCase();
+    return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "";
+  };
   const numeric = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const DOSAGE_FORM_UNIT_MAP = {
+    Tablet: "tablets",
+    Capsule: "capsules",
+    Syrup: "bottles",
+    Injection: "vials",
+    Sachet: "sachets"
+  };
+  const normalizeMedicineCategory = (value) => {
+    const normalized = keyOf(value);
+    if (!normalized) return "Others";
+    if (["vitamin", "vitamins", "supplement", "supplements"].includes(normalized)) return "Vitamins";
+    if (["antibiotic", "antibiotics"].includes(normalized)) return "Antibiotics";
+    if (["analgesic", "antihistamine", "hydration", "maintenance", "respiratory", "herbal", "others"].includes(normalized)) {
+      return titleCase(normalized);
+    }
+    return text(value);
+  };
+  const normalizeDosageForm = (value) => {
+    const normalized = keyOf(value);
+    if (!normalized) return "Tablet";
+    if (["tablet", "capsule", "syrup", "sachet"].includes(normalized)) return titleCase(normalized);
+    if (["injection", "injections"].includes(normalized)) return "Injection";
+    if (["other", "others"].includes(normalized)) return "Others";
+    return text(value);
   };
   const formatNumber = (value) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(numeric(value)));
   const formatCurrency = (value) => new Intl.NumberFormat("en-PH", {
@@ -229,6 +261,7 @@
     localStorage.setItem(STORAGE.inventory, JSON.stringify(state.inventory));
     localStorage.setItem(STORAGE.movements, JSON.stringify(state.movements));
     localStorage.setItem(STORAGE.residents, JSON.stringify(state.residentAccounts));
+    if (supplyMonitoring) supplyMonitoring.writeRequests(state.choRequests);
   };
   const emitInventoryNotificationRefresh = () => {
     window.dispatchEvent(new CustomEvent("mss:inventory-updated"));
@@ -266,21 +299,20 @@
     const safeExpiry = Number.isNaN(parsedExpiry.getTime())
       ? new Date(Date.now() + (180 * 86400000)).toISOString().slice(0, 10)
       : parsedExpiry.toISOString().slice(0, 10);
+    const normalizedForm = normalizeDosageForm(entry.form);
 
     return {
       id: text(entry.id) || uid(),
       name: text(entry.name),
       genericName: text(entry.genericName),
-      category: text(entry.category) || "General",
-      form: text(entry.form) || "Tablet",
+      category: normalizeMedicineCategory(entry.category),
+      form: normalizedForm,
       strength: text(entry.strength),
       stockOnHand: Math.max(0, Math.round(numeric(entry.stockOnHand))),
       reorderLevel: Math.max(1, Math.round(numeric(entry.reorderLevel) || 1)),
-      unit: text(entry.unit) || "units",
-      batchNumber: text(entry.batchNumber) || "-",
+      unit: text(entry.unit) || DOSAGE_FORM_UNIT_MAP[normalizedForm] || "units",
+      batchNumber: text(entry.batchNumber).toUpperCase() || "-",
       expiryDate: safeExpiry,
-      supplier: text(entry.supplier) || "Ligao City Coastal RHU Supply",
-      location: text(entry.location) || "Main Cabinet",
       unitCost: Number(numeric(entry.unitCost).toFixed(2)),
       updatedBy: text(entry.updatedBy) || "Nurse-in-Charge",
       lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
@@ -302,7 +334,11 @@
     recipientName: text(entry.recipientName),
     recipientBarangay: text(entry.recipientBarangay),
     releasedByRole: text(entry.releasedByRole),
-    releasedByName: text(entry.releasedByName)
+    releasedByName: text(entry.releasedByName),
+    linkedRequestId: text(entry.linkedRequestId || entry.requestId || entry.linkedRequestItemId),
+    linkedRequestItemId: text(entry.linkedRequestItemId || entry.linkedRequestId || entry.requestId),
+    linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.requestGroupId),
+    linkedRequestCode: text(entry.linkedRequestCode || entry.requestCode)
   });
 
   const normalizeResidentAccount = (entry = {}) => ({
@@ -407,7 +443,7 @@
     {
       name: "Zinc Sulfate",
       genericName: "Zinc Sulfate",
-      category: "Supplement",
+      category: "Vitamins",
       form: "Tablet",
       strength: "20mg",
       stockOnHand: 0,
@@ -621,6 +657,7 @@
     state.inventory = readList(STORAGE.inventory).map(normalizeMedicine);
     state.movements = readList(STORAGE.movements).map(normalizeMovement);
     state.residentAccounts = readList(STORAGE.residents).map(normalizeResidentAccount);
+    state.choRequests = supplyMonitoring ? supplyMonitoring.readRequests() : [];
 
     if (!state.inventory.length) {
       state.inventory = seedInventory();
@@ -717,11 +754,11 @@
     }
 
     if (stock <= Math.max(5, Math.round(reorderLevel * 0.5))) {
-      return { key: "critical", label: "Critical", tone: "danger", note: "Below half of reorder level" };
+      return { key: "critical", label: "Critical", tone: "danger", note: "Below half of request alert level" };
     }
 
     if (stock <= reorderLevel) {
-      return { key: "low-stock", label: "Low Stock", tone: "warning", note: "At or below reorder level" };
+      return { key: "low-stock", label: "Low Stock", tone: "warning", note: "At or below request alert level" };
     }
 
     return { key: "healthy", label: "Healthy", tone: "success", note: "Stock within target range" };
@@ -737,6 +774,51 @@
   const findResidentAccount = (id) => state.residentAccounts.find((resident) =>
     text(resident.id) === text(id) || text(resident.residentId) === text(id)
   ) || null;
+
+  const findChoRequest = (id) => state.choRequests.find((request) => text(request.id) === text(id)) || null;
+
+  const linkedRequestRowsForMedicine = (medicine) => {
+    if (!medicine || !supplyMonitoring) return [];
+    return supplyMonitoring.getLinkableRequestsForMedicine({
+      medicineId: medicine.id,
+      medicineName: medicineLabel(medicine),
+      requests: state.choRequests,
+      movements: state.movements
+    });
+  };
+
+  const updateLinkedRequestHint = (medicine) => {
+    if (!refs.stockLinkedRequestHint || !refs.stockLinkedRequestId || !supplyMonitoring) return;
+    const selectedRequestId = text(refs.stockLinkedRequestId.value);
+    const selectedRow = selectedRequestId
+      ? linkedRequestRowsForMedicine(medicine).find((row) => text(row.id) === selectedRequestId)
+      : null;
+
+    if (selectedRow) {
+      refs.stockLinkedRequestHint.textContent = `${selectedRow.requestCode} has ${formatNumber(selectedRow.remainingQuantity)} ${selectedRow.unit} remaining and is due on ${formatDate(selectedRow.expectedDate)}.`;
+      return;
+    }
+
+    const availableRows = linkedRequestRowsForMedicine(medicine);
+    refs.stockLinkedRequestHint.textContent = availableRows.length
+      ? "Choose an open CHO request for this medicine to track lead time and delivery status automatically."
+      : "No open CHO request is currently logged for this medicine.";
+  };
+
+  const populateLinkedRequestOptions = (medicine) => {
+    if (!refs.stockLinkedRequestId) return;
+    const requestRows = linkedRequestRowsForMedicine(medicine);
+    refs.stockLinkedRequestId.innerHTML = [
+      '<option value="">Not linked to a CHO request</option>',
+      ...requestRows.map((row) => `
+        <option value="${esc(row.id)}">
+          ${esc(row.requestCode)} - ${esc(formatNumber(row.remainingQuantity))} ${esc(row.unit)} remaining
+        </option>
+      `)
+    ].join("");
+    refs.stockLinkedRequestId.disabled = !requestRows.length;
+    updateLinkedRequestHint(medicine);
+  };
 
   const clearQuickResidentFields = () => {
     if (refs.quickResidentName) refs.quickResidentName.value = "";
@@ -835,7 +917,10 @@
     const actionType = text(refs.stockActionType?.value).toLowerCase();
     const isDispense = actionType === "dispense";
     const isDispose = actionType === "dispose";
+    const isRestock = actionType === "restock";
+    const medicine = findMedicine(text(refs.stockMedicineId?.value));
     refs.dispenseResidentSection?.classList.toggle("d-none", !isDispense);
+    refs.stockLinkedRequestGroup?.classList.toggle("d-none", !isRestock);
     refs.stockActionNoteGroup?.classList.toggle("d-none", !isDispose);
 
     if (refs.stockActionNoteLabel) {
@@ -847,6 +932,17 @@
       refs.stockActionNote.placeholder = isDispense
         ? "Dispensing note or instruction"
         : (isDispose ? "Reason for disposal or write-off" : "");
+    }
+
+    if (!isRestock && refs.stockLinkedRequestId) {
+      refs.stockLinkedRequestId.value = "";
+      refs.stockLinkedRequestId.disabled = true;
+    }
+
+    if (isRestock && medicine) {
+      populateLinkedRequestOptions(medicine);
+    } else if (refs.stockLinkedRequestHint) {
+      refs.stockLinkedRequestHint.textContent = "Choose an open CHO request for this medicine when receiving a delivery.";
     }
 
     if (!isDispense) {
@@ -913,8 +1009,6 @@
         medicine.name,
         medicine.genericName,
         medicine.category,
-        medicine.supplier,
-        medicine.location,
         medicine.batchNumber,
         medicine.form,
         medicine.strength
@@ -970,7 +1064,7 @@
     if (!medicines.length) {
       refs.inventoryTableBody.innerHTML = `
         <tr>
-          <td colspan="6" class="inventory-empty">No medicine records match the current filters.</td>
+          <td colspan="7" class="inventory-empty">No medicine records match the current filters.</td>
         </tr>
       `;
       return;
@@ -980,11 +1074,7 @@
       const status = getStatus(medicine);
       const expiryDays = daysUntil(medicine.expiryDate);
       const expiryNote = expiryDays < 0 ? `${Math.abs(expiryDays)} days overdue` : `${expiryDays} days left`;
-      const medicineMeta = [
-        text(medicine.form),
-        text(medicine.batchNumber) && medicine.batchNumber !== "-" ? `Batch ${text(medicine.batchNumber)}` : "",
-        text(medicine.location)
-      ].filter(Boolean).join(" | ");
+      const medicineMeta = [text(medicine.strength)].filter(Boolean).join(" | ");
 
       return `
         <tr>
@@ -993,16 +1083,27 @@
               <div class="inventory-medicine-icon">${esc((medicine.name || "M").slice(0, 2))}</div>
               <div class="inventory-medicine-copy">
                 <strong>${esc(medicineLabel(medicine))}</strong>
-                <span>${esc(medicine.genericName || medicine.form)}</span>
-                <small>${esc(medicineMeta || "No batch or location")}</small>
+                <span>${esc(medicine.genericName || "No generic name")}</span>
+                <small>${esc(medicineMeta || "No strength indicated")}</small>
               </div>
             </div>
           </td>
-          <td><span class="inventory-category-pill">${esc(medicine.category)}</span></td>
+          <td>
+            <div class="inventory-stock">
+              <strong>${esc(medicine.form)}</strong>
+              <small>${esc(medicine.unit)}</small>
+            </div>
+          </td>
+          <td>
+            <div class="inventory-expiry">
+              <strong>${esc(medicine.batchNumber)}</strong>
+              <small>Tracked batch</small>
+            </div>
+          </td>
           <td>
             <div class="inventory-stock">
               <strong>${esc(formatNumber(medicine.stockOnHand))}</strong>
-              <small>Min ${esc(formatNumber(medicine.reorderLevel))} ${esc(medicine.unit)}</small>
+              <small>Alert at ${esc(formatNumber(medicine.reorderLevel))} ${esc(medicine.unit)}</small>
             </div>
           </td>
           <td>
@@ -1141,7 +1242,7 @@
       return;
     }
 
-    refs.reorderPlannerList.innerHTML = plans.map(({ medicine, suggested, estimatedCost, status }) => `
+      refs.reorderPlannerList.innerHTML = plans.map(({ medicine, suggested, estimatedCost, status }) => `
       <article class="inventory-planner-item">
         <div class="inventory-planner-item__head">
           <div>
@@ -1151,7 +1252,6 @@
           <span class="inventory-kicker inventory-kicker--${esc(status.tone)}">${esc(status.label)}</span>
         </div>
         <div class="inventory-meta-row">
-          <small>${esc(medicine.supplier)}</small>
           <small>${esc(formatCurrency(estimatedCost))}</small>
         </div>
       </article>
@@ -1175,7 +1275,11 @@
     recipientName = "",
     recipientBarangay = "",
     releasedByRole = "",
-    releasedByName = ""
+    releasedByName = "",
+    linkedRequestId = "",
+    linkedRequestItemId = "",
+    linkedRequestGroupId = "",
+    linkedRequestCode = ""
   }) => {
     state.movements.unshift(normalizeMovement({
       medicineId: medicine.id,
@@ -1191,7 +1295,11 @@
       recipientName,
       recipientBarangay,
       releasedByRole,
-      releasedByName
+      releasedByName,
+      linkedRequestId,
+      linkedRequestItemId,
+      linkedRequestGroupId,
+      linkedRequestCode
     }));
   };
 
@@ -1201,8 +1309,8 @@
     refs.medicineId.value = medicine?.id || "";
     refs.medicineModalTitle.textContent = medicine ? "Edit Medicine Record" : "Add Medicine Record";
     refs.medicineModalSubtitle.textContent = medicine
-      ? "Update stock, batch, and supplier details."
-      : "Create a new medicine record.";
+      ? "Update category, dosage form, batch, and stock details."
+      : "Create a new medicine record with form, category, and batch details.";
 
     refs.medicineName.value = medicine?.name || "";
     refs.genericName.value = medicine?.genericName || "";
@@ -1214,10 +1322,6 @@
     refs.reorderLevel.value = medicine ? String(medicine.reorderLevel) : "";
     refs.batchNumber.value = medicine?.batchNumber === "-" ? "" : (medicine?.batchNumber || "");
     refs.expiryDate.value = medicine?.expiryDate || todayInputValue();
-    refs.supplierName.value = medicine?.supplier || "Ligao City Coastal RHU Supply";
-    refs.storageLocation.value = medicine?.location || "Main Cabinet";
-    refs.unitCost.value = medicine ? String(medicine.unitCost) : "";
-
     medicineModal?.show();
   };
 
@@ -1229,6 +1333,7 @@
     refs.stockCurrentStock.textContent = `${formatNumber(medicine.stockOnHand)} ${medicine.unit}`;
     refs.stockActionType.value = "restock";
     refs.stockActionDate.value = todayInputValue();
+    populateLinkedRequestOptions(medicine);
     updateDispenseSectionVisibility();
     stockActionModal?.show();
   };
@@ -1255,15 +1360,13 @@
       unit: refs.medicineUnit.value,
       batchNumber: refs.batchNumber.value,
       expiryDate: refs.expiryDate.value,
-      supplier: refs.supplierName.value,
-      location: refs.storageLocation.value,
-      unitCost: refs.unitCost.value,
+      unitCost: existing?.unitCost || 0,
       updatedBy: "Nurse-in-Charge",
       lastUpdatedAt: nowIso()
     });
 
-    if (!payload.name || !payload.genericName || !payload.category || !payload.form || !payload.unit) {
-      showNotice("Please complete all required medicine details.", "danger");
+    if (!payload.name || !payload.genericName || !payload.category || !payload.form || !payload.unit || payload.batchNumber === "-") {
+      showNotice("Please complete the medicine name, category, dosage form, unit, and batch number.", "danger");
       return;
     }
 
@@ -1316,6 +1419,8 @@
     const quantity = Math.max(0, Math.round(numeric(refs.stockActionQuantity.value)));
     const note = actionType === "dispose" ? text(refs.stockActionNote.value) : "";
     const actionDate = text(refs.stockActionDate.value) || todayInputValue();
+    const linkedRequestId = actionType === "restock" ? text(refs.stockLinkedRequestId?.value) : "";
+    const linkedRequest = linkedRequestId ? findChoRequest(linkedRequestId) : null;
 
     if (quantity <= 0) {
       showNotice("Enter a valid stock quantity for this action.", "danger");
@@ -1325,6 +1430,11 @@
     if (actionType === "dispose" && !note) {
       showNotice("Please enter the disposal reason before applying this action.", "danger");
       refs.stockActionNote?.focus();
+      return;
+    }
+
+    if (linkedRequestId && !linkedRequest) {
+      showNotice("Unable to locate the linked CHO request.", "danger");
       return;
     }
 
@@ -1346,7 +1456,9 @@
     medicine.updatedBy = "Nurse-in-Charge";
 
     const defaultNote = actionType === "restock"
-      ? "Stock replenished."
+      ? (linkedRequest
+        ? `Delivery received and linked to ${linkedRequest.requestCode}.`
+        : "Stock replenished.")
       : "Damaged or expired stock written off.";
 
     logMovement({
@@ -1356,7 +1468,11 @@
       stockBefore,
       stockAfter,
       note: note || defaultNote,
-      createdAt: medicine.lastUpdatedAt
+      createdAt: medicine.lastUpdatedAt,
+      linkedRequestId: linkedRequest?.id || "",
+      linkedRequestItemId: linkedRequest?.id || "",
+      linkedRequestGroupId: linkedRequest?.requestGroupId || "",
+      linkedRequestCode: linkedRequest?.requestCode || ""
     });
 
     const adminUser = findStoredUser({ role: "Admin" });
@@ -1368,6 +1484,10 @@
       `${formatNumber(quantity)} ${medicine.unit} processed for ${medicineLabel(medicine)}.`,
       `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
     ];
+
+    if (linkedRequest) {
+      detailParts.push(`Linked to ${linkedRequest.requestCode}.`);
+    }
 
     if (actionType === "dispose") {
       detailParts.push(`Reason: ${note || defaultNote}`);
@@ -1391,7 +1511,9 @@
     renderAll();
     emitInventoryNotificationRefresh();
     stockActionModal?.hide();
-    showNotice(`${medicine.name} stock updated successfully.`);
+    showNotice(linkedRequest
+      ? `${medicine.name} stock updated and linked to ${linkedRequest.requestCode}.`
+      : `${medicine.name} stock updated successfully.`);
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1407,8 +1529,18 @@
 
   refs.openAddMedicineBtn?.addEventListener("click", () => openMedicineModal());
   refs.medicineForm?.addEventListener("submit", handleMedicineSubmit);
+  refs.medicineFormType?.addEventListener("change", () => {
+    const suggestedUnit = DOSAGE_FORM_UNIT_MAP[text(refs.medicineFormType?.value)];
+    if (!suggestedUnit || !refs.medicineUnit) return;
+    if (!text(refs.medicineUnit.value)) {
+      refs.medicineUnit.value = suggestedUnit;
+    }
+  });
   refs.stockActionForm?.addEventListener("submit", handleStockActionSubmit);
   refs.stockActionType?.addEventListener("change", updateDispenseSectionVisibility);
+  refs.stockLinkedRequestId?.addEventListener("change", () => {
+    updateLinkedRequestHint(findMedicine(text(refs.stockMedicineId?.value)));
+  });
 
   refs.residentLookupInput?.addEventListener("input", (event) => {
     dispenseState.residentSearch = text(event.target.value);
@@ -1438,6 +1570,11 @@
     renderInventoryTable();
   });
 
+  refs.inventorySearchBtn?.addEventListener("click", () => {
+    uiState.search = text(refs.inventorySearch?.value);
+    renderInventoryTable();
+  });
+
   refs.categoryFilter?.addEventListener("change", (event) => {
     uiState.category = text(event.target.value) || "all";
     renderInventoryTable();
@@ -1461,6 +1598,11 @@
     } else if (action === "adjust") {
       openStockActionModal(medicine);
     }
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (!supplyMonitoring || event.key !== supplyMonitoring.STORAGE.requests) return;
+    state.choRequests = supplyMonitoring.readRequests();
   });
 
   ensureSeedData();
