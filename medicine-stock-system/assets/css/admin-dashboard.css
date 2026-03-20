@@ -1892,8 +1892,9 @@ h1,h2,h3,h4,h5,h6{
 
 .balance-grid{
   display:grid;
-  grid-template-columns:minmax(0, 1.38fr) minmax(300px, 0.86fr);
+  grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:12px;
+  align-items:stretch;
 }
 
 .balance-main{
@@ -1923,6 +1924,131 @@ h1,h2,h3,h4,h5,h6{
   color:#2d4430;
   font-size:1.02rem;
   font-weight:700;
+}
+
+.balance-panel__head--stack p{
+  margin:4px 0 0;
+  color:#66725e;
+  font-size:0.76rem;
+  line-height:1.45;
+}
+
+.balance-panel--bucket{
+  display:flex;
+  flex-direction:column;
+  min-height:100%;
+}
+
+.balance-bucket-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  flex:1;
+  min-height:0;
+  max-height:300px;
+  overflow-x:hidden;
+  overflow-y:auto;
+  align-items:stretch;
+  padding-right:4px;
+}
+
+.balance-bucket-list::-webkit-scrollbar{
+  width:8px;
+}
+
+.balance-bucket-list::-webkit-scrollbar-track{
+  background:rgba(217, 224, 211, 0.55);
+  border-radius:999px;
+}
+
+.balance-bucket-list::-webkit-scrollbar-thumb{
+  background:rgba(108, 128, 104, 0.46);
+  border-radius:999px;
+}
+
+.balance-bucket-list .text-muted.small{
+  width:100%;
+}
+
+.balance-bucket-item{
+  display:grid;
+  grid-template-columns:42px minmax(0, 1fr) auto;
+  align-items:center;
+  width:100%;
+  flex:0 0 auto;
+  gap:12px;
+  padding:12px 14px;
+  border-radius:16px;
+  background:#ffffff;
+  border:1px solid rgba(216, 220, 211, 0.9);
+  box-shadow:0 8px 20px rgba(37, 57, 34, 0.04);
+}
+
+.balance-bucket-item__icon{
+  width:42px;
+  height:42px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:14px;
+  font-size:1.15rem;
+}
+
+.balance-bucket-item--low .balance-bucket-item__icon{
+  color:#c75a46;
+  background:rgba(199, 90, 70, 0.14);
+}
+
+.balance-bucket-item--balanced .balance-bucket-item__icon{
+  color:#5ca048;
+  background:rgba(92, 160, 72, 0.14);
+}
+
+.balance-bucket-item--over .balance-bucket-item__icon{
+  color:#c89d24;
+  background:rgba(200, 157, 36, 0.16);
+}
+
+.balance-bucket-item__copy{
+  min-width:0;
+}
+
+.balance-bucket-item__copy strong{
+  display:block;
+  color:#2d4430;
+  font-size:0.94rem;
+  font-weight:700;
+  line-height:1.15;
+}
+
+.balance-bucket-item__copy span{
+  display:block;
+  margin-top:4px;
+  color:#66725e;
+  font-size:0.72rem;
+  font-weight:600;
+}
+
+.balance-bucket-item__meta{
+  min-width:92px;
+  text-align:right;
+}
+
+.balance-bucket-item__meta small{
+  display:block;
+  color:#707a6c;
+  font-size:0.64rem;
+  font-weight:800;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+}
+
+.balance-bucket-item__meta strong{
+  display:block;
+  margin-top:4px;
+  color:#2d4430;
+  font-size:0.86rem;
+  font-weight:800;
 }
 
 .balance-table{
@@ -4746,8 +4872,11 @@ body{
 }
 
 .expiry-panel{
+  display:flex;
+  flex-direction:column;
   padding:12px 14px;
   border-radius:18px;
+  min-height:0;
 }
 
 .expiry-panel__head{
@@ -4760,9 +4889,13 @@ body{
 
 .expiry-medicine-list,
 .expiry-consumption-list{
+  flex:none;
   gap:8px;
-  max-height:316px;
-  overflow:auto;
+  height:auto;
+  min-height:0;
+  max-height:248px;
+  overflow-x:hidden;
+  overflow-y:auto;
   padding-right:4px;
 }
 
@@ -4788,27 +4921,27 @@ body{
 
 .expiry-medicine-item__copy strong,
 .expiry-consumption-item__copy strong{
-  font-size:0.86rem;
+  font-size:0.82rem;
 }
 
 .expiry-medicine-item__copy span,
 .expiry-consumption-item__copy span{
-  font-size:0.7rem;
+  font-size:0.66rem;
 }
 
 .expiry-days-pill{
-  min-width:96px;
-  padding:7px 10px;
+  min-width:78px;
+  padding:6px 8px;
   border-radius:14px;
 }
 
 .expiry-days-pill small{
-  font-size:0.64rem;
+  font-size:0.6rem;
 }
 
 .expiry-days-pill strong{
   margin-top:3px;
-  font-size:0.92rem;
+  font-size:0.86rem;
 }
 
 .expiry-consumption-item{
@@ -4831,22 +4964,25 @@ body{
 .expiry-rate-pill{
   min-height:24px;
   padding:0 9px;
-  font-size:0.66rem;
+  font-size:0.62rem;
 }
 
 .expiry-consumption-item__value{
-  font-size:0.74rem;
+  font-size:0.7rem;
 }
 
 .expiry-side{
-  align-items:stretch;
+  align-items:flex-start;
 }
 
 .expiry-panel--risk{
-  height:100%;
+  height:auto;
 }
 
 .expiry-risk-card{
+  display:flex;
+  flex:none;
+  flex-direction:column;
   padding:12px;
   border-radius:14px;
 }
@@ -4881,6 +5017,17 @@ body{
   .expiry-grid,
   .expiry-main{
     grid-template-columns:1fr;
+  }
+
+  .expiry-panel{
+    min-height:0;
+  }
+
+  .expiry-medicine-list,
+  .expiry-consumption-list{
+    height:auto;
+    max-height:300px;
+    overflow-y:auto;
   }
 }
 
@@ -5004,13 +5151,13 @@ body{
 }
 
 .balance-grid{
-  grid-template-columns:minmax(0, 1.5fr) minmax(235px, 0.74fr);
+  grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:12px;
-  align-items:start;
+  align-items:stretch;
 }
 
 .balance-main{
-  grid-template-columns:minmax(0, 1.06fr) minmax(0, 0.94fr);
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:12px;
   align-items:start;
 }
@@ -5032,19 +5179,71 @@ body{
   font-size:0.94rem;
 }
 
+.balance-panel__head--stack p{
+  font-size:0.7rem;
+}
+
+.balance-bucket-list{
+  gap:8px;
+  max-height:268px;
+}
+
+.balance-bucket-item{
+  grid-template-columns:38px minmax(0, 1fr) auto;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:14px;
+}
+
+.balance-bucket-item__icon{
+  width:38px;
+  height:38px;
+  border-radius:12px;
+  font-size:1.08rem;
+}
+
+.balance-bucket-item__copy strong{
+  font-size:0.86rem;
+}
+
+.balance-bucket-item__copy span{
+  margin-top:3px;
+  font-size:0.68rem;
+}
+
+.balance-bucket-item__meta{
+  min-width:78px;
+}
+
+.balance-bucket-item__meta small{
+  font-size:0.58rem;
+}
+
+.balance-bucket-item__meta strong{
+  font-size:0.8rem;
+}
+
 .balance-table{
   border-radius:14px;
 }
 
 .balance-table__head,
 .balance-table__row{
-  grid-template-columns:minmax(0, 1.1fr) 72px 112px;
+  grid-template-columns:minmax(0, 1fr) 84px 118px;
   gap:10px;
 }
 
 .balance-table__head{
   padding:10px 12px;
   font-size:0.66rem;
+}
+
+.balance-table__head span:nth-child(2),
+.balance-table__head span:nth-child(3),
+.balance-table__stock,
+.balance-table__status{
+  text-align:center;
+  justify-self:center;
 }
 
 .balance-table__body{
@@ -5224,6 +5423,20 @@ body{
 
   .balance-summary-card{
     min-height:0;
+  }
+
+  .balance-panel__head--stack p{
+    font-size:0.72rem;
+  }
+
+  .balance-bucket-item{
+    grid-template-columns:38px minmax(0, 1fr);
+  }
+
+  .balance-bucket-item__meta{
+    grid-column:2;
+    min-width:0;
+    text-align:left;
   }
 
   .balance-table__head{
@@ -5603,7 +5816,12 @@ body{
 }
 
 .supply-summary-grid{
-  grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns:repeat(5, minmax(0, 1fr));
+  align-items:stretch;
+}
+
+.supply-summary-card{
+  min-width:0;
 }
 
 .supply-summary-card--rose{
@@ -5618,6 +5836,24 @@ body{
 .supply-request-card__badge--warning{
   color:#a97708;
   background:rgba(220, 188, 69, 0.2);
+}
+
+@media (max-width: 1180px){
+  .supply-summary-grid{
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 992px){
+  .supply-summary-grid{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px){
+  .supply-summary-grid{
+    grid-template-columns:1fr;
+  }
 }
 
 .supply-request-card__badge--pending{
@@ -5643,4 +5879,481 @@ body{
 
 .supply-request-step--pending span{
   color:#5c6b55;
+}
+
+/* Admin dashboard vivid theme */
+.admin-dashboard-page{
+  --bg:#eef8f2;
+  --surface:#ffffff;
+  --surface-2:#f4fcf7;
+  --text:#133829;
+  --muted:#567064;
+  --accent:#138a56;
+  --accent-2:#f1b200;
+  --border:rgba(19, 138, 86, 0.18);
+  --shadow:0 20px 44px rgba(10, 77, 49, 0.14);
+  background:#eff6f1;
+}
+
+.admin-dashboard-page #sidebar{
+  background:linear-gradient(165deg, #074b2f 0%, #0f7548 50%, #17a063 100%);
+  border-right:1px solid rgba(255,255,255,0.16);
+  box-shadow:18px 0 42px rgba(7, 55, 34, 0.24);
+}
+
+.admin-dashboard-page #sidebar .brand img{
+  background:linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.18) 100%);
+  box-shadow:0 10px 22px rgba(7, 42, 28, 0.22);
+}
+
+.admin-dashboard-page .menu a{
+  color:rgba(248, 252, 244, 0.92);
+}
+
+.admin-dashboard-page .menu a:hover{
+  background:rgba(255,255,255,0.16);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.16);
+}
+
+.admin-dashboard-page .menu a.active{
+  background:linear-gradient(135deg, rgba(241, 178, 0, 0.48) 0%, rgba(255,255,255,0.18) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.2),
+    0 14px 28px rgba(10, 54, 33, 0.22);
+}
+
+.admin-dashboard-page .topbar{
+  background:#ffffff;
+  border:1px solid rgba(19, 138, 86, 0.26);
+  box-shadow:0 18px 40px rgba(12, 78, 49, 0.14);
+}
+
+.admin-dashboard-page .toggle-btn{
+  background:linear-gradient(135deg, #138a56 0%, #17a063 100%);
+  color:#fff;
+  box-shadow:0 10px 22px rgba(19, 138, 86, 0.24);
+}
+
+.admin-dashboard-page .toggle-btn:hover{
+  background:linear-gradient(135deg, #107647 0%, #149b5d 100%);
+  color:#fff;
+}
+
+.admin-dashboard-page .demand-suite,
+.admin-dashboard-page .pattern-suite,
+.admin-dashboard-page .movement-suite,
+.admin-dashboard-page .supply-suite,
+.admin-dashboard-page .expiry-suite,
+.admin-dashboard-page .balance-suite{
+  border:1px solid rgba(19, 138, 86, 0.14);
+  box-shadow:0 22px 48px rgba(12, 78, 49, 0.16);
+}
+
+.admin-dashboard-page .demand-suite{
+  background:#e7f3eb;
+}
+
+.admin-dashboard-page .pattern-suite{
+  background:#eaf1f8;
+}
+
+.admin-dashboard-page .movement-suite{
+  background:#eaf4e7;
+}
+
+.admin-dashboard-page .supply-suite{
+  background:#e8f3ed;
+}
+
+.admin-dashboard-page .expiry-suite{
+  background:#f8f0de;
+}
+
+.admin-dashboard-page .balance-suite{
+  background:#e8f1eb;
+}
+
+.admin-dashboard-page .demand-suite__inner{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .movement-suite__inner{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .supply-suite__inner{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .expiry-suite__inner{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .balance-suite__inner{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .pattern-panel{
+  background:#ffffff;
+}
+
+.admin-dashboard-page .demand-suite__inner,
+.admin-dashboard-page .movement-suite__inner,
+.admin-dashboard-page .supply-suite__inner,
+.admin-dashboard-page .expiry-suite__inner,
+.admin-dashboard-page .balance-suite__inner,
+.admin-dashboard-page .pattern-panel,
+.admin-dashboard-page .demand-card,
+.admin-dashboard-page .movement-panel,
+.admin-dashboard-page .supply-panel,
+.admin-dashboard-page .expiry-panel,
+.admin-dashboard-page .balance-panel,
+.admin-dashboard-page .pattern-medicine-card,
+.admin-dashboard-page .supply-reliability-card,
+.admin-dashboard-page .expiry-risk-card,
+.admin-dashboard-page .balance-focus-card,
+.admin-dashboard-page .balance-table,
+.admin-dashboard-page .pattern-case-card,
+.admin-dashboard-page .movement-item,
+.admin-dashboard-page .supply-request-card{
+  border:1px solid rgba(19, 138, 86, 0.18);
+  box-shadow:0 16px 34px rgba(12, 78, 49, 0.1);
+}
+
+.admin-dashboard-page .demand-suite__head h5,
+.admin-dashboard-page .movement-suite__head h5,
+.admin-dashboard-page .supply-suite__title h5,
+.admin-dashboard-page .expiry-suite__head h5,
+.admin-dashboard-page .balance-suite__head h5,
+.admin-dashboard-page .pattern-panel__head h5,
+.admin-dashboard-page .demand-card__head h6,
+.admin-dashboard-page .movement-panel__title h6,
+.admin-dashboard-page .supply-panel__head h6,
+.admin-dashboard-page .expiry-panel__head h6,
+.admin-dashboard-page .balance-panel__head h6{
+  color:#0f5d3a;
+}
+
+.admin-dashboard-page .demand-summary-card,
+.admin-dashboard-page .supply-summary-card,
+.admin-dashboard-page .expiry-summary-card,
+.admin-dashboard-page .balance-summary-card,
+.admin-dashboard-page .movement-summary,
+.admin-dashboard-page .stat-card{
+  background:#ffffff;
+  border:1px solid rgba(19, 138, 86, 0.2);
+  box-shadow:0 18px 36px rgba(10, 77, 49, 0.12);
+}
+
+.admin-dashboard-page .demand-summary-card::after,
+.admin-dashboard-page .supply-summary-card::after,
+.admin-dashboard-page .expiry-summary-card::after,
+.admin-dashboard-page .balance-summary-card::after,
+.admin-dashboard-page .movement-summary::after{
+  display:none;
+}
+
+.admin-dashboard-page .demand-summary-card--green,
+.admin-dashboard-page .supply-summary-card--green,
+.admin-dashboard-page .expiry-summary-card--green,
+.admin-dashboard-page .balance-summary-card--green,
+.admin-dashboard-page .movement-summary--fast{
+  --tone:#18a957;
+  --tone-bg:rgba(24, 169, 87, 0.24);
+  background:#eefaf2;
+}
+
+.admin-dashboard-page .demand-summary-card--blue{
+  --tone:#2f80ed;
+  --tone-bg:rgba(47, 128, 237, 0.24);
+  background:#eef5ff;
+}
+
+.admin-dashboard-page .demand-summary-card--gold,
+.admin-dashboard-page .supply-summary-card--gold,
+.admin-dashboard-page .expiry-summary-card--gold,
+.admin-dashboard-page .balance-summary-card--gold,
+.admin-dashboard-page .movement-summary--slow{
+  --tone:#f1b200;
+  --tone-bg:rgba(241, 178, 0, 0.24);
+  background:#fff6df;
+}
+
+.admin-dashboard-page .demand-summary-card--sand,
+.admin-dashboard-page .supply-summary-card--sand,
+.admin-dashboard-page .expiry-summary-card--sand,
+.admin-dashboard-page .expiry-summary-card--olive,
+.admin-dashboard-page .balance-summary-card--sand{
+  --tone:#d98b0d;
+  --tone-bg:rgba(217, 139, 13, 0.22);
+  background:#fff1e1;
+}
+
+.admin-dashboard-page .supply-summary-card--olive{
+  --tone:#138a56;
+  --tone-bg:rgba(19, 138, 86, 0.24);
+  background:#eaf8ef;
+}
+
+.admin-dashboard-page .supply-summary-card--rose,
+.admin-dashboard-page .balance-summary-card--red{
+  --tone:#e55a5a;
+  --tone-bg:rgba(229, 90, 90, 0.24);
+  background:#fff0f0;
+}
+
+.admin-dashboard-page .demand-summary-card__icon,
+.admin-dashboard-page .supply-summary-card__icon,
+.admin-dashboard-page .expiry-summary-card__icon,
+.admin-dashboard-page .balance-summary-card__icon,
+.admin-dashboard-page .movement-item__icon,
+.admin-dashboard-page .pattern-case-card__icon{
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.42),
+    0 10px 18px rgba(12, 78, 49, 0.1);
+}
+
+.admin-dashboard-page .movement-item__status,
+.admin-dashboard-page .supply-request-card__badge{
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.3);
+}
+
+.admin-dashboard-page .supply-summary-card__progress,
+.admin-dashboard-page .supply-progress{
+  background:rgba(19, 138, 86, 0.12);
+}
+
+.admin-dashboard-page .supply-summary-card__progress span,
+.admin-dashboard-page .supply-progress span,
+.admin-dashboard-page .balance-focus-track span{
+  background:linear-gradient(90deg, #149b5d 0%, #1fba74 100%);
+}
+
+.admin-dashboard-page .pattern-medicine-card__chart,
+.admin-dashboard-page .demand-chart-wrap,
+.admin-dashboard-page .supply-chart-wrap{
+  background:#f8fbf9;
+  border-radius:18px;
+}
+
+.admin-dashboard-page .footer{
+  background:transparent;
+}
+
+/* Shared module theme */
+.admin-dashboard-page .inventory-panel,
+.admin-dashboard-page .notification-panel,
+.admin-dashboard-page .records-shell,
+.admin-dashboard-page .card-shell,
+.admin-dashboard-page .report-panel,
+.admin-dashboard-page .report-card,
+.admin-dashboard-page .report-list-card,
+.admin-dashboard-page .report-history-section,
+.admin-dashboard-page .report-preview-sheet,
+.admin-dashboard-page .request-items-panel,
+.admin-dashboard-page .request-details-meta__card,
+.admin-dashboard-page .request-detail-section,
+.admin-dashboard-page .staff-panel,
+.admin-dashboard-page .staff-dashboard-profile,
+.admin-dashboard-page .staff-dashboard-panel,
+.admin-dashboard-page .staff-profile-card,
+.admin-dashboard-page .staff-credentials-card,
+.admin-dashboard-page .staff-dispense-card,
+.admin-dashboard-page .settings-nav,
+.admin-dashboard-page .settings-panel,
+.admin-dashboard-page .inventory-dispense-card,
+.admin-dashboard-page .inventory-selected-resident,
+.admin-dashboard-page .inventory-quick-resident,
+.admin-dashboard-page .inventory-action-note,
+.admin-dashboard-page .report-detail,
+.admin-dashboard-page .report-detail__meta-item,
+.admin-dashboard-page .report-detail__summary,
+.admin-dashboard-page .report-detail__highlights{
+  background:#ffffff;
+  border:1px solid rgba(19, 138, 86, 0.14);
+  box-shadow:0 14px 28px rgba(12, 78, 49, 0.08);
+}
+
+.admin-dashboard-page .inventory-table-shell,
+.admin-dashboard-page .report-table-shell,
+.admin-dashboard-page .report-preview-table-shell{
+  background:#ffffff;
+  border:1px solid rgba(19, 138, 86, 0.12);
+  border-radius:20px;
+  box-shadow:0 12px 24px rgba(12, 78, 49, 0.06);
+}
+
+.admin-dashboard-page .inventory-table thead th,
+.admin-dashboard-page .request-detail-table thead th,
+.admin-dashboard-page .report-table thead th,
+.admin-dashboard-page .report-history-table thead th,
+.admin-dashboard-page .report-preview-table thead th{
+  background:#f7fbf8;
+  color:#567064;
+  border-bottom-color:#dbe8de;
+}
+
+.admin-dashboard-page .inventory-table tbody td,
+.admin-dashboard-page .request-detail-table tbody td,
+.admin-dashboard-page .report-table tbody td,
+.admin-dashboard-page .report-history-table tbody td,
+.admin-dashboard-page .report-preview-table tbody td{
+  border-bottom-color:#e4eee7;
+}
+
+.admin-dashboard-page .inventory-searchbox,
+.admin-dashboard-page .records-searchbox{
+  background:#ffffff;
+  border:1px solid rgba(19, 138, 86, 0.16);
+  box-shadow:0 10px 24px rgba(12, 78, 49, 0.06);
+}
+
+.admin-dashboard-page .inventory-searchbox:focus-within,
+.admin-dashboard-page .records-searchbox:focus-within{
+  border-color:#138a56;
+  box-shadow:0 0 0 4px rgba(19, 138, 86, 0.1);
+}
+
+.admin-dashboard-page .inventory-toolbar .form-control,
+.admin-dashboard-page .inventory-toolbar .form-select,
+.admin-dashboard-page .request-toolbar .form-control,
+.admin-dashboard-page .request-toolbar .form-select,
+.admin-dashboard-page .inventory-form-grid .form-control,
+.admin-dashboard-page .inventory-form-grid .form-select,
+.admin-dashboard-page .accounts-main .form-control,
+.admin-dashboard-page .accounts-main .form-select,
+.admin-dashboard-page .settings-panel--credentials .form-control{
+  background:#f8fbf9;
+  border-color:#d9e6dd;
+  color:#1e4632;
+}
+
+.admin-dashboard-page .inventory-toolbar .form-control:focus,
+.admin-dashboard-page .inventory-toolbar .form-select:focus,
+.admin-dashboard-page .request-toolbar .form-control:focus,
+.admin-dashboard-page .request-toolbar .form-select:focus,
+.admin-dashboard-page .inventory-form-grid .form-control:focus,
+.admin-dashboard-page .inventory-form-grid .form-select:focus,
+.admin-dashboard-page .accounts-main .form-control:focus,
+.admin-dashboard-page .accounts-main .form-select:focus,
+.admin-dashboard-page .settings-panel--credentials .form-control:focus{
+  border-color:#138a56;
+  box-shadow:0 0 0 4px rgba(19, 138, 86, 0.1);
+}
+
+.admin-dashboard-page .btn-primary,
+.admin-dashboard-page .btn-add-medicine,
+.admin-dashboard-page .btn-create-account{
+  background:linear-gradient(135deg, #138a56 0%, #17a063 100%);
+  border:none;
+  box-shadow:0 12px 24px rgba(19, 138, 86, 0.22);
+}
+
+.admin-dashboard-page .btn-primary:hover,
+.admin-dashboard-page .btn-add-medicine:hover,
+.admin-dashboard-page .btn-create-account:hover{
+  filter:brightness(1.03);
+}
+
+.admin-dashboard-page .btn-light,
+.admin-dashboard-page .request-item-add-btn,
+.admin-dashboard-page .inventory-action-toggle,
+.admin-dashboard-page .request-action-toggle,
+.admin-dashboard-page .report-history-actions > .dropdown-toggle{
+  background:#ffffff;
+  border-color:#d8e4da;
+  color:#23482f;
+}
+
+.admin-dashboard-page .inventory-metric-card,
+.admin-dashboard-page .report-stat-card,
+.admin-dashboard-page .staff-dashboard-metric{
+  border:1px solid rgba(19, 138, 86, 0.14);
+  box-shadow:0 14px 28px rgba(12, 78, 49, 0.08);
+}
+
+.admin-dashboard-page .inventory-metric-card--green,
+.admin-dashboard-page .report-stat-card--green{
+  background:#eefaf2;
+}
+
+.admin-dashboard-page .inventory-metric-card--olive{
+  background:#eef7f1;
+}
+
+.admin-dashboard-page .inventory-metric-card--gold,
+.admin-dashboard-page .report-stat-card--gold{
+  background:#fff6df;
+}
+
+.admin-dashboard-page .inventory-metric-card--red,
+.admin-dashboard-page .report-stat-card--red{
+  background:#fff0f0;
+}
+
+.admin-dashboard-page .report-stat-card--blue{
+  background:#eef5ff;
+}
+
+.admin-dashboard-page .inventory-record-count,
+.admin-dashboard-page .notification-record-count,
+.admin-dashboard-page .report-record-count,
+.admin-dashboard-page .staff-record-count{
+  background:#edf8f1;
+  color:#35634c;
+  border:1px solid #d8e7dc;
+}
+
+.admin-dashboard-page .notification-filter-pill,
+.admin-dashboard-page .report-filter-pill,
+.admin-dashboard-page .settings-nav a{
+  background:#f7fbf8;
+  border-color:#d9e6dd;
+  color:#4f6a5a;
+}
+
+.admin-dashboard-page .notification-filter-pill.is-active,
+.admin-dashboard-page .report-filter-pill.is-active,
+.admin-dashboard-page .settings-nav a.active{
+  background:#138a56;
+  border-color:#138a56;
+  color:#ffffff;
+}
+
+.admin-dashboard-page .settings-nav a:hover{
+  background:#eef8f2;
+  color:#1f5d3e;
+}
+
+.admin-dashboard-page .report-notice-popup__inner{
+  background:#ffffff;
+  border-color:#d8e4da;
+}
+
+.admin-dashboard-page .staff-main{
+  --staff-ink:#183a28;
+  --staff-ink-soft:#5a7062;
+  --staff-border:#d8e6dc;
+  --staff-border-strong:#99bea8;
+  --staff-surface:#ffffff;
+  --staff-surface-soft:#f4faf6;
+}
+
+.admin-dashboard-page .staff-dashboard-profile,
+.admin-dashboard-page .staff-account-btn--dashboard,
+.admin-dashboard-page .staff-dashboard-panel,
+.admin-dashboard-page .staff-profile-table,
+.admin-dashboard-page .staff-resident-table,
+.admin-dashboard-page .staff-profile-row,
+.admin-dashboard-page .staff-resident-row,
+.admin-dashboard-page .staff-profile-card,
+.admin-dashboard-page .staff-selected-resident{
+  border-color:#d9e6dd;
+  box-shadow:0 12px 24px rgba(12, 78, 49, 0.06);
+}
+
+.admin-dashboard-page .staff-dashboard-action.btn-light{
+  background:#ffffff;
+  border-color:#d9e6dd;
+  color:#23482f;
 }

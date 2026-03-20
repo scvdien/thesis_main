@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="assets/css/staff.css">
   <link rel="stylesheet" href="assets/css/system-notifications.css">
 </head>
-<body>
+<body class="admin-dashboard-page">
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
@@ -75,27 +75,43 @@
 
             <div class="staff-dashboard-metrics">
               <article class="staff-dashboard-metric staff-dashboard-metric--danger">
-                <strong id="dashboardLowCount">0</strong>
-                <span class="staff-dashboard-metric__label">Low / Critical Stock</span>
-                <small>Needs review</small>
+                <span class="staff-dashboard-metric__icon" aria-hidden="true">
+                  <i class="bi bi-exclamation-diamond"></i>
+                </span>
+                <div class="staff-dashboard-metric__content">
+                  <strong id="dashboardLowCount">0</strong>
+                  <span class="staff-dashboard-metric__label">Low / Critical Stock</span>
+                </div>
               </article>
 
               <article class="staff-dashboard-metric staff-dashboard-metric--warning">
-                <strong id="dashboardExpiringCount">0</strong>
-                <span class="staff-dashboard-metric__label">Expiring Soon</span>
-                <small>Next 30 days</small>
+                <span class="staff-dashboard-metric__icon" aria-hidden="true">
+                  <i class="bi bi-hourglass-split"></i>
+                </span>
+                <div class="staff-dashboard-metric__content">
+                  <strong id="dashboardExpiringCount">0</strong>
+                  <span class="staff-dashboard-metric__label">Expiring Soon</span>
+                </div>
               </article>
 
               <article class="staff-dashboard-metric staff-dashboard-metric--accent">
-                <strong id="dashboardReleasedToday">0</strong>
-                <span class="staff-dashboard-metric__label">Dispensed Today</span>
-                <small>Today's entries</small>
+                <span class="staff-dashboard-metric__icon" aria-hidden="true">
+                  <i class="bi bi-box2-heart"></i>
+                </span>
+                <div class="staff-dashboard-metric__content">
+                  <strong id="dashboardReleasedToday">0</strong>
+                  <span class="staff-dashboard-metric__label">Dispensed Today</span>
+                </div>
               </article>
 
               <article class="staff-dashboard-metric staff-dashboard-metric--neutral">
-                <strong id="dashboardResidentCount">0</strong>
-                <span class="staff-dashboard-metric__label">Patient Profiles</span>
-                <small>Recorded patients</small>
+                <span class="staff-dashboard-metric__icon" aria-hidden="true">
+                  <i class="bi bi-people"></i>
+                </span>
+                <div class="staff-dashboard-metric__content">
+                  <strong id="dashboardResidentCount">0</strong>
+                  <span class="staff-dashboard-metric__label">Patient Profiles</span>
+                </div>
               </article>
             </div>
 
@@ -574,9 +590,7 @@
               </div>
 
               <div class="staff-selected-resident__actions">
-                <span class="staff-chip staff-chip--neutral" id="selectedResidentSource">Directory</span>
-                <span class="staff-chip staff-chip--neutral" id="selectedResidentStatus">Waiting</span>
-                <button type="button" class="btn btn-sm btn-primary" id="selectedResidentUseBtn" disabled>Use for Dispense</button>
+                <button type="button" class="btn btn-sm btn-primary staff-selected-resident__use-btn" id="selectedResidentUseBtn" disabled>Use for Dispense</button>
               </div>
             </div>
 

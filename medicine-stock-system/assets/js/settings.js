@@ -28,7 +28,6 @@
     activeUsersBadge: byId("activeUsersBadge"),
     activeUsersList: byId("activeUsersList"),
     activityLogSearch: byId("activityLogSearch"),
-    activityLogYearFilter: byId("activityLogYearFilter"),
     activityLogCount: byId("activityLogCount"),
     activityLogTableBody: byId("activityLogTableBody"),
     editAccountForm: byId("editAccountForm"),
@@ -117,7 +116,6 @@
       hour12: true
     }).format(parsed);
   };
-
   const USER_ROLE_ADMIN = "Admin";
   const USER_ROLE_BHW = "BHW";
   const normalizeUserRole = (value) => text(value) === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_BHW;
@@ -149,6 +147,7 @@
       id: text(entry.id) || uid(),
       actor: text(entry.actor) || actorName(),
       username: text(entry.username) || currentActorUsername(),
+      category: text(entry.category) || "General",
       actionType,
       actionLabel: text(entry.actionLabel) || LOG_ACTION_LABELS[actionType] || "Updated",
       action: text(entry.action) || text(entry.actionLabel) || LOG_ACTION_LABELS[actionType] || "Updated",
@@ -566,6 +565,81 @@
     if (resultTone === "neutral") return "log-chip log-chip--neutral";
     return "log-chip log-chip--success";
   };
+  const getLogActionIconClass = (actionType) => {
+    if (actionType === "created") return "bi-plus-circle";
+    if (actionType === "deleted") return "bi-trash3";
+    if (actionType === "security") return "bi-shield-check";
+    if (actionType === "access") return "bi-door-open";
+    return "bi-arrow-repeat";
+  };
+  const getLogResultIconClass = (resultTone) => {
+    if (resultTone === "warning") return "bi-exclamation-triangle";
+    if (resultTone === "neutral") return "bi-archive";
+    return "bi-check-circle";
+  };
+  const getLogModuleLabel = (log) => {
+    const category = keyOf(log.category);
+    if (category === "general") return "System";
+    if (category === "inventory") return "Inventory";
+    if (category === "dispensing") return "Dispensing";
+    if (category === "security") return "Security";
+    if (category === "access") return "User Access";
+    if (category === "bhw") return "BHW Accounts";
+    if (category === "settings") return "Settings";
+    return text(log.category) || "System";
+  };
+  const getLogActionDisplayLabel = (log) => {
+    const action = keyOf(log.action);
+    const type = keyOf(log.actionType);
+    if (action.includes("login")) return "Login";
+    if (action.includes("logout")) return "Logout";
+    if (action.includes("restocked")) return "Restock";
+    if (action.includes("disposed")) return "Dispose";
+    if (action.includes("dispensed")) return "Dispense";
+    if (action.includes("created medicine batch")) return "New Batch";
+    if (action.includes("updated stock count")) return "Stock Update";
+    if (action.includes("created bhw account")) return "Create Account";
+    if (action.includes("updated bhw profile")) return "Edit Account";
+    if (action.includes("activated bhw account") || action.includes("deactivated bhw account")) return "Account Status";
+    if (action.includes("reset bhw password")) return "Reset Password";
+    if (action.includes("changed bhw password")) return "Change Password";
+    if (action.includes("credential")) return "Credentials";
+    if (type === "created") return "Create";
+    if (type === "deleted") return "Remove";
+    if (type === "security") return "Security";
+    if (type === "access") return "Access";
+    return "Update";
+  };
+  const getLogResultDisplayLabel = (log) => {
+    const result = keyOf(log.resultLabel);
+    const action = keyOf(log.action);
+    if (result === "updated") return "Saved";
+    if (result === "dispensed") return "Recorded";
+    if (result === "disposed") return "Removed";
+    if (result === "archived") return "Archived";
+    if (result === "saved") return "Saved";
+    if (result === "success") return action.includes("login") || action.includes("logout") ? "Success" : "Done";
+    return text(log.resultLabel) || "Done";
+  };
+  const getLogActionDisplayText = (log) => {
+    const action = keyOf(log.action);
+    if (action.includes("login")) return "User signed in";
+    if (action.includes("logout")) return "User signed out";
+    if (action.includes("restocked")) return "Added stock to inventory";
+    if (action.includes("disposed")) return "Removed damaged or expired stock";
+    if (action.includes("dispensed")) return "Released medicine to patient";
+    if (action.includes("created medicine batch")) return "Added a new medicine batch";
+    if (action.includes("updated stock count")) return "Adjusted stock balance";
+    if (action.includes("archived expired lot")) return "Archived expired batch";
+    if (action.includes("created bhw account")) return "Added a BHW account";
+    if (action.includes("updated bhw profile")) return "Updated BHW account details";
+    if (action.includes("activated bhw account")) return "Activated a BHW account";
+    if (action.includes("deactivated bhw account")) return "Deactivated a BHW account";
+    if (action.includes("reset bhw password")) return "Issued a temporary password";
+    if (action.includes("changed bhw password")) return "Updated account password";
+    if (action.includes("credential")) return "Updated admin account details";
+    return text(log.action) || "Record updated";
+  };
 
   const setActiveLogFilter = (nextFilter) => {
     const fallback = "all";
@@ -577,22 +651,8 @@
     });
   };
 
-  const syncLogYearOptions = () => {
-    if (!refs.activityLogYearFilter) return;
-    const years = Array.from(new Set(
-      state.logs
-        .map((log) => new Date(log.createdAt).getFullYear())
-        .filter((year) => Number.isFinite(year))
-    )).sort((a, b) => b - a);
-
-    const currentValue = text(refs.activityLogYearFilter.value) || "all";
-    refs.activityLogYearFilter.innerHTML = `<option value="all">All Years</option>${years.map((year) => `<option value="${year}">${year}</option>`).join("")}`;
-    refs.activityLogYearFilter.value = years.some((year) => String(year) === currentValue) ? currentValue : "all";
-  };
-
   const filteredLogs = () => {
     const query = keyOf(refs.activityLogSearch?.value);
-    const yearValue = text(refs.activityLogYearFilter?.value) || "all";
     const actionType = logUiState.actionType || "all";
 
     return state.logs.filter((log) => {
@@ -601,52 +661,76 @@
         log.username,
         log.action,
         log.actionLabel,
+        log.category,
         log.target,
         log.details,
         log.resultLabel,
         log.ipAddress
       ].some((value) => keyOf(value).includes(query));
 
-      const matchesYear = yearValue === "all" || String(new Date(log.createdAt).getFullYear()) === yearValue;
       const matchesActionType = actionType === "all" || log.actionType === actionType;
 
-      return matchesQuery && matchesYear && matchesActionType;
+      return matchesQuery && matchesActionType;
     });
   };
 
   const renderLogs = () => {
     if (!refs.activityLogTableBody) return;
 
-    syncLogYearOptions();
     const logs = filteredLogs();
     if (refs.activityLogCount) refs.activityLogCount.textContent = `${logs.length} record${logs.length === 1 ? "" : "s"} found`;
 
     if (!logs.length) {
-      refs.activityLogTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No activity logs found.</td></tr>`;
+      refs.activityLogTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No activity logs found.</td></tr>`;
       return;
     }
 
-    refs.activityLogTableBody.innerHTML = logs.map((log) => `
-      <tr>
-        <td>
-          <div class="log-datetime">
-            <span class="log-date">${esc(formatLogDate(log.createdAt))}</span>
-            <span class="log-time">${esc(formatLogTime(log.createdAt))}</span>
-          </div>
-        </td>
-        <td>
-          <div class="log-user-name">${esc(log.actor)}</div>
-          <div class="log-user-sub">(${esc(log.username)})</div>
-        </td>
-        <td><span class="${getLogActionBadgeClass(log.actionType)}">${esc(log.actionLabel)}</span></td>
-        <td><span class="${getLogResultBadgeClass(log.resultTone)}">${esc(log.resultLabel)}</span></td>
-        <td>
-          <div class="log-detail">${esc(log.details)}</div>
-          <div class="log-detail-sub">${esc(text(log.target) || "Ligao City Coastal RHU Medicine Stock Monitoring System")}</div>
-        </td>
-        <td class="logs-ip-cell"><span class="logs-ip-text">${esc(log.ipAddress)}</span></td>
-      </tr>
-    `).join("");
+    refs.activityLogTableBody.innerHTML = logs.map((log) => {
+      const moduleLabel = getLogModuleLabel(log);
+      const actionLabel = getLogActionDisplayLabel(log);
+      const resultLabel = getLogResultDisplayLabel(log);
+      return `
+        <tr>
+          <td>
+            <div class="log-datetime">
+              <span class="log-date">${esc(formatLogDate(log.createdAt))}</span>
+              <span class="log-time">${esc(formatLogTime(log.createdAt))}</span>
+              <span class="log-relative">${esc(formatRelativeTime(log.createdAt))}</span>
+            </div>
+          </td>
+          <td>
+            <div class="log-user">
+              <div class="log-user-copy">
+                <div class="log-user-name">${esc(log.actor)}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="log-module-pill" title="${esc(moduleLabel)}">${esc(moduleLabel)}</span>
+          </td>
+          <td>
+            <span class="${getLogActionBadgeClass(log.actionType)}">
+              <i class="bi ${getLogActionIconClass(log.actionType)}" aria-hidden="true"></i>
+              <span>${esc(actionLabel)}</span>
+            </span>
+          </td>
+          <td>
+            <span class="${getLogResultBadgeClass(log.resultTone)}">
+              <i class="bi ${getLogResultIconClass(log.resultTone)}" aria-hidden="true"></i>
+              <span>${esc(resultLabel)}</span>
+            </span>
+          </td>
+          <td>
+            <div class="log-reference" title="${esc(text(log.target) || "System Record")}">
+              ${esc(text(log.target) || "System Record")}
+            </div>
+          </td>
+          <td>
+            <div class="log-detail" title="${esc(log.details)}">${esc(log.details)}</div>
+          </td>
+        </tr>
+      `;
+    }).join("");
   };
 
   const renderAll = () => {
@@ -914,7 +998,6 @@
     syncNurseCredentialsVisibility({ forceOpen: true });
   });
   refs.activityLogSearch?.addEventListener("input", renderLogs);
-  refs.activityLogYearFilter?.addEventListener("change", renderLogs);
   activityLogFilterButtons.forEach((button) => {
     button.addEventListener("click", () => {
       setActiveLogFilter(text(button.dataset.activityLogFilter) || "all");

@@ -67,8 +67,6 @@
     selectedResidentCard: byId("selectedResidentCard"),
     selectedResidentName: byId("selectedResidentName"),
     selectedResidentMeta: byId("selectedResidentMeta"),
-    selectedResidentSource: byId("selectedResidentSource"),
-    selectedResidentStatus: byId("selectedResidentStatus"),
     selectedResidentReleaseCount: byId("selectedResidentReleaseCount"),
     selectedResidentLastMedicineValue: byId("selectedResidentLastMedicineValue"),
     selectedResidentLastReleaseValue: byId("selectedResidentLastReleaseValue"),
@@ -1303,6 +1301,12 @@
     refs.residentCabarianResults.innerHTML = matches.slice(0, 24).map((resident) => {
       const meta = [resident.residentId, text(resident.householdId)].filter(Boolean).join(" | ");
       const address = residentAddressLabel(resident) || "Cabarian, Ligao City";
+      const stats = getResidentStats(resident);
+      const hasExistingPatient = stats.totalReleases > 0 || Boolean(text(stats.lastReleaseAt));
+      const statusLabel = hasExistingPatient ? "Existing patient" : "New patient";
+      const statusClass = hasExistingPatient
+        ? "staff-account-result__status staff-account-result__status--existing"
+        : "staff-account-result__status staff-account-result__status--new";
       return `
         <button type="button" class="staff-account-result" data-cabarian-resident-id="${esc(resident.id)}">
           <span class="staff-account-result__main">
@@ -1311,7 +1315,7 @@
           </span>
           <span class="staff-account-result__tail">
             <span>${esc(address)}</span>
-            <small>Select resident</small>
+            <small class="${statusClass}">${esc(statusLabel)}</small>
           </span>
         </button>
       `;
@@ -1478,7 +1482,7 @@
             <strong>${esc(resident.fullName)}</strong>
             <small>${esc(patientMeta || "Resident profile")}</small>
           </span>
-          <span class="staff-profile-row__text">${esc(address)}</span>
+          <span class="staff-profile-row__text staff-profile-row__address" title="${esc(address)}">${esc(address)}</span>
           <span class="staff-profile-row__text">${esc(stats.lastMedicine || "-")}</span>
           <span class="staff-profile-row__text">${esc(lastDispense)}</span>
           <span class="staff-profile-row__count">${esc(formatNumber(stats.totalReleases))}</span>
@@ -1612,14 +1616,6 @@
     if (!resident) {
       if (refs.selectedResidentName) refs.selectedResidentName.textContent = "No patient selected";
       if (refs.selectedResidentMeta) refs.selectedResidentMeta.textContent = "Choose a resident from the directory to review patient details.";
-      if (refs.selectedResidentSource) {
-        refs.selectedResidentSource.className = "staff-chip staff-chip--neutral";
-        refs.selectedResidentSource.textContent = "Directory";
-      }
-      if (refs.selectedResidentStatus) {
-        refs.selectedResidentStatus.className = "staff-chip staff-chip--neutral";
-        refs.selectedResidentStatus.textContent = "Waiting";
-      }
       if (refs.selectedResidentReleaseCount) refs.selectedResidentReleaseCount.textContent = "0";
       if (refs.selectedResidentLastMedicineValue) refs.selectedResidentLastMedicineValue.textContent = "-";
       if (refs.selectedResidentLastReleaseValue) refs.selectedResidentLastReleaseValue.textContent = "-";
@@ -1632,8 +1628,6 @@
     }
 
     const stats = getResidentStats(resident);
-    const sourceLabel = resident.source === "household-system" ? "Household" : "Manual Entry";
-    const statusClass = residentStatusChipClass(stats.status.tone);
 
     if (refs.selectedResidentName) refs.selectedResidentName.textContent = resident.fullName;
     if (refs.selectedResidentMeta) {
@@ -1642,14 +1636,6 @@
         text(resident.householdId),
         residentAddressLabel(resident)
       ].filter(Boolean).join(" | ");
-    }
-    if (refs.selectedResidentSource) {
-      refs.selectedResidentSource.className = resident.source === "household-system" ? "staff-chip" : "staff-chip staff-chip--neutral";
-      refs.selectedResidentSource.textContent = sourceLabel;
-    }
-    if (refs.selectedResidentStatus) {
-      refs.selectedResidentStatus.className = statusClass;
-      refs.selectedResidentStatus.textContent = stats.status.label;
     }
     if (refs.selectedResidentReleaseCount) refs.selectedResidentReleaseCount.textContent = formatNumber(stats.totalReleases);
     if (refs.selectedResidentLastMedicineValue) refs.selectedResidentLastMedicineValue.textContent = stats.lastMedicine || "-";

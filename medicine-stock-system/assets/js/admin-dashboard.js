@@ -38,6 +38,8 @@
   };
 
   const formatNumber = (value) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(toNumber(value)));
+  const text = (value) => String(value ?? "").trim();
+  const keyOf = (value) => text(value).toLowerCase();
 
   const formatDecimal = (value, digits = 1) => new Intl.NumberFormat("en-US", {
     minimumFractionDigits: digits,
@@ -45,6 +47,7 @@
   }).format(toNumber(value));
 
   const formatPercent = (value, digits = 0) => `${formatDecimal(value, digits)}%`;
+  const formatSignedPercent = (value, digits = 0) => `${toNumber(value) > 0 ? "+" : ""}${formatPercent(value, digits)}`;
   const formatChange = (value) => `${toNumber(value) >= 0 ? "+" : ""}${formatDecimal(value, 1)}%`;
   const formatCurrency = (value) => new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -66,6 +69,29 @@
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+  const seasonDefinitions = [
+    {
+      key: "dry",
+      label: "Dry Season",
+      months: [11, 0, 1, 2, 3, 4],
+      icon: "bi bi-brightness-high-fill"
+    },
+    {
+      key: "rainy",
+      label: "Rainy Season",
+      months: [5, 6, 7, 8, 9, 10],
+      icon: "bi bi-cloud-rain-heavy-fill"
+    }
+  ];
+  const getSeasonDefinition = (monthIndex) => (
+    seasonDefinitions.find((season) => season.months.includes(monthIndex)) || seasonDefinitions[0]
+  );
+  const getNextSeasonDefinition = (seasonKey) => {
+    const currentIndex = seasonDefinitions.findIndex((season) => season.key === seasonKey);
+    if (currentIndex < 0) return seasonDefinitions[0];
+    return seasonDefinitions[(currentIndex + 1) % seasonDefinitions.length];
+  };
+  const seasonLabelLower = (season) => String(season?.label || "season").toLowerCase();
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -77,6 +103,16 @@
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = value;
+  };
+  const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
+  const readStoredList = (key) => {
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
   };
   const MONITORING_SNAPSHOT_STORAGE = "mss_monitoring_snapshot_v1";
   const readMonitoringSnapshot = () => {
@@ -100,27 +136,216 @@
     }
     return `${item.shortName} remains within the monitored stock range for the current cycle.`;
   };
+
+  const renderBalanceBucketItems = (items, type) => {
+    if (!Array.isArray(items) || !items.length) {
+      const emptyLabels = {
+        low: "No understock medicines right now.",
+        balanced: "No balanced medicines yet.",
+        over: "No overstock medicines right now."
+      };
+      return `<div class="text-muted small">${emptyLabels[type] || "No medicines to show."}</div>`;
+    }
+
+    return items
+      .map((item) => {
+        const tone = type === "low" ? "low" : type === "over" ? "over" : "balanced";
+        const icon = item.icon || (type === "over" ? "bi bi-arrow-up-circle" : type === "low" ? "bi bi-arrow-down-circle" : "bi bi-check2-circle");
+        const metaLabel = type === "low"
+          ? "Request Point"
+          : type === "over"
+            ? "Stock Ceiling"
+            : "Safe Range";
+        const metaValue = type === "balanced"
+          ? `${formatNumber(item.reorderLevel || 0)}-${formatNumber(item.overstockThreshold || 0)}`
+          : formatNumber(type === "low" ? (item.reorderLevel || 0) : (item.overstockThreshold || 0));
+        const helperText = type === "low"
+          ? `Current stock: ${formatNumber(item.stock || 0)}`
+          : type === "over"
+            ? `Current stock: ${formatNumber(item.stock || 0)}`
+            : `Current stock: ${formatNumber(item.stock || 0)}`;
+
+        return `
+          <article class="balance-bucket-item balance-bucket-item--${tone}">
+            <div class="balance-bucket-item__icon">
+              <i class="${icon}"></i>
+            </div>
+            <div class="balance-bucket-item__copy">
+              <strong>${item.shortName || item.name}</strong>
+              <span>${helperText}</span>
+            </div>
+            <div class="balance-bucket-item__meta">
+              <small>${metaLabel}</small>
+              <strong>${metaValue}</strong>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+  };
+
   const renderMovementSnapshotItem = (medicine, type) => `
-    <article class="movement-item movement-item--${type}">
-      <div class="movement-item__icon movement-item__icon--${type}">
+    <article class="movement-item movement-item--${medicine.movementTone || type}">
+      <div class="movement-item__icon movement-item__icon--${medicine.movementTone || type}">
         <i class="${medicine.icon || "bi bi-capsule"}"></i>
       </div>
       <div class="movement-item__copy">
         <strong>${medicine.shortName || medicine.name}</strong>
-        <span>${type === "fast" ? "High stock turnover" : "Low stock turnover"}</span>
+        <span>${medicine.movementHelper || (type === "fast" ? "High stock turnover" : "Low stock turnover")}</span>
       </div>
       <div class="movement-item__meta">
         <div class="movement-item__value">
           <strong>${formatNumber(medicine.monthlyUsage)}</strong>
-          <span>Dispensed</span>
+          <span>Dispensed in 30d</span>
         </div>
-        <div class="movement-item__status movement-item__status--${type}">
-          <i class="bi ${type === "fast" ? "bi-arrow-up-right" : "bi-arrow-down-right"}"></i>
-          <span>${type === "fast" ? "Fast Moving" : "Slow Moving"}</span>
+        <div class="movement-item__status movement-item__status--${medicine.movementTone || type}">
+          <i class="bi ${
+            medicine.movementTone === "fast"
+              ? "bi-arrow-up-right"
+              : medicine.movementLabel === "No Recent Dispense"
+                ? "bi-dash-circle"
+                : "bi-arrow-down-right"
+          }"></i>
+          <span>${medicine.movementLabel || (type === "fast" ? "Fast Moving" : "Slow Moving")}</span>
         </div>
       </div>
     </article>
   `;
+
+  const syncExpiryPanelHeights = () => {
+    const medicineList = document.getElementById("expiryMedicineList");
+    const consumptionList = document.getElementById("expiryConsumptionList");
+    const riskPanel = document.querySelector(".expiry-panel--risk");
+
+    if (!medicineList || !consumptionList || !riskPanel) return;
+
+    const medicinePanel = medicineList.closest(".expiry-panel");
+    const consumptionPanel = consumptionList.closest(".expiry-panel");
+    const compactLayout = window.matchMedia("(max-width: 1200px)").matches;
+
+    [medicinePanel, consumptionPanel].forEach((panel) => {
+      if (!panel) return;
+      panel.style.height = "";
+      panel.style.minHeight = "";
+    });
+
+    [medicineList, consumptionList].forEach((list) => {
+      list.style.height = "";
+      list.style.maxHeight = "";
+    });
+
+    if (compactLayout || !medicinePanel || !consumptionPanel) return;
+
+    const targetHeight = Math.ceil(riskPanel.getBoundingClientRect().height);
+
+    [medicinePanel, consumptionPanel].forEach((panel) => {
+      panel.style.height = `${targetHeight}px`;
+      panel.style.minHeight = `${targetHeight}px`;
+    });
+
+    [medicineList, consumptionList].forEach((list) => {
+      const panel = list.closest(".expiry-panel");
+      const head = panel?.querySelector(".expiry-panel__head");
+      const panelStyles = panel ? window.getComputedStyle(panel) : null;
+      const headStyles = head ? window.getComputedStyle(head) : null;
+      const availableHeight = targetHeight
+        - (parseFloat(panelStyles?.paddingTop || "0") + parseFloat(panelStyles?.paddingBottom || "0"))
+        - (head ? head.getBoundingClientRect().height : 0)
+        - (parseFloat(headStyles?.marginBottom || "0"));
+
+      const viewportHeight = Math.max(120, Math.floor(availableHeight));
+      list.style.height = `${viewportHeight}px`;
+      list.style.maxHeight = `${viewportHeight}px`;
+    });
+  };
+
+  const syncExpiryPanelHeightsDeferred = () => {
+    window.requestAnimationFrame(syncExpiryPanelHeights);
+  };
+
+  const syncSupplyPanelHeights = () => {
+    const grid = document.querySelector(".supply-content-grid");
+    const timelinePanel = document.querySelector(".supply-panel--timeline");
+    const chartPanel = document.querySelector(".supply-panel--chart");
+    const reliabilityPanel = document.querySelector(".supply-panel--reliability");
+    const requestList = document.getElementById("supplyRequestList");
+
+    if (!grid || !timelinePanel || !chartPanel || !reliabilityPanel || !requestList) return;
+
+    const compactLayout = window.matchMedia("(max-width: 1200px)").matches;
+    timelinePanel.style.height = "";
+    timelinePanel.style.minHeight = "";
+    requestList.style.height = "";
+    requestList.style.maxHeight = "";
+
+    if (compactLayout) return;
+
+    const gridStyles = window.getComputedStyle(grid);
+    const gapValue = parseFloat(gridStyles.rowGap || gridStyles.gap || "0");
+    const targetHeight = Math.ceil(
+      chartPanel.getBoundingClientRect().height
+      + reliabilityPanel.getBoundingClientRect().height
+      + gapValue
+    );
+
+    timelinePanel.style.height = `${targetHeight}px`;
+    timelinePanel.style.minHeight = `${targetHeight}px`;
+
+    const panelStyles = window.getComputedStyle(timelinePanel);
+    const head = timelinePanel.querySelector(".supply-panel__head");
+    const headStyles = head ? window.getComputedStyle(head) : null;
+    const availableHeight = targetHeight
+      - (parseFloat(panelStyles.paddingTop || "0") + parseFloat(panelStyles.paddingBottom || "0"))
+      - (head ? head.getBoundingClientRect().height : 0)
+      - (parseFloat(headStyles?.marginBottom || "0"));
+
+    const viewportHeight = Math.max(140, Math.floor(availableHeight));
+    requestList.style.height = `${viewportHeight}px`;
+    requestList.style.maxHeight = `${viewportHeight}px`;
+  };
+
+  const syncSupplyPanelHeightsDeferred = () => {
+    window.requestAnimationFrame(syncSupplyPanelHeights);
+  };
+
+  const syncBalancePanelHeights = () => {
+    const focusPanel = document.querySelector(".balance-side .balance-panel");
+    const stockPanel = document.querySelector(".balance-main .balance-panel:first-child");
+    const comparisonPanel = document.querySelector(".balance-main .balance-panel:last-child");
+    const stockBody = document.getElementById("balanceStockRows");
+    const comparisonList = document.getElementById("balanceComparisonList");
+
+    if (!focusPanel || !stockPanel || !comparisonPanel || !stockBody || !comparisonList) return;
+
+    const compactLayout = window.matchMedia("(max-width: 1200px)").matches;
+
+    [stockPanel, comparisonPanel, focusPanel].forEach((panel) => {
+      panel.style.height = "";
+      panel.style.minHeight = "";
+    });
+    stockBody.style.height = "";
+    stockBody.style.maxHeight = "";
+    comparisonList.style.height = "";
+    comparisonList.style.maxHeight = "";
+
+    if (compactLayout) return;
+
+    const targetHeight = Math.max(
+      Math.ceil(stockPanel.getBoundingClientRect().height),
+      Math.ceil(comparisonPanel.getBoundingClientRect().height),
+      Math.ceil(focusPanel.getBoundingClientRect().height)
+    );
+
+    [stockPanel, comparisonPanel, focusPanel].forEach((panel) => {
+      panel.style.height = `${targetHeight}px`;
+      panel.style.minHeight = `${targetHeight}px`;
+    });
+  };
+
+  const syncBalancePanelHeightsDeferred = () => {
+    window.requestAnimationFrame(syncBalancePanelHeights);
+  };
+
   const applyLiveMonitoringSnapshot = (snapshot = readMonitoringSnapshot()) => {
     if (!snapshot) return;
 
@@ -209,82 +434,22 @@
             `).join("")
           : '<div class="text-muted small">No expiry risk detected.</div>'
       );
+      syncExpiryPanelHeightsDeferred();
     }
 
     const balance = snapshot.balance || {};
     const balanceRows = Array.isArray(balance.rows) ? balance.rows : [];
-    const focusItem = balance.focusItem || balanceRows[0] || null;
-    const comparisonItems = Array.isArray(balance.comparisonItems) && balance.comparisonItems.length
-      ? balance.comparisonItems
-      : balanceRows.slice(0, 3);
-    if (document.getElementById("balanceStockRows")) {
-      const scaleMax = Math.max(
-        1,
-        ...balanceRows.map((item) => Math.max(item.stock || 0, item.overstockThreshold || 0, item.reorderLevel || 0))
-      );
-      const currentPercent = focusItem ? Math.min(100, ((focusItem.stock || 0) / scaleMax) * 100) : 0;
-
+    if (document.getElementById("balanceLowList")) {
+      const lowItems = balanceRows.filter((item) => item?.isLow);
+      const overstockItems = balanceRows.filter((item) => item?.isOverstock);
+      const balancedItems = balanceRows.filter((item) => !item?.isLow && !item?.isOverstock);
       setText("balanceTotalMedicines", `${formatNumber(balance.totalMedicines || balanceRows.length)} items`);
-      setText("balanceBalancedCount", `${formatNumber(balance.balancedCount || 0)} medicines`);
-      setText("balanceLowCount", `${formatNumber(balance.lowCount || 0)} medicines`);
-      setText("balanceOverstockCount", `${formatNumber(balance.overstockCount || 0)} medicines`);
-      setText("balanceFocusTitle", `${focusItem?.shortName || focusItem?.name || "Medicine"} Stock Level`);
-      setText("balanceFocusValue", `Current Stock: ${formatNumber(focusItem?.stock || 0)}`);
-      setText("balanceFocusNote", stockNote(focusItem));
-
-      const focusFill = document.getElementById("balanceFocusFill");
-      if (focusFill) focusFill.style.width = `${currentPercent}%`;
-
-      setHTML(
-        "balanceStockRows",
-        balanceRows.slice(0, 3).map((item) => `
-          <div class="balance-table__row">
-            <div class="balance-table__medicine">
-              <div class="balance-table__icon">
-                <i class="${item.icon || "bi bi-capsule"}"></i>
-              </div>
-              <div class="balance-table__copy">
-                <strong>${item.shortName || item.name}</strong>
-                <span>Stock</span>
-              </div>
-            </div>
-            <div class="balance-table__stock">${formatNumber(item.stock)}</div>
-            <div class="balance-table__status">
-              <span class="balance-status-pill balance-status-pill--${balanceTone(item)}">${balanceLabel(item)}</span>
-            </div>
-          </div>
-        `).join("")
-      );
-
-      setHTML(
-        "balanceComparisonList",
-        comparisonItems.map((item) => {
-          const currentWidth = Math.min(100, ((item.stock || 0) / scaleMax) * 100);
-          const targetWidth = Math.min(100, (((item.reorderLevel || 0) * 1.5) / scaleMax) * 100);
-          return `
-            <article class="balance-comparison-item">
-              <div class="balance-comparison-item__head">
-                <strong>${item.shortName || item.name}</strong>
-                <span>${balanceLabel(item)}</span>
-              </div>
-              <div class="balance-comparison-bars">
-                <div class="balance-comparison-bar">
-                  <small>Current</small>
-                  <div class="balance-comparison-bar__track">
-                    <span data-tone="current" style="width:${currentWidth}%"></span>
-                  </div>
-                </div>
-                <div class="balance-comparison-bar">
-                  <small>Target</small>
-                  <div class="balance-comparison-bar__track">
-                    <span data-tone="target" style="width:${targetWidth}%"></span>
-                  </div>
-                </div>
-              </div>
-            </article>
-          `;
-        }).join("")
-      );
+      setText("balanceBalancedCount", `${formatNumber(balance.balancedCount || balancedItems.length)} medicines`);
+      setText("balanceLowCount", `${formatNumber(balance.lowCount || lowItems.length)} medicines`);
+      setText("balanceOverstockCount", `${formatNumber(balance.overstockCount || overstockItems.length)} medicines`);
+      setHTML("balanceLowList", renderBalanceBucketItems(lowItems, "low"));
+      setHTML("balanceBalancedList", renderBalanceBucketItems(balancedItems, "balanced"));
+      setHTML("balanceOverstockList", renderBalanceBucketItems(overstockItems, "over"));
     }
   };
 
@@ -342,6 +507,9 @@
 
   window.addEventListener("resize", () => {
     if (!isMobile()) closeMobileSidebar();
+    syncExpiryPanelHeightsDeferred();
+    syncSupplyPanelHeightsDeferred();
+    syncBalancePanelHeightsDeferred();
   });
 
   if (logoutLink && logoutModal) {
@@ -354,12 +522,12 @@
   const renderDemandPredictionScenario = () => {
     const demandChartEl = document.getElementById("demandForecastChart");
     const palette = {
-      green: "#2f8f24",
-      greenSoft: "#6cab57",
-      gold: "#dcbc45",
-      red: "#dc2626",
-      teal: "#0d9488",
-      blue: "#2563eb",
+      green: "#18a957",
+      greenSoft: "#34c779",
+      gold: "#f1b200",
+      red: "#e45a5a",
+      teal: "#0f9f96",
+      blue: "#2f80ed",
       slate: "#64748b"
     };
 
@@ -390,14 +558,25 @@
       }
     ];
 
-    const rainyMonthIndexes = [5, 6, 7, 8, 9];
-    const dryMonthIndexes = months.map((_, index) => index).filter((index) => !rainyMonthIndexes.includes(index));
+    const currentSeason = getSeasonDefinition(new Date().getMonth());
+    const nextSeason = getNextSeasonDefinition(currentSeason.key);
+    const metricDemandSeasonLabel = document.getElementById("metricDemandSeasonLabel");
+    const metricDemandSeasonIcon = document.getElementById("metricDemandSeasonIcon");
+    if (metricDemandSeasonIcon) metricDemandSeasonIcon.className = nextSeason.icon;
 
     const medicineForecasts = demandMedicines.map((medicine) => {
       const monthlyAverage = average(medicine.monthlyDemand);
-      const rainyAverage = average(rainyMonthIndexes.map((index) => medicine.monthlyDemand[index]));
-      const dryAverage = average(dryMonthIndexes.map((index) => medicine.monthlyDemand[index]));
-      const rainyUplift = dryAverage > 0 ? ((rainyAverage - dryAverage) / dryAverage) * 100 : 0;
+      const seasonalAverages = Object.fromEntries(
+        seasonDefinitions.map((season) => [
+          season.key,
+          average(season.months.map((index) => medicine.monthlyDemand[index]))
+        ])
+      );
+      const currentSeasonAverage = seasonalAverages[currentSeason.key] || 0;
+      const nextSeasonAverage = seasonalAverages[nextSeason.key] || 0;
+      const nextSeasonShift = currentSeasonAverage > 0
+        ? ((nextSeasonAverage - currentSeasonAverage) / currentSeasonAverage) * 100
+        : 0;
       const movingAverage = movingAverageForecast(medicine.monthlyDemand, 3);
       const smoothing = exponentialSmoothingForecast(medicine.monthlyDemand, 0.35);
       const forecast = Math.round((movingAverage + smoothing) / 2);
@@ -410,18 +589,18 @@
 
       if (suggestedOrder > 0) {
         action = "Early Request";
-        actionNote = `Mag-request ng ${formatNumber(suggestedOrder)} units bago ang peak month`;
-      } else if (rainyUplift >= 20 && medicine.stockOnHand < forecast * 2.4) {
+        actionNote = `Mag-request ng ${formatNumber(suggestedOrder)} units bago ang ${seasonLabelLower(nextSeason)}`;
+      } else if (nextSeasonShift >= 15 && medicine.stockOnHand < forecast * 2.4) {
         action = "Build Buffer";
-        actionNote = `Maghanda para sa ${formatPercent(rainyUplift, 0)} rainy-season increase`;
+        actionNote = `Maghanda para sa ${formatSignedPercent(nextSeasonShift, 0)} ${seasonLabelLower(nextSeason)} demand shift`;
       }
 
       return {
         ...medicine,
         monthlyAverage,
-        rainyAverage,
-        dryAverage,
-        rainyUplift,
+        currentSeasonAverage,
+        nextSeasonAverage,
+        nextSeasonShift,
         movingAverage,
         smoothing,
         forecast,
@@ -439,19 +618,21 @@
     const aggregateMovingAverage = movingAverageForecast(aggregateDemand, 3);
     const aggregateSmoothing = exponentialSmoothingForecast(aggregateDemand, 0.35);
     const combinedForecast = Math.round((aggregateMovingAverage + aggregateSmoothing) / 2);
-    const totalRainyAverage = average(rainyMonthIndexes.map((index) => aggregateDemand[index]));
-    const totalDryAverage = average(dryMonthIndexes.map((index) => aggregateDemand[index]));
-    const rainyUplift = totalDryAverage > 0 ? ((totalRainyAverage - totalDryAverage) / totalDryAverage) * 100 : 0;
+    const currentSeasonAverage = average(currentSeason.months.map((index) => aggregateDemand[index]));
+    const nextSeasonAverage = average(nextSeason.months.map((index) => aggregateDemand[index]));
+    const seasonalShift = currentSeasonAverage > 0
+      ? ((nextSeasonAverage - currentSeasonAverage) / currentSeasonAverage) * 100
+      : 0;
     const earlyReorderCount = medicineForecasts.filter((medicine) => medicine.action === "Early Request").length;
     const sortedMedicines = [...medicineForecasts].sort((left, right) => right.forecast - left.forecast);
+    const seasonalSummaryLabel = seasonalShift >= 0
+      ? `Expected ${nextSeason.label} Increase`
+      : `Expected ${nextSeason.label} Decrease`;
     setText("metricDemandForecast", formatNumber(combinedForecast));
-    setText("metricDemandUplift", `${rainyUplift >= 0 ? "+" : ""}${formatPercent(rainyUplift, 0)}`);
+    setText("metricDemandUplift", formatSignedPercent(seasonalShift, 0));
+    if (metricDemandSeasonLabel) metricDemandSeasonLabel.textContent = seasonalSummaryLabel;
     setText("metricDemandPriority", formatNumber(medicineForecasts.length));
     setText("metricDemandReorder", formatNumber(earlyReorderCount));
-    setText(
-      "demandForecastNote",
-      `${formatNumber(combinedForecast)} projected next-cycle demand based on the last 12 months.`
-    );
     setHTML(
       "seasonalSignalList",
       sortedMedicines
@@ -463,7 +644,7 @@
             </div>
             <div class="demand-priority-item__copy">
               <strong>${medicine.name}</strong>
-              <span>${medicine.action === "Early Request" ? "Request Soon" : medicine.name === "Paracetamol" ? "High Demand" : "Increasing"}</span>
+              <span>${medicine.action === "Early Request" ? "Request Soon" : medicine.action === "Build Buffer" ? "Prepare Extra Stock" : "Watch Demand"}</span>
             </div>
           </div>
           <div class="demand-priority-item__badge demand-priority-item__badge--${medicine.action === "Early Request" ? "warning" : "success"}">
@@ -484,8 +665,8 @@
             {
               label: "Actual Demand",
               data: [...aggregateDemand, null],
-              borderColor: "#4c983f",
-              backgroundColor: "rgba(76,152,63,0.18)",
+              borderColor: palette.green,
+              backgroundColor: "rgba(24,169,87,0.22)",
               fill: true,
               tension: 0.3,
               borderWidth: 3,
@@ -495,7 +676,7 @@
             {
               label: "Predicted Demand",
               data: [...Array(11).fill(null), aggregateDemand[11], combinedForecast],
-              borderColor: "#4f95c8",
+              borderColor: palette.blue,
               borderDash: [6, 5],
               borderWidth: 3,
               tension: 0.25,
@@ -545,61 +726,115 @@
 
   const renderDiseasePatternScenario = () => {
     const diseaseChartEl = document.getElementById("diseasePatternChart");
-    const medicineRequestSignals = [
-      {
-        illness: "Flu / Fever",
-        medicine: "Paracetamol",
-        requests: 45,
-        status: "Possible fever pattern",
-        accent: "danger",
-        icon: "bi bi-thermometer-half"
-      },
-      {
-        illness: "Cough / Cold",
-        medicine: "Lagundi",
-        requests: 32,
-        status: "Cough-related requests",
-        accent: "orange",
-        icon: "bi bi-capsule-pill"
-      },
-      {
-        illness: "Allergy",
-        medicine: "Cetirizine",
-        requests: 18,
-        status: "Weather-triggered symptoms",
-        accent: "gold",
-        icon: "bi bi-stars"
-      },
-      {
-        illness: "Diarrhea",
-        medicine: "ORS",
-        requests: 12,
-        status: "Gastro symptom requests",
-        accent: "teal",
-        icon: "bi bi-droplet-half"
-      }
+    const dispenseMovements = readStoredList(MOVEMENTS_STORAGE)
+      .filter((movement) => keyOf(movement?.actionType) === "dispense");
+    const accentOrder = ["danger", "orange", "gold", "teal"];
+    const chartColors = ["#75a85a", "#cba43b", "#7cb7ac", "#6baf63", "#eb8b5a", "#79a4d8"];
+    const diseaseVisuals = [
+      { match: /(fever|flu|lagnat)/i, accent: "danger", icon: "bi bi-thermometer-half" },
+      { match: /(cough|cold|ubo|sipon|uri)/i, accent: "orange", icon: "bi bi-capsule-pill" },
+      { match: /(diarrhea|diarrhoe|gastro|ors)/i, accent: "teal", icon: "bi bi-droplet-half" },
+      { match: /(allergy|skin)/i, accent: "gold", icon: "bi bi-stars" },
+      { match: /(hypertension|bp|heart)/i, accent: "danger", icon: "bi bi-heart-pulse" },
+      { match: /(respiratory|asthma|lungs)/i, accent: "teal", icon: "bi bi-lungs" },
+      { match: /(diabetes|sugar)/i, accent: "orange", icon: "bi bi-activity" },
+      { match: /(pain|inflammation)/i, accent: "gold", icon: "bi bi-bandaid" },
+      { match: /(vitamin|supplement|wellness)/i, accent: "gold", icon: "bi bi-capsule" }
     ];
+    const resolvePatternLabel = (movement) => {
+      const category = text(movement?.diseaseCategory);
+      const illness = text(movement?.illness);
+      if (category && keyOf(category) !== "others") return category;
+      return illness || category || "Unspecified";
+    };
+    const resolvePatternVisual = (label, index) => {
+      const matched = diseaseVisuals.find((visual) => visual.match.test(label));
+      if (matched) return matched;
+      return {
+        accent: accentOrder[index % accentOrder.length],
+        icon: "bi bi-clipboard2-pulse"
+      };
+    };
+    const diseaseSignals = [];
+    const diseaseSignalMap = new Map();
+    const medicineSignals = [];
+    const medicineSignalMap = new Map();
 
-    setHTML(
-      "diseasePatternList",
-      medicineRequestSignals
-        .map((signal) => `
-        <article class="pattern-case-card pattern-case-card--${signal.accent}">
-          <div class="pattern-case-card__icon">
-            <i class="${signal.icon}"></i>
-          </div>
-          <div class="pattern-case-card__copy">
-            <strong>${signal.illness}</strong>
-            <span>${formatNumber(signal.requests)} new cases</span>
-          </div>
-          <div class="pattern-case-card__metric">
-            <i class="bi bi-arrow-up-right"></i>
-            <span>${formatNumber(signal.requests)}</span>
-          </div>
-        </article>
-      `)
-        .join("")
-    );
+    dispenseMovements.forEach((movement) => {
+      const illness = resolvePatternLabel(movement);
+      const medicine = text(movement?.medicineName) || "Unknown medicine";
+      const quantity = Math.max(0, Math.round(toNumber(movement?.quantity)));
+
+      if (illness) {
+        if (!diseaseSignalMap.has(illness)) {
+          const nextSignal = {
+            illness,
+            requests: 0,
+            quantity: 0,
+            latestAt: ""
+          };
+          diseaseSignalMap.set(illness, nextSignal);
+          diseaseSignals.push(nextSignal);
+        }
+        const diseaseSignal = diseaseSignalMap.get(illness);
+        diseaseSignal.requests += 1;
+        diseaseSignal.quantity += quantity;
+        diseaseSignal.latestAt = text(movement?.createdAt) || diseaseSignal.latestAt;
+      }
+
+      if (medicine) {
+        if (!medicineSignalMap.has(medicine)) {
+          const nextMedicineSignal = {
+            medicine,
+            requests: 0,
+            quantity: 0
+          };
+          medicineSignalMap.set(medicine, nextMedicineSignal);
+          medicineSignals.push(nextMedicineSignal);
+        }
+        const medicineSignal = medicineSignalMap.get(medicine);
+        medicineSignal.requests += 1;
+        medicineSignal.quantity += quantity;
+      }
+    });
+
+    diseaseSignals.sort((left, right) => right.requests - left.requests || right.quantity - left.quantity || left.illness.localeCompare(right.illness));
+    medicineSignals.sort((left, right) => right.requests - left.requests || right.quantity - left.quantity || left.medicine.localeCompare(right.medicine));
+
+    if (!diseaseSignals.length) {
+      setHTML(
+        "diseasePatternList",
+        '<div class="text-muted small">No disease pattern data yet. Start recording dispense cases to build this analysis.</div>'
+      );
+    } else {
+      setHTML(
+        "diseasePatternList",
+        diseaseSignals
+          .map((signal, index) => {
+            const visual = resolvePatternVisual(signal.illness, index);
+            return `
+              <article class="pattern-case-card pattern-case-card--${visual.accent}">
+                <div class="pattern-case-card__icon">
+                  <i class="${visual.icon}"></i>
+                </div>
+                <div class="pattern-case-card__copy">
+                  <strong>${esc(signal.illness)}</strong>
+                  <span>${formatNumber(signal.requests)} recorded case${signal.requests === 1 ? "" : "s"}</span>
+                </div>
+                <div class="pattern-case-card__metric">
+                  <i class="bi bi-arrow-up-right"></i>
+                  <span>${formatNumber(signal.requests)}</span>
+                </div>
+              </article>
+            `;
+          })
+          .join("")
+      );
+    }
+
+    const chartSignals = medicineSignals.slice(0, 6);
+    const chartLabels = chartSignals.length ? chartSignals.map((signal) => signal.medicine) : ["No data"];
+    const chartValues = chartSignals.length ? chartSignals.map((signal) => signal.requests) : [0];
 
     if (diseaseChartEl && window.Chart) {
       if (window.__diseasePatternChart) window.__diseasePatternChart.destroy();
@@ -607,10 +842,10 @@
       window.__diseasePatternChart = new window.Chart(diseaseChartEl, {
         type: "bar",
         data: {
-          labels: medicineRequestSignals.map((signal) => signal.medicine),
+          labels: chartLabels,
           datasets: [{
-            data: medicineRequestSignals.map((signal) => signal.requests),
-            backgroundColor: ["#75a85a", "#cba43b", "#7cb7ac", "#6baf63"],
+            data: chartValues,
+            backgroundColor: chartLabels.map((_, index) => chartColors[index % chartColors.length]),
             borderRadius: 8,
             borderSkipped: false,
             maxBarThickness: 34
@@ -632,9 +867,9 @@
             },
             y: {
               beginAtZero: true,
-              suggestedMax: 50,
+              suggestedMax: Math.max(5, ...chartValues) + 2,
               ticks: {
-                stepSize: 10,
+                stepSize: Math.max(1, Math.ceil(Math.max(...chartValues, 1) / 5)),
                 precision: 0,
                 color: "#7b806f",
                 font: { size: 10 }
@@ -650,48 +885,16 @@
   };
 
   const renderStockMovementScenario = () => {
-    const fastMovingMedicines = [
-      { name: "Paracetamol", dispensed: 120, icon: "bi bi-capsule" },
-      { name: "Lagundi", dispensed: 85, icon: "bi bi-capsule-pill" },
-      { name: "Amoxicillin", dispensed: 73, icon: "bi bi-capsule" },
-      { name: "ORS", dispensed: 61, icon: "bi bi-droplet-half" }
-    ];
+    const snapshot = readMonitoringSnapshot();
+    if (snapshot?.movement) {
+      applyLiveMonitoringSnapshot(snapshot);
+      return;
+    }
 
-    const slowMovingMedicines = [
-      { name: "Vitamin C", dispensed: 15, icon: "bi bi-capsule" },
-      { name: "Mefenamic Acid", dispensed: 10, icon: "bi bi-capsule" },
-      { name: "Cetirizine", dispensed: 9, icon: "bi bi-capsule" },
-      { name: "Ferrous Sulfate", dispensed: 8, icon: "bi bi-capsule-pill" },
-      { name: "Multivitamins", dispensed: 6, icon: "bi bi-capsule" },
-      { name: "Salbutamol", dispensed: 5, icon: "bi bi-capsule" }
-    ];
-
-    const renderMovementItem = (medicine, type) => `
-      <article class="movement-item movement-item--${type}">
-        <div class="movement-item__icon movement-item__icon--${type}">
-          <i class="${medicine.icon}"></i>
-        </div>
-        <div class="movement-item__copy">
-          <strong>${medicine.name}</strong>
-          <span>${type === "fast" ? "High stock turnover" : "Low stock turnover"}</span>
-        </div>
-        <div class="movement-item__meta">
-          <div class="movement-item__value">
-            <strong>${formatNumber(medicine.dispensed)}</strong>
-            <span>Dispensed</span>
-          </div>
-          <div class="movement-item__status movement-item__status--${type}">
-            <i class="bi ${type === "fast" ? "bi-arrow-up-right" : "bi-arrow-down-right"}"></i>
-            <span>${type === "fast" ? "Fast Moving" : "Slow Moving"}</span>
-          </div>
-        </div>
-      </article>
-    `;
-
-    setText("stockMovementFastCount", `${formatNumber(fastMovingMedicines.length)} items`);
-    setText("stockMovementSlowCount", `${formatNumber(slowMovingMedicines.length)} items`);
-    setHTML("stockFastList", fastMovingMedicines.map((medicine) => renderMovementItem(medicine, "fast")).join(""));
-    setHTML("stockSlowList", slowMovingMedicines.map((medicine) => renderMovementItem(medicine, "slow")).join(""));
+    setText("stockMovementFastCount", "0 items");
+    setText("stockMovementSlowCount", "0 items");
+    setHTML("stockFastList", '<div class="text-muted small">Movement analytics will appear after dispense activity is recorded.</div>');
+    setHTML("stockSlowList", '<div class="text-muted small">Slow-moving medicines will appear after inventory activity is available.</div>');
   };
 
   const renderSupplyDeliveryScenario = () => {
@@ -712,9 +915,14 @@
     };
 
     const summary = analytics.summary;
-    const sourceLabel = analytics.rows.length
-      ? "City Health Office request-to-delivery monitoring"
-      : "Log CHO requests and link received deliveries to monitor supply lead time and delivery reliability.";
+    const sourceLabel = "Monitor supply lead times and delivery reliability.";
+
+    const chartPalette = {
+      green: "#18a957",
+      greenSoft: "#d9f5e5",
+      textSoft: "#527061",
+      gridSoft: "rgba(82, 112, 97, 0.1)"
+    };
 
     setText("supplySourceLabel", sourceLabel);
     setText(
@@ -740,19 +948,19 @@
           .map((request) => {
             const badgeTone = request.onTime
               ? "done"
-              : request.delayed
+              : request.delayed || request.statusKey === "overdue"
                 ? "delay"
-                : request.incomplete || request.statusKey === "partial"
+                : request.incomplete || request.statusKey === "partial" || request.statusKey === "incomplete"
                   ? "warning"
                   : "pending";
-            const targetStepTone = request.delayed
+            const targetStepTone = request.delayed || request.isOverdue
               ? "delay"
               : (request.isComplete || request.hasDelivery ? "done" : "pending");
             const deliveryStepTone = request.onTime
               ? "done"
-              : request.delayed
+              : request.delayed || request.statusKey === "overdue"
                 ? "delay"
-                  : request.incomplete || request.statusKey === "partial"
+                  : request.incomplete || request.statusKey === "partial" || request.statusKey === "incomplete"
                     ? "warning"
                     : "pending";
             const medicinePreview = Array.isArray(request.items) && request.items.length
@@ -762,18 +970,22 @@
               `${formatNumber(request.itemCount || 0)} medicine line${request.itemCount === 1 ? "" : "s"}`,
               request.completedItems > 0
                 ? `${formatNumber(request.completedItems)} completed`
+                : request.isOverdue
+                  ? `${formatNumber(request.overdueDays)} day(s) overdue`
                 : "Awaiting delivery"
             ].join(" | ");
             const deliveryDate = request.completionDate || request.lastReceivedDate || "";
-            const deliveryDateLabel = deliveryDate ? formatDate(deliveryDate) : (request.delayed ? `Overdue ${formatNumber(request.overdueDays)} day(s)` : "Waiting");
+            const deliveryDateLabel = deliveryDate
+              ? formatDate(deliveryDate)
+              : (request.delayed || request.isOverdue ? `Overdue ${formatNumber(request.overdueDays)} day(s)` : "Waiting");
             const deliveryStatusLabel = request.onTime
               ? "Completed"
-              : request.delayed && request.isComplete
+              : request.delayed
                 ? "Completed Late"
-                : request.delayed
-                  ? "Overdue"
-                  : request.incomplete || request.statusKey === "partial"
-                    ? "Partially Received"
+                : request.incomplete || request.statusKey === "partial" || request.statusKey === "incomplete"
+                  ? "Partially Received"
+                  : request.isOverdue
+                    ? "Overdue"
                     : "Pending";
 
             return `
@@ -827,15 +1039,15 @@
           labels: months,
           datasets: [{
             data: analytics.monthlyLeadTimes,
-            borderColor: "#6fa45a",
-            backgroundColor: "rgba(111, 164, 90, 0.18)",
+            borderColor: chartPalette.green,
+            backgroundColor: "rgba(24, 169, 87, 0.18)",
             fill: true,
             tension: 0.35,
             borderWidth: 3,
             pointRadius: 4,
             pointHoverRadius: 5,
-            pointBackgroundColor: "#dff0d5",
-            pointBorderColor: "#679b53",
+            pointBackgroundColor: chartPalette.greenSoft,
+            pointBorderColor: chartPalette.green,
             pointBorderWidth: 2
           }]
         },
@@ -848,10 +1060,10 @@
           scales: {
             x: {
               grid: {
-                color: "rgba(92, 103, 80, 0.08)"
+                color: chartPalette.gridSoft
               },
               ticks: {
-                color: "#6d756a",
+                color: chartPalette.textSoft,
                 font: { size: 11 }
               }
             },
@@ -861,17 +1073,19 @@
               ticks: {
                 stepSize: 1,
                 precision: 0,
-                color: "#6d756a",
+                color: chartPalette.textSoft,
                 font: { size: 11 }
               },
               grid: {
-                color: "rgba(92, 103, 80, 0.12)"
+                color: chartPalette.gridSoft
               }
             }
           }
         }
       });
     }
+
+    syncSupplyPanelHeightsDeferred();
   };
 
   const renderExpiryConsumptionScenario = () => {
@@ -967,6 +1181,8 @@
         .join("")
     );
 
+    syncExpiryPanelHeightsDeferred();
+
   };
 
   const renderInventoryBalanceScenario = () => {
@@ -978,80 +1194,32 @@
       { name: "ORS", stock: 72, status: "Balanced", tone: "balanced", target: 70, max: 110, icon: "bi bi-droplet-half" }
     ];
 
-    const totalMedicines = 120;
-    const balancedCount = 85;
-    const lowCount = 5;
-    const overstockCount = 3;
-    const focusItem = stockItems[0];
-    const scaleMax = 230;
-    const currentPercent = Math.min(100, (focusItem.stock / scaleMax) * 100);
-    const comparisonItems = stockItems.slice(0, 3);
+    const lowItems = stockItems.filter((item) => item.tone === "low");
+    const overstockItems = stockItems.filter((item) => item.tone === "over");
+    const balancedItems = stockItems.filter((item) => item.tone === "balanced");
+    const totalMedicines = stockItems.length;
+    const balancedCount = balancedItems.length;
+    const lowCount = lowItems.length;
+    const overstockCount = overstockItems.length;
     setText("balanceTotalMedicines", `${formatNumber(totalMedicines)} items`);
     setText("balanceBalancedCount", `${formatNumber(balancedCount)} medicines`);
     setText("balanceLowCount", `${formatNumber(lowCount)} medicines`);
     setText("balanceOverstockCount", `${formatNumber(overstockCount)} medicines`);
-    setText("balanceFocusTitle", `${focusItem.name} Stock Level`);
-    setText("balanceFocusValue", `Current Stock: ${formatNumber(focusItem.stock)}`);
-    setText("balanceFocusNote", `${focusItem.name} remains within the optimal inventory range for the current cycle.`);
-
-    const focusFill = document.getElementById("balanceFocusFill");
-    if (focusFill) focusFill.style.width = `${currentPercent}%`;
-
-    setHTML(
-      "balanceStockRows",
-      stockItems
-        .slice(0, 3)
-        .map((item) => `
-          <div class="balance-table__row">
-            <div class="balance-table__medicine">
-              <div class="balance-table__icon">
-                <i class="${item.icon}"></i>
-              </div>
-              <div class="balance-table__copy">
-                <strong>${item.name}</strong>
-                <span>Stock</span>
-              </div>
-            </div>
-            <div class="balance-table__stock">${formatNumber(item.stock)}</div>
-            <div class="balance-table__status">
-              <span class="balance-status-pill balance-status-pill--${item.tone}">${item.status}</span>
-            </div>
-          </div>
-        `)
-        .join("")
-    );
-
-    setHTML(
-      "balanceComparisonList",
-      comparisonItems
-        .map((item) => {
-          const currentWidth = Math.min(100, (item.stock / scaleMax) * 100);
-          const targetWidth = Math.min(100, (item.target / scaleMax) * 100);
-          return `
-            <article class="balance-comparison-item">
-              <div class="balance-comparison-item__head">
-                <strong>${item.name}</strong>
-                <span>${item.status}</span>
-              </div>
-              <div class="balance-comparison-bars">
-                <div class="balance-comparison-bar">
-                  <small>Current</small>
-                  <div class="balance-comparison-bar__track">
-                    <span data-tone="current" style="width:${currentWidth}%"></span>
-                  </div>
-                </div>
-                <div class="balance-comparison-bar">
-                  <small>Optimal</small>
-                  <div class="balance-comparison-bar__track">
-                    <span data-tone="target" style="width:${targetWidth}%"></span>
-                  </div>
-                </div>
-              </div>
-            </article>
-          `;
-        })
-        .join("")
-    );
+    setHTML("balanceLowList", renderBalanceBucketItems(lowItems.map((item) => ({
+      ...item,
+      reorderLevel: item.target,
+      overstockThreshold: item.max
+    })), "low"));
+    setHTML("balanceBalancedList", renderBalanceBucketItems(balancedItems.map((item) => ({
+      ...item,
+      reorderLevel: item.target,
+      overstockThreshold: item.max
+    })), "balanced"));
+    setHTML("balanceOverstockList", renderBalanceBucketItems(overstockItems.map((item) => ({
+      ...item,
+      reorderLevel: item.target,
+      overstockThreshold: item.max
+    })), "over"));
 
   };
 
@@ -1061,28 +1229,32 @@
     if (document.getElementById("stockFastList")) renderStockMovementScenario();
     if (document.getElementById("supplyLeadTimeChart")) renderSupplyDeliveryScenario();
     if (document.getElementById("expiryMedicineList")) renderExpiryConsumptionScenario();
-    if (document.getElementById("balanceStockRows")) renderInventoryBalanceScenario();
+    if (document.getElementById("balanceLowList")) renderInventoryBalanceScenario();
     applyLiveMonitoringSnapshot();
     window.addEventListener("mss:notifications-synced", (event) => {
       applyLiveMonitoringSnapshot(event.detail);
     });
     window.addEventListener("storage", (event) => {
-      if (event.key !== MONITORING_SNAPSHOT_STORAGE) return;
-      applyLiveMonitoringSnapshot();
+      if (event.key === MONITORING_SNAPSHOT_STORAGE) applyLiveMonitoringSnapshot();
+      if (event.key === MOVEMENTS_STORAGE && document.getElementById("diseasePatternList")) {
+        renderDiseasePatternScenario();
+      }
     });
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") applyLiveMonitoringSnapshot();
+      if (document.visibilityState !== "visible") return;
+      applyLiveMonitoringSnapshot();
+      if (document.getElementById("diseasePatternList")) renderDiseasePatternScenario();
     });
     return;
   }
 
   const palette = {
-    green: "#2f8f24",
-    greenSoft: "#6cab57",
-    gold: "#dcbc45",
-    red: "#dc2626",
-    teal: "#0d9488",
-    blue: "#2563eb",
+    green: "#18a957",
+    greenSoft: "#34c779",
+    gold: "#f1b200",
+    red: "#e45a5a",
+    teal: "#0f9f96",
+    blue: "#2f80ed",
     purple: "#7c3aed",
     slate: "#64748b",
     gray: "#94a3b8"
@@ -1558,7 +1730,7 @@
     if (expiryAlert) {
       alerts.push({
         tone: expiryAlert.status === "High Risk" ? "danger" : "warning",
-        label: "Expiry Risk",
+        label: "Medicine at Risk",
         icon: "bi bi-hourglass-split",
         title: `${expiryAlert.medicine} ${expiryAlert.batch} may be wasted`,
         body: `${formatNumber(expiryAlert.units)} units expire in ${formatNumber(expiryAlert.daysToExpiry)} days, but projected consumption needs ${formatDecimal(expiryAlert.monthsToClear, 1)} months to clear.`,
@@ -1648,7 +1820,7 @@
     yearSelect.value = String(currentYear);
   }
   if (window.Chart) {
-    window.Chart.defaults.color = "#3f4e2d";
+    window.Chart.defaults.color = "#335a46";
     window.Chart.defaults.font.family = "Manrope, sans-serif";
   }
 
@@ -1694,7 +1866,7 @@
               label: "Actual Dispensed",
               data: [...Array(13).fill(null)],
               borderColor: palette.green,
-              backgroundColor: "rgba(47,143,36,0.16)",
+              backgroundColor: "rgba(24,169,87,0.2)",
               fill: true,
               tension: 0.3,
               borderWidth: 3,
@@ -1811,7 +1983,7 @@
               data: supplierTemplates.map(() => 0),
               yAxisID: "y1",
               borderColor: palette.blue,
-              backgroundColor: "rgba(37,99,235,0.14)",
+              backgroundColor: "rgba(47,128,237,0.16)",
               tension: 0.3,
               pointRadius: 4,
               pointBackgroundColor: palette.blue

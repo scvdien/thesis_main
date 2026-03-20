@@ -32,12 +32,7 @@
     requestItemsContainer: byId("requestItemsContainer"),
     addRequestItemBtn: byId("addRequestItemBtn"),
     requestDate: byId("requestDate"),
-    requestExpectedDate: byId("requestExpectedDate"),
-    requestMetricTotal: byId("requestMetricTotal"),
-    requestMetricPending: byId("requestMetricPending"),
-    requestMetricIncomplete: byId("requestMetricIncomplete"),
-    requestMetricDelayed: byId("requestMetricDelayed"),
-    requestMetricLeadTime: byId("requestMetricLeadTime")
+    requestExpectedDate: byId("requestExpectedDate")
   };
 
   const requestModal = byId("requestModal") && window.bootstrap ? new window.bootstrap.Modal(byId("requestModal")) : null;
@@ -260,29 +255,7 @@
     });
   };
 
-  const renderMetrics = () => {
-    const analytics = supplyMonitoring.buildSupplyAnalytics({ requests: state.requests, movements: supplyMonitoring.readMovements() });
-
-    if (refs.requestMetricTotal) refs.requestMetricTotal.textContent = formatNumber(analytics.summary.totalRequests);
-    if (refs.requestMetricPending) refs.requestMetricPending.textContent = formatNumber(analytics.summary.pendingCount);
-    if (refs.requestMetricIncomplete) refs.requestMetricIncomplete.textContent = formatNumber(analytics.summary.incompleteCount);
-    if (refs.requestMetricDelayed) refs.requestMetricDelayed.textContent = formatNumber(analytics.summary.delayedCount);
-    if (refs.requestMetricLeadTime) {
-      refs.requestMetricLeadTime.textContent = analytics.summary.completedCount
-        ? `${formatDecimal(analytics.summary.averageLeadTime, 1)} days`
-        : "0 days";
-    }
-  };
-
   const renderActionMenu = (row) => {
-    if (row.isComplete) {
-      return `
-        <button type="button" class="btn btn-sm btn-light table-action-btn" data-action="view" data-id="${esc(row.requestGroupId)}">
-          <i class="bi bi-eye"></i> View
-        </button>
-      `;
-    }
-
     const menuItems = [
       `
         <button type="button" class="dropdown-item request-action-item" data-action="view" data-id="${esc(row.requestGroupId)}">
@@ -349,7 +322,9 @@
         ? `Completed ${formatDate(row.completionDate)}`
         : row.hasDelivery
           ? `${formatNumber(Math.max(0, row.itemCount - row.completedItems))} medicine line(s) still pending`
-          : "Waiting for first delivery";
+          : row.isOverdue
+            ? `${formatNumber(row.overdueDays)} day(s) overdue`
+            : "Waiting for first delivery";
 
       const receivedNote = row.isComplete
         ? `Completed ${formatNumber(row.completedItems)} of ${formatNumber(row.itemCount)} medicine lines`
@@ -390,7 +365,7 @@
           <td>
             <div class="inventory-expiry">
               <strong>${esc(formatDate(row.expectedDate))}</strong>
-              <small>${row.delayed ? `${esc(formatNumber(row.overdueDays))} day(s) late` : "Target receiving date"}</small>
+              <small>${row.delayed || row.isOverdue ? `${esc(formatNumber(row.overdueDays))} day(s) late` : row.incomplete ? "Awaiting remaining delivery" : "Target receiving date"}</small>
             </div>
           </td>
           <td>
@@ -459,7 +434,6 @@
   };
 
   const renderAll = () => {
-    renderMetrics();
     renderTable();
   };
 

@@ -109,9 +109,28 @@
     return `CHO-${year}-${String(maxCode + 1).padStart(3, "0")}`;
   };
 
-  const readRequests = () => readList(STORAGE.requests)
-    .map(normalizeRequest)
-    .sort((left, right) => new Date(right.requestDate).getTime() - new Date(left.requestDate).getTime());
+  const readRequests = () => {
+    const rawRequests = readList(STORAGE.requests);
+    const normalizedUnsorted = rawRequests.map(normalizeRequest);
+    const normalized = normalizedUnsorted
+      .slice()
+      .sort((left, right) => new Date(right.requestDate).getTime() - new Date(left.requestDate).getTime());
+
+    const needsBackfill = rawRequests.length === normalizedUnsorted.length && rawRequests.some((entry, index) => {
+      const normalizedEntry = normalizedUnsorted[index];
+      return text(entry.id) !== text(normalizedEntry.id)
+        || text(entry.requestGroupId || entry.groupId) !== text(normalizedEntry.requestGroupId)
+        || text(entry.requestCode) !== text(normalizedEntry.requestCode);
+    });
+
+    if (needsBackfill) {
+      return writeRequests(normalized)
+        .map(normalizeRequest)
+        .sort((left, right) => new Date(right.requestDate).getTime() - new Date(left.requestDate).getTime());
+    }
+
+    return normalized;
+  };
 
   const writeRequests = (requests = []) => {
     const normalized = requests.map(normalizeRequest);
@@ -170,11 +189,39 @@
 
   const getRequestDeliveries = (request, movements = readMovements()) => {
     const requestId = text(request?.id);
+    const requestGroupId = text(request?.requestGroupId);
+    const requestCode = text(request?.requestCode);
+    const medicineId = text(request?.medicineId);
+    const medicineName = text(request?.medicineName).toLowerCase();
+
     return movements
       .map(normalizeMovementLink)
       .filter((movement) => movement.actionType === "restock" && (
-        text(movement.linkedRequestItemId) === requestId
-        || (!text(movement.linkedRequestItemId) && text(movement.linkedRequestId) === requestId)
+        (requestId && text(movement.linkedRequestItemId) === requestId)
+        || (requestId && !text(movement.linkedRequestItemId) && text(movement.linkedRequestId) === requestId)
+        || (
+          !requestId
+          && (
+            (requestGroupId && text(movement.linkedRequestGroupId) === requestGroupId)
+            || (requestCode && text(movement.linkedRequestCode) === requestCode)
+          )
+          && (
+            (medicineId && text(movement.medicineId) === medicineId)
+            || (!medicineId && medicineName && text(movement.medicineName).toLowerCase() === medicineName)
+          )
+        )
+        || (
+          requestId
+          && text(movement.linkedRequestItemId) !== requestId
+          && (
+            (requestGroupId && text(movement.linkedRequestGroupId) === requestGroupId)
+            || (requestCode && text(movement.linkedRequestCode) === requestCode)
+          )
+          && (
+            (medicineId && text(movement.medicineId) === medicineId)
+            || (!medicineId && medicineName && text(movement.medicineName).toLowerCase() === medicineName)
+          )
+        )
       ))
       .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
   };
@@ -198,15 +245,15 @@
     const lastReceivedDate = lastReceivedAt ? toDateKey(lastReceivedAt) : "";
     const isComplete = receivedQuantity >= quantityRequested;
     const hasDelivery = receivedQuantity > 0;
-    const delayed = (!isComplete && toDateTimestamp(today) > toDateTimestamp(normalizedRequest.expectedDate))
-      || (isComplete && toDateTimestamp(completionDate) > toDateTimestamp(normalizedRequest.expectedDate));
+    const isOverdue = !isComplete && toDateTimestamp(today) > toDateTimestamp(normalizedRequest.expectedDate);
+    const delayed = isComplete && toDateTimestamp(completionDate) > toDateTimestamp(normalizedRequest.expectedDate);
     const onTime = isComplete && !delayed;
     const incomplete = hasDelivery && !isComplete;
-    const pending = !hasDelivery && !delayed;
+    const pending = !hasDelivery;
 
     let statusKey = "pending";
-    let statusLabel = "Pending Request";
-    let tone = "olive";
+    let statusLabel = isOverdue ? "Overdue Request" : "Pending Request";
+    let tone = isOverdue ? "danger" : "olive";
 
     if (onTime) {
       statusKey = "on-time";
@@ -218,8 +265,8 @@
       tone = "danger";
     } else if (incomplete) {
       statusKey = "partial";
-      statusLabel = "Partial Delivery";
-      tone = "warning";
+      statusLabel = "Incomplete Delivery";
+      tone = isOverdue ? "danger" : "warning";
     }
 
     const leadTimeDays = isComplete ? diffDays(normalizedRequest.requestDate, completionDate) : null;
@@ -240,11 +287,12 @@
       progressPercent: Math.min(100, Math.round((receivedQuantity / quantityRequested) * 100)),
       isComplete,
       hasDelivery,
+      isOverdue,
       onTime,
       delayed,
       incomplete,
       pending,
-      overdueDays: delayed ? diffDays(normalizedRequest.expectedDate, isComplete ? completionDate : today) : 0,
+      overdueDays: (isOverdue || delayed) ? diffDays(normalizedRequest.expectedDate, isComplete ? completionDate : today) : 0,
       statusKey,
       statusLabel,
       tone
@@ -297,22 +345,23 @@
       const totalRemainingQuantity = sortedItems.reduce((total, item) => total + numeric(item.remainingQuantity), 0);
       const hasDelivery = deliveredItems > 0;
       const isComplete = itemCount > 0 && completedItems === itemCount;
-      const delayed = delayedItems > 0;
-      const onTime = isComplete && delayedItems === 0;
-      const incomplete = hasDelivery && !isComplete;
-      const pending = !hasDelivery && !delayed;
       const completionDates = sortedItems.map((item) => item.completionDate).filter(Boolean).sort();
       const receivedDates = sortedItems.map((item) => item.lastReceivedDate).filter(Boolean).sort();
       const completionDate = completionDates.length ? completionDates[completionDates.length - 1] : "";
       const lastReceivedDate = receivedDates.length ? receivedDates[receivedDates.length - 1] : "";
       const requestDate = base.requestDate || today;
       const expectedDate = base.expectedDate || today;
+      const isOverdue = !isComplete && toDateTimestamp(today) > toDateTimestamp(expectedDate);
+      const delayed = isComplete && delayedItems > 0;
+      const onTime = isComplete && delayedItems === 0;
+      const incomplete = hasDelivery && !isComplete;
+      const pending = !hasDelivery;
       const leadTimeDays = isComplete ? diffDays(requestDate, completionDate) : null;
       const elapsedDays = hasDelivery ? diffDays(requestDate, lastReceivedDate) : diffDays(requestDate, today);
 
       let statusKey = "pending";
-      let statusLabel = "Pending Request";
-      let tone = "olive";
+      let statusLabel = isOverdue ? "Overdue Request" : "Pending Request";
+      let tone = isOverdue ? "danger" : "olive";
 
       if (onTime) {
         statusKey = "on-time";
@@ -325,7 +374,7 @@
       } else if (incomplete) {
         statusKey = "incomplete";
         statusLabel = "Incomplete Delivery";
-        tone = "warning";
+        tone = isOverdue ? "danger" : "warning";
       }
 
       return {
@@ -352,6 +401,7 @@
         onTimeItems,
         hasDelivery,
         isComplete,
+        isOverdue,
         delayed,
         onTime,
         incomplete,
@@ -360,7 +410,7 @@
         lastReceivedDate,
         leadTimeDays,
         elapsedDays,
-        overdueDays: delayed ? diffDays(expectedDate, isComplete ? completionDate : today) : 0,
+        overdueDays: (isOverdue || delayed) ? diffDays(expectedDate, isComplete ? completionDate : today) : 0,
         statusKey,
         statusLabel,
         tone,

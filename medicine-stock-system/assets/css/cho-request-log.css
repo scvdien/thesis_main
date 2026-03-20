@@ -4,41 +4,6 @@
   gap:18px;
 }
 
-.request-overview{
-  display:grid;
-  grid-template-columns:repeat(5, minmax(0, 1fr));
-  gap:10px;
-}
-
-.request-overview .inventory-metric-card{
-  min-width:0;
-  grid-template-columns:46px minmax(0, 1fr);
-  gap:8px;
-  padding:12px;
-  border-radius:18px;
-}
-
-.request-overview .inventory-metric-card__icon{
-  width:46px;
-  height:46px;
-  border-radius:14px;
-  font-size:1.06rem;
-}
-
-.request-overview .inventory-metric-card__copy span{
-  font-size:0.68rem;
-  line-height:1.25;
-}
-
-.request-overview .inventory-metric-card__copy strong{
-  font-size:0.96rem;
-}
-
-.request-overview .inventory-metric-card__copy small{
-  font-size:0.64rem;
-  line-height:1.28;
-}
-
 .request-toolbar{
   display:grid;
   grid-template-columns:minmax(260px, 1fr) minmax(180px, 220px) auto;
@@ -419,10 +384,6 @@
 }
 
 @media (max-width: 1199px){
-  .request-overview{
-    grid-template-columns:repeat(2, minmax(0, 1fr));
-  }
-
   .request-toolbar{
     grid-template-columns:minmax(0, 1fr) minmax(180px, 220px);
   }
@@ -446,10 +407,6 @@
 }
 
 @media (max-width: 767px){
-  .request-overview{
-    grid-template-columns:1fr;
-  }
-
   .request-toolbar{
     grid-template-columns:1fr;
   }

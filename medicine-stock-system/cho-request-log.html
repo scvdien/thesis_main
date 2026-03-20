@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="assets/css/medicine-inventory.css">
   <link rel="stylesheet" href="assets/css/cho-request-log.css">
 </head>
-<body>
+<body class="admin-dashboard-page">
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
@@ -53,63 +53,6 @@
         </div>
 
         <div id="moduleAlert" class="alert d-none" role="alert"></div>
-
-        <section class="inventory-overview request-overview">
-          <article class="inventory-metric-card inventory-metric-card--green">
-            <div class="inventory-metric-card__icon">
-              <i class="bi bi-files"></i>
-            </div>
-            <div class="inventory-metric-card__copy">
-              <span>Total Requests</span>
-              <strong id="requestMetricTotal">0</strong>
-              <small>CHO requests logged</small>
-            </div>
-          </article>
-
-          <article class="inventory-metric-card inventory-metric-card--olive">
-            <div class="inventory-metric-card__icon">
-              <i class="bi bi-hourglass-split"></i>
-            </div>
-            <div class="inventory-metric-card__copy">
-              <span>Pending Requests</span>
-              <strong id="requestMetricPending">0</strong>
-              <small>Awaiting first delivery</small>
-            </div>
-          </article>
-
-          <article class="inventory-metric-card inventory-metric-card--gold">
-            <div class="inventory-metric-card__icon">
-              <i class="bi bi-box-seam"></i>
-            </div>
-            <div class="inventory-metric-card__copy">
-              <span>Incomplete Deliveries</span>
-              <strong id="requestMetricIncomplete">0</strong>
-              <small>Partially received requests</small>
-            </div>
-          </article>
-
-          <article class="inventory-metric-card inventory-metric-card--red">
-            <div class="inventory-metric-card__icon">
-              <i class="bi bi-exclamation-triangle"></i>
-            </div>
-            <div class="inventory-metric-card__copy">
-              <span>Delayed Deliveries</span>
-              <strong id="requestMetricDelayed">0</strong>
-              <small>Overdue or completed late</small>
-            </div>
-          </article>
-
-          <article class="inventory-metric-card inventory-metric-card--green">
-            <div class="inventory-metric-card__icon">
-              <i class="bi bi-stopwatch"></i>
-            </div>
-            <div class="inventory-metric-card__copy">
-              <span>Avg. Lead Time</span>
-              <strong id="requestMetricLeadTime">0 days</strong>
-              <small>Completed CHO requests</small>
-            </div>
-          </article>
-        </section>
 
         <section class="inventory-workspace">
           <section class="inventory-panel inventory-panel--table">

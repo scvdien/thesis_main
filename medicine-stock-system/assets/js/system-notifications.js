@@ -384,13 +384,35 @@
       };
     });
 
-    const fastMovement = [...inventoryRows]
+    const activeMovementItems = [...inventoryRows]
       .filter((item) => item.monthlyUsage > 0)
-      .sort((left, right) => right.monthlyUsage - left.monthlyUsage)
-      .slice(0, 4);
+      .sort((left, right) => right.monthlyUsage - left.monthlyUsage || right.usageCount - left.usageCount || left.stock - right.stock);
+    const fastMovement = activeMovementItems
+      .slice(0, 4)
+      .map((item) => ({
+        ...item,
+        movementLabel: "Fast Moving",
+        movementHelper: "High stock turnover",
+        movementTone: "fast"
+      }));
+    const fastMovementIds = new Set(fastMovement.map((item) => item.id));
     const slowMovement = [...inventoryRows]
-      .sort((left, right) => left.monthlyUsage - right.monthlyUsage || left.stock - right.stock)
-      .slice(0, 4);
+      .filter((item) => !fastMovementIds.has(item.id))
+      .sort((left, right) => {
+        const leftHasUsage = left.monthlyUsage > 0 ? 1 : 0;
+        const rightHasUsage = right.monthlyUsage > 0 ? 1 : 0;
+        if (leftHasUsage !== rightHasUsage) return rightHasUsage - leftHasUsage;
+        if (left.monthlyUsage !== right.monthlyUsage) return left.monthlyUsage - right.monthlyUsage;
+        if (left.stock !== right.stock) return left.stock - right.stock;
+        return text(left.shortName).localeCompare(text(right.shortName));
+      })
+      .slice(0, 4)
+      .map((item) => ({
+        ...item,
+        movementLabel: item.monthlyUsage > 0 ? "Slow Moving" : "No Recent Dispense",
+        movementHelper: item.monthlyUsage > 0 ? "Low stock turnover" : "No recorded dispense in the last 30 days",
+        movementTone: "slow"
+      }));
 
     const expiringMedicines = [...inventoryRows]
       .filter((item) => item.daysLeft <= 90)

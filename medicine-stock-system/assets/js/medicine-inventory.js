@@ -1115,12 +1115,25 @@
           <td><span class="inventory-status inventory-status--${esc(status.tone)}">${esc(status.label)}</span></td>
           <td>
             <div class="inventory-actions">
-              <button type="button" class="btn btn-sm btn-light table-action-btn" data-action="edit" data-id="${esc(medicine.id)}">
-                <i class="bi bi-pencil-square"></i> Edit
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" data-action="adjust" data-id="${esc(medicine.id)}">
-                <i class="bi bi-arrow-left-right"></i> Adjust
-              </button>
+              <div class="dropdown inventory-action-menu">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-light table-action-btn inventory-action-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  aria-label="Open medicine actions"
+                >
+                  <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end inventory-action-dropdown">
+                  <button type="button" class="dropdown-item inventory-action-item" data-action="edit" data-id="${esc(medicine.id)}">
+                    <i class="bi bi-pencil-square"></i> Edit
+                  </button>
+                  <button type="button" class="dropdown-item inventory-action-item" data-action="adjust" data-id="${esc(medicine.id)}">
+                    <i class="bi bi-arrow-left-right"></i> Adjust
+                  </button>
+                </div>
+              </div>
             </div>
           </td>
         </tr>

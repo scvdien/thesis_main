@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="assets/css/settings.css">
   <link rel="stylesheet" href="assets/css/system-notifications.css">
 </head>
-<body>
+<body class="admin-dashboard-page">
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
@@ -186,12 +186,6 @@
                 <div class="logs-module-header">
                   <div class="logs-title-wrap">
                     <h5 class="mb-1 fw-bold">Activity Logs</h5>
-                    <p class="mb-0 text-muted small">Medicine stock actions, access events, and record updates captured for accountability.</p>
-                  </div>
-                  <div class="logs-header-actions">
-                    <select class="form-select form-select-sm logs-year-filter" id="activityLogYearFilter">
-                      <option value="all">All Years</option>
-                    </select>
                   </div>
                 </div>
 
@@ -225,14 +219,24 @@
 
                 <div class="logs-table-shell table-responsive">
                   <table class="table logs-table align-middle mb-0">
+                    <colgroup>
+                      <col class="logs-col logs-col--datetime">
+                      <col class="logs-col logs-col--user">
+                      <col class="logs-col logs-col--module">
+                      <col class="logs-col logs-col--action">
+                      <col class="logs-col logs-col--result">
+                      <col class="logs-col logs-col--reference">
+                      <col class="logs-col logs-col--details">
+                    </colgroup>
                     <thead>
                       <tr>
                         <th scope="col">Date &amp; Time</th>
                         <th scope="col">User</th>
+                        <th scope="col">Module</th>
                         <th scope="col">Action</th>
                         <th scope="col">Result</th>
+                        <th scope="col">Reference</th>
                         <th scope="col">Details</th>
-                        <th scope="col">IP Address</th>
                       </tr>
                     </thead>
                     <tbody id="activityLogTableBody">

@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="assets/css/admin-dashboard.css">
   <link rel="stylesheet" href="assets/css/system-notifications.css">
 </head>
-<body>
+<body class="admin-dashboard-page">
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
@@ -55,7 +55,7 @@
           <div class="demand-suite__inner">
             <div class="demand-suite__head">
               <h5>Demand Prediction Analytics</h5>
-              <p>Forecasting trends and seasonal medicine demand.</p>
+              <p>Estimated medicine demand for the next season.</p>
             </div>
 
             <div class="demand-summary-grid">
@@ -65,17 +65,17 @@
                 </div>
                 <div class="demand-summary-card__body">
                   <strong id="metricDemandForecast">0</strong>
-                  <span>Predicted Demand</span>
+                  <span>Predicted Next Demand</span>
                 </div>
               </article>
 
               <article class="demand-summary-card demand-summary-card--blue">
                 <div class="demand-summary-card__icon">
-                  <i class="bi bi-cloud-rain-heavy-fill"></i>
+                  <i class="bi bi-cloud-rain-heavy-fill" id="metricDemandSeasonIcon"></i>
                 </div>
                 <div class="demand-summary-card__body">
                   <strong id="metricDemandUplift">0</strong>
-                  <span>Rainy Season Increase</span>
+                  <span id="metricDemandSeasonLabel">Expected Next Season Change</span>
                 </div>
               </article>
 
@@ -85,7 +85,7 @@
                 </div>
                 <div class="demand-summary-card__body">
                   <strong id="metricDemandReorder">0</strong>
-                <span>Need Request</span>
+                <span>Medicines to Request Soon</span>
                 </div>
               </article>
 
@@ -95,7 +95,7 @@
                 </div>
                 <div class="demand-summary-card__body">
                   <strong id="metricDemandPriority">0</strong>
-                  <span>Priority Medicines</span>
+                  <span>Medicines to Watch</span>
                 </div>
               </article>
             </div>
@@ -108,12 +108,11 @@
                 <div class="demand-chart-wrap">
                   <canvas id="demandForecastChart"></canvas>
                 </div>
-                <p class="demand-card__meta" id="demandForecastNote">Forecasting model is loading.</p>
               </section>
 
               <aside class="demand-card demand-card--side">
                 <div class="demand-card__head">
-                  <h6>Priority Medicines</h6>
+                  <h6>Medicines to Watch</h6>
                 </div>
                 <div class="demand-priority-list" id="seasonalSignalList"></div>
               </aside>
@@ -194,7 +193,7 @@
             <div class="supply-suite__head">
               <div class="supply-suite__title">
                 <h5>CHO Request Fulfillment Analytics</h5>
-                <p id="supplySourceLabel">City Health Office request-to-delivery monitoring</p>
+                <p id="supplySourceLabel">Monitor supply lead times and delivery reliability.</p>
               </div>
             </div>
 
@@ -293,7 +292,7 @@
           <div class="expiry-suite__inner">
             <div class="expiry-suite__head">
               <h5>Expiry &amp; Consumption Dashboard</h5>
-              <p>Expiry risk and medicine consumption monitoring.</p>
+              <p>Track expiry dates and medicine usage.</p>
             </div>
 
             <div class="expiry-summary-grid">
@@ -302,7 +301,7 @@
                   <i class="bi bi-exclamation-triangle-fill"></i>
                 </div>
                 <div class="expiry-summary-card__copy">
-                  <span>Expiring Soon</span>
+                  <span>Near Expiry</span>
                   <strong id="expirySoonCount">0 medicines</strong>
                 </div>
               </article>
@@ -332,7 +331,7 @@
                   <i class="bi bi-bar-chart-fill"></i>
                 </div>
                 <div class="expiry-summary-card__copy">
-                  <span>Slow Consumption</span>
+                  <span>Slow Moving Medicines</span>
                   <strong id="expirySlowCount">0 medicines</strong>
                 </div>
               </article>
@@ -342,14 +341,14 @@
               <div class="expiry-main">
                 <section class="expiry-panel">
                   <div class="expiry-panel__head">
-                    <h6>Expiring Medicines</h6>
+                    <h6>Medicines Near Expiry</h6>
                   </div>
                   <div class="expiry-medicine-list" id="expiryMedicineList"></div>
                 </section>
 
                 <section class="expiry-panel">
                   <div class="expiry-panel__head">
-                    <h6>Medicine Consumption Rate</h6>
+                    <h6>Monthly Usage</h6>
                   </div>
                   <div class="expiry-consumption-list" id="expiryConsumptionList"></div>
                 </section>
@@ -358,7 +357,7 @@
               <aside class="expiry-side">
                 <section class="expiry-panel expiry-panel--risk">
                   <div class="expiry-panel__head">
-                    <h6>Expiry Risk</h6>
+                    <h6>Medicine at Risk</h6>
                   </div>
                   <div class="expiry-risk-card">
                     <strong id="expiryRiskTitle">Loading risk item</strong>
@@ -374,7 +373,7 @@
           <div class="balance-suite__inner">
             <div class="balance-suite__head">
               <h5>Inventory Balance Dashboard</h5>
-              <p>Stock level balance between shortage and overstock.</p>
+              <p>Balance between overstocking (tying up capital, risk of expiry) and understocking (risk of shortages).</p>
             </div>
 
             <div class="balance-summary-grid">
@@ -383,7 +382,7 @@
                   <i class="bi bi-archive-fill"></i>
                 </div>
                 <div class="balance-summary-card__copy">
-                  <span>Total Medicines</span>
+                  <span>Monitored Medicines</span>
                   <strong id="balanceTotalMedicines">0 items</strong>
                 </div>
               </article>
@@ -420,51 +419,29 @@
             </div>
 
             <div class="balance-grid">
-              <div class="balance-main">
-                <section class="balance-panel">
-                  <div class="balance-panel__head">
-                    <h6>Medicine Stock Levels</h6>
-                  </div>
-                  <div class="balance-table">
-                    <div class="balance-table__head">
-                      <span>Total Medicines</span>
-                      <span>Stock</span>
-                      <span>Status</span>
-                    </div>
-                    <div class="balance-table__body" id="balanceStockRows"></div>
-                  </div>
-                </section>
+              <section class="balance-panel balance-panel--bucket">
+                <div class="balance-panel__head balance-panel__head--stack">
+                  <h6>Understock Risk</h6>
+                  <p>Medicines below request point and at risk of shortage.</p>
+                </div>
+                <div class="balance-bucket-list" id="balanceLowList"></div>
+              </section>
 
-                <section class="balance-panel">
-                  <div class="balance-panel__head">
-                    <h6>Medicine Stock Comparison</h6>
-                  </div>
-                  <div class="balance-comparison-list" id="balanceComparisonList"></div>
-                </section>
-              </div>
+              <section class="balance-panel balance-panel--bucket">
+                <div class="balance-panel__head balance-panel__head--stack">
+                  <h6>Balanced Stock</h6>
+                  <p>Medicines staying within the safe stock range.</p>
+                </div>
+                <div class="balance-bucket-list" id="balanceBalancedList"></div>
+              </section>
 
-              <aside class="balance-side">
-                <section class="balance-panel">
-                  <div class="balance-panel__head">
-                    <h6 id="balanceFocusTitle">Medicine Stock Level</h6>
-                  </div>
-                  <div class="balance-focus-card">
-                    <div class="balance-focus-card__labels">
-                      <span>Low</span>
-                      <span>Optimal</span>
-                      <span>Overstock</span>
-                    </div>
-                    <div class="balance-focus-track">
-                      <span id="balanceFocusFill"></span>
-                      <i class="balance-focus-track__marker balance-focus-track__marker--first"></i>
-                      <i class="balance-focus-track__marker balance-focus-track__marker--second"></i>
-                    </div>
-                    <strong id="balanceFocusValue">Current Stock: 0</strong>
-                    <p id="balanceFocusNote">Loading stock balance note.</p>
-                  </div>
-                </section>
-
-              </aside>
+              <section class="balance-panel balance-panel--bucket">
+                <div class="balance-panel__head balance-panel__head--stack">
+                  <h6>Overstock Risk</h6>
+                  <p>Medicines above stock ceiling and at higher expiry risk.</p>
+                </div>
+                <div class="balance-bucket-list" id="balanceOverstockList"></div>
+              </section>
             </div>
           </div>
         </section>
