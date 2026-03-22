@@ -7,6 +7,7 @@ $notificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/notificati
 $staffCssVersion = (string) @filemtime(__DIR__ . '/assets/css/staff.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $staffJsVersion = (string) @filemtime(__DIR__ . '/assets/js/staff.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -670,6 +671,6 @@ $staffJsVersion = (string) @filemtime(__DIR__ . '/assets/js/staff.js');
   </script>
   <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
   <script src="assets/js/staff.js?v=<?= urlencode($staffJsVersion) ?>"></script>
-  <script src="assets/js/system-notifications.js"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>

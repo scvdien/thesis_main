@@ -3,6 +3,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = mss_page_require_auth(['admin', 'staff']);
 $dispensingRole = mss_auth_user_role($authUser) === 'staff' ? 'staff' : 'admin';
+$adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
+$dispensingRecordsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/resident-medication-records.css');
+$systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $dispensingRecordsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/resident-medication-records.js');
 $requestedRole = strtolower(trim((string) ($_GET['role'] ?? '')));
 if ($requestedRole !== $dispensingRole) {
@@ -20,9 +23,9 @@ if ($requestedRole !== $dispensingRole) {
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="assets/css/admin-dashboard.css">
-  <link rel="stylesheet" href="assets/css/resident-medication-records.css">
-  <link rel="stylesheet" href="assets/css/system-notifications.css">
+  <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/resident-medication-records.css?v=<?= urlencode($dispensingRecordsCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page">
   <div id="wrapper">
@@ -57,17 +60,17 @@ if ($requestedRole !== $dispensingRole) {
 
         <section class="records-shell">
           <div class="records-toolbar">
-            <div class="records-searchbar" role="search" aria-label="Search residents">
+            <div class="records-searchbar" role="search" aria-label="Search patients">
               <div class="records-searchbox">
                 <label class="records-searchfield" for="residentSearchInput">
                   <input
                     type="search"
                     id="residentSearchInput"
-                    placeholder="Search patient name, resident ID, or barangay"
+                    placeholder="Search patient name, patient ID, or barangay"
                     autocomplete="off"
                   >
                 </label>
-                <button type="button" class="records-searchbtn" id="residentSearchBtn" aria-label="Search residents">
+                <button type="button" class="records-searchbtn" id="residentSearchBtn" aria-label="Search patients">
                   <i class="bi bi-search"></i>
                 </button>
               </div>
@@ -77,18 +80,18 @@ if ($requestedRole !== $dispensingRole) {
               <select id="barangayFilter" class="records-select" aria-label="Filter by barangay">
                 <option value="all">All Barangays</option>
               </select>
-              <span class="records-count-chip" id="residentCountChip">0 residents</span>
+              <span class="records-count-chip" id="residentCountChip">0 patients</span>
             </div>
           </div>
 
           <div class="records-grid">
             <section class="records-card records-card--list records-card--full">
               <div class="records-card__head">
-                <h5>Residents</h5>
+                <h5>Patients</h5>
               </div>
 
               <div class="resident-list" id="residentList">
-                <div class="records-empty">Loading resident records...</div>
+                <div class="records-empty">Loading patient records...</div>
               </div>
             </section>
           </div>
@@ -122,8 +125,8 @@ if ($requestedRole !== $dispensingRole) {
       <div class="modal-content record-history-modal">
         <div class="modal-header border-0">
           <div class="record-detail__title-wrap">
-            <h5 id="recordResidentName">Resident Account</h5>
-            <p id="recordResidentMeta">Resident details will appear here.</p>
+            <h5 id="recordResidentName">Patient Account</h5>
+            <p id="recordResidentMeta">Patient details will appear here.</p>
             <div class="record-detail__submeta" id="recordResidentSummary">Last medicine: - | Last release: -</div>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

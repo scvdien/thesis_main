@@ -2,6 +2,9 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = mss_page_require_auth(['admin']);
+$adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
+$medicineInventoryCssVersion = (string) @filemtime(__DIR__ . '/assets/css/medicine-inventory.css');
+$choRequestLogCssVersion = (string) @filemtime(__DIR__ . '/assets/css/cho-request-log.css');
 $choRequestLogJsVersion = (string) @filemtime(__DIR__ . '/assets/js/cho-request-log.js');
 $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
 ?><!doctype html>
@@ -16,9 +19,9 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="assets/css/admin-dashboard.css">
-  <link rel="stylesheet" href="assets/css/medicine-inventory.css">
-  <link rel="stylesheet" href="assets/css/cho-request-log.css">
+  <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/medicine-inventory.css?v=<?= urlencode($medicineInventoryCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/cho-request-log.css?v=<?= urlencode($choRequestLogCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page">
   <div id="wrapper">

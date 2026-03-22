@@ -559,6 +559,7 @@
   };
 
   const getLogResultBadgeClass = (resultTone) => {
+    if (resultTone === "danger" || resultTone === "failed") return "log-chip log-chip--danger";
     if (resultTone === "warning") return "log-chip log-chip--warning";
     if (resultTone === "neutral") return "log-chip log-chip--neutral";
     return "log-chip log-chip--success";
@@ -571,6 +572,7 @@
     return "bi-arrow-repeat";
   };
   const getLogResultIconClass = (resultTone) => {
+    if (resultTone === "danger" || resultTone === "failed") return "bi-x-circle";
     if (resultTone === "warning") return "bi-exclamation-triangle";
     if (resultTone === "neutral") return "bi-archive";
     return "bi-check-circle";
@@ -589,6 +591,8 @@
   const getLogActionDisplayLabel = (log) => {
     const action = keyOf(log.action);
     const type = keyOf(log.actionType);
+    if (action.includes("failed login") || action.includes("login failed")) return "Login Failed";
+    if (action.includes("login successful")) return "Login";
     if (action.includes("login")) return "Login";
     if (action.includes("logout")) return "Logout";
     if (action.includes("restocked")) return "Restock";
@@ -612,6 +616,7 @@
   const getLogResultDisplayLabel = (log) => {
     const result = keyOf(log.resultLabel);
     const action = keyOf(log.action);
+    if (result === "failed") return "Failed";
     if (result === "updated") return "Saved";
     if (result === "dispensed") return "Recorded";
     if (result === "disposed") return "Removed";
@@ -681,7 +686,7 @@
     if (refs.activityLogCount) refs.activityLogCount.textContent = `${logs.length} record${logs.length === 1 ? "" : "s"} found`;
 
     if (!logs.length) {
-      refs.activityLogTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No activity logs found.</td></tr>`;
+      refs.activityLogTableBody.innerHTML = `<tr class="logs-empty-row"><td colspan="7" class="text-center text-muted py-4 logs-empty-cell">No activity logs found.</td></tr>`;
       return;
     }
 
@@ -690,42 +695,42 @@
       const actionLabel = getLogActionDisplayLabel(log);
       const resultLabel = getLogResultDisplayLabel(log);
       return `
-        <tr>
-          <td>
+        <tr class="logs-row">
+          <td class="logs-cell logs-cell--datetime" data-label="Date &amp; Time">
             <div class="log-datetime">
               <span class="log-date">${esc(formatLogDate(log.createdAt))}</span>
               <span class="log-time">${esc(formatLogTime(log.createdAt))}</span>
               <span class="log-relative">${esc(formatRelativeTime(log.createdAt))}</span>
             </div>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--user" data-label="User">
             <div class="log-user">
               <div class="log-user-copy">
                 <div class="log-user-name">${esc(log.actor)}</div>
               </div>
             </div>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--module" data-label="Module">
             <span class="log-module-pill" title="${esc(moduleLabel)}">${esc(moduleLabel)}</span>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--action" data-label="Action">
             <span class="${getLogActionBadgeClass(log.actionType)}">
               <i class="bi ${getLogActionIconClass(log.actionType)}" aria-hidden="true"></i>
               <span>${esc(actionLabel)}</span>
             </span>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--result" data-label="Result">
             <span class="${getLogResultBadgeClass(log.resultTone)}">
               <i class="bi ${getLogResultIconClass(log.resultTone)}" aria-hidden="true"></i>
               <span>${esc(resultLabel)}</span>
             </span>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--reference" data-label="Reference">
             <div class="log-reference" title="${esc(text(log.target) || "System Record")}">
               ${esc(text(log.target) || "System Record")}
             </div>
           </td>
-          <td>
+          <td class="logs-cell logs-cell--details" data-label="Details">
             <div class="log-detail" title="${esc(log.details)}">${esc(log.details)}</div>
           </td>
         </tr>

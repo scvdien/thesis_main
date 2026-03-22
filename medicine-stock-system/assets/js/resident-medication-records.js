@@ -114,7 +114,7 @@
     id: text(entry.id) || text(entry.residentId) || text(entry.resident_id) || `resident_${index + 1}`,
     residentId: text(entry.residentId) || text(entry.resident_id),
     householdId: text(entry.householdId) || text(entry.household_id),
-    fullName: text(entry.fullName) || text(entry.full_name) || "Resident Account",
+    fullName: text(entry.fullName) || text(entry.full_name) || "Patient Account",
     barangay: text(entry.barangay) || "Cabarian",
     zone: text(entry.zone),
     city: text(entry.city) || "Ligao City",
@@ -297,7 +297,7 @@
   };
   const isPlaceholderResidentName = (value) => {
     const normalized = keyOf(value);
-    return !normalized || normalized === "resident account";
+    return !normalized || normalized === "resident account" || normalized === "patient account";
   };
   const recordDisplaySeed = (record) => {
     const source = [
@@ -501,14 +501,14 @@
 
   const renderCount = (records) => {
     if (!refs.residentCountChip) return;
-    refs.residentCountChip.textContent = `${formatNumber(records.length)} resident${records.length === 1 ? "" : "s"}`;
+    refs.residentCountChip.textContent = `${formatNumber(records.length)} patient${records.length === 1 ? "" : "s"}`;
   };
 
   const renderResidentList = (records) => {
     if (!refs.residentList) return;
 
     if (!records.length) {
-      refs.residentList.innerHTML = '<div class="records-empty">No resident medication records found.</div>';
+      refs.residentList.innerHTML = '<div class="records-empty">No patient medication records found.</div>';
       return;
     }
 
@@ -568,7 +568,7 @@
         text(record.resident.householdId),
         displayResidentAddress(record),
         `${formatNumber(record.totalReleases)} release${record.totalReleases === 1 ? "" : "s"}`
-      ].filter(Boolean).join(" | ") || "Resident record";
+      ].filter(Boolean).join(" | ") || "Patient record";
     }
     if (refs.recordResidentSummary) {
       refs.recordResidentSummary.textContent = [

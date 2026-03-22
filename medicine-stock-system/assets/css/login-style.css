@@ -2,7 +2,9 @@
   --ink:#15351a;
   --muted:#5b6942;
   --accent:#216f1b;
-  --accent-2:#e2cb56;
+  --accent-deep:#154f15;
+  --accent-bright:#2f8f24;
+  --accent-2:#dcbc45;
   --panel:#ffffff;
   --radius:24px;
   --shadow:0 24px 50px rgba(20, 56, 24, 0.2);
@@ -16,9 +18,9 @@ body{
   font-family:'Manrope', sans-serif;
   color:var(--ink);
   background:
-    radial-gradient(900px 500px at 15% 10%, rgba(226, 203, 86, 0.2), transparent 60%),
-    radial-gradient(700px 400px at 90% 20%, rgba(33, 111, 27, 0.15), transparent 55%),
-    linear-gradient(180deg, #f8fbf3 0%, #f0f5e8 100%);
+    radial-gradient(900px 500px at 15% 0%, rgba(220, 188, 69, 0.2), transparent 60%),
+    radial-gradient(700px 420px at 90% 12%, rgba(33, 111, 27, 0.14), transparent 60%),
+    linear-gradient(180deg, #f8fbf2 0%, #edf4e4 100%);
   display:flex;
   flex-direction:column;
 }
@@ -42,7 +44,7 @@ body::before{
 body::after{
   bottom:-140px;
   left:-140px;
-  background:radial-gradient(circle at 30% 30%, rgba(226, 203, 86, 0.45), transparent 70%);
+  background:radial-gradient(circle at 30% 30%, rgba(220, 188, 69, 0.45), transparent 70%);
 }
 
 .page{
@@ -71,8 +73,9 @@ body::after{
 
 .brand-panel{
   grid-area:brand;
-  background:linear-gradient(135deg, #145718 0%, #2f8525 100%);
-  color:#f8fafc;
+  background:linear-gradient(160deg, var(--accent-deep) 0%, var(--accent) 58%, var(--accent-bright) 100%);
+  border:1px solid rgba(255,255,255,0.2);
+  color:#e9f5d7;
   padding:32px;
   border-radius:var(--radius);
   box-shadow:var(--shadow);
@@ -89,7 +92,7 @@ body::after{
   width:260px;
   height:260px;
   border-radius:50%;
-  border:1px solid rgba(226, 203, 86, 0.45);
+  border:1px solid rgba(220, 188, 69, 0.45);
   top:-90px;
   right:-70px;
 }
@@ -100,7 +103,9 @@ body::after{
   gap:8px;
   padding:6px 12px;
   border-radius:999px;
-  background:rgba(226, 203, 86, 0.2);
+  background:rgba(220,188,69,0.28);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);
+  color:#fff;
   text-transform:uppercase;
   letter-spacing:0.12em;
   font-size:0.72rem;
@@ -110,31 +115,52 @@ body::after{
 .brand-mark{
   display:flex;
   align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.brand-main{
+  display:flex;
+  align-items:center;
   gap:14px;
+  min-width:0;
+  flex:1 1 auto;
 }
 .brand-copy{
   min-width:0;
+  flex:1 1 auto;
 }
-.brand-mark img{
+.brand-main-logo,
+.brand-side-logo{
   width:56px;
   height:56px;
   border-radius:14px;
   padding:6px;
-  background:#fff;
-  box-shadow:0 12px 22px rgba(0,0,0,0.18);
+  background:rgba(255,255,255,0.16);
+  border:1px solid rgba(255,255,255,0.2);
+  box-shadow:none;
+  object-fit:contain;
+  flex-shrink:0;
+}
+.brand-side-logo{
+  width:52px;
+  height:52px;
+  padding:5px;
 }
 .brand-title{
-  font-family:'Fraunces', serif;
+  font-family:'Manrope', sans-serif;
   font-size:1.55rem;
+  font-weight:800;
   letter-spacing:0.01em;
+  line-height:1.08;
 }
 .brand-sub{
   font-size:1rem;
-  color:rgba(249, 241, 186, 0.95);
+  color:rgba(246, 248, 231, 0.9);
+  line-height:1.2;
 }
 .brand-desc{
   margin:0;
-  color:rgba(245, 248, 232, 0.9);
+  color:rgba(248,250,235,0.9);
   line-height:1.6;
 }
 .brand-logos{
@@ -148,7 +174,8 @@ body::after{
   height:44px;
   border-radius:12px;
   padding:6px;
-  background:rgba(226, 203, 86, 0.2);
+  background:rgba(255,255,255,0.16);
+  border:1px solid rgba(255,255,255,0.18);
 }
 .brand-note{
   display:inline-flex;
@@ -156,7 +183,7 @@ body::after{
   gap:8px;
   font-size:0.9rem;
   font-weight:600;
-  color:#f7e58a;
+  color:#f6d97a;
 }
 
 .form-panel{
@@ -164,8 +191,8 @@ body::after{
   background:var(--panel);
   border-radius:var(--radius);
   padding:32px;
-  box-shadow:0 20px 40px rgba(15, 23, 42, 0.12);
-  border:1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:0 20px 40px rgba(22, 54, 23, 0.12);
+  border:1px solid rgba(220, 231, 206, 0.9);
   display:flex;
   flex-direction:column;
   gap:24px;
@@ -176,11 +203,11 @@ body::after{
   margin:6px 0 0;
   font-family:'Fraunces', serif;
   font-size:1.6rem;
-  color:#0b2a3f;
+  color:var(--ink);
 }
 .form-head p{
   margin:6px 0 0;
-  color:#6b7280;
+  color:var(--muted);
 }
 
 .eyebrow{
@@ -188,7 +215,7 @@ body::after{
   font-weight:700;
   letter-spacing:0.14em;
   text-transform:uppercase;
-  color:#6b7280;
+  color:var(--muted);
 }
 
 .login-form{
@@ -215,7 +242,7 @@ body::after{
   display:block;
   margin-bottom:6px;
   font-size:0.85rem;
-  color:#6b7280;
+  color:var(--muted);
   font-weight:600;
 }
 
@@ -227,15 +254,15 @@ body::after{
   left:12px;
   top:50%;
   transform:translateY(-50%);
-  color:#94a3b8;
+  color:#7e8d65;
 }
 
 .form-control{
   border-radius:12px;
-  border:1px solid #e2e8f0;
+  border:1px solid #dce7ce;
   padding:12px 14px 12px 40px;
   font-size:0.95rem;
-  background:#f8fafc;
+  background:#f7faef;
 }
 .form-control:focus{
   border-color:var(--accent);
@@ -244,16 +271,16 @@ body::after{
 }
 
 .btn-primary{
-  background:linear-gradient(135deg, var(--accent), #3f982e);
+  background:linear-gradient(160deg, var(--accent-deep), var(--accent) 58%, var(--accent-bright));
   border:none;
   border-radius:12px;
   padding:12px 18px;
   font-weight:600;
-  box-shadow:0 14px 28px rgba(20, 87, 24, 0.28);
+  box-shadow:0 14px 28px rgba(21, 79, 21, 0.28);
 }
 
 .btn-primary:hover{
-  filter:brightness(1.03);
+  filter:brightness(1.05);
 }
 
 .btn-primary:disabled{
@@ -287,34 +314,43 @@ body::after{
 @media (max-width: 980px){
   .page{
     align-items:stretch;
+    justify-content:flex-start;
+    min-height:100svh;
+    min-height:100dvh;
     padding:18px 10px 20px;
   }
 
   .login-shell{
     display:flex;
     flex-direction:column;
-    gap:0;
-    max-width:340px;
-    min-height:calc(100vh - 38px);
+    gap:12px;
+    width:100%;
+    max-width:100%;
+    min-height:calc(100svh - 38px);
+    min-height:calc(100dvh - 38px);
     padding:8px;
     border-radius:24px;
-    border:1px solid rgba(10, 102, 211, 0.14);
+    border:1px solid rgba(220, 231, 206, 0.95);
     background:
-      radial-gradient(220px 220px at 88% 8%, rgba(10, 102, 211, 0.1), transparent 60%),
-      radial-gradient(240px 240px at 0% 100%, rgba(15, 180, 169, 0.12), transparent 62%),
-      linear-gradient(180deg, #f7fbff 0%, #eef4fb 100%);
-    box-shadow:0 18px 44px rgba(15, 23, 42, 0.12);
+      radial-gradient(220px 220px at 88% 8%, rgba(220, 188, 69, 0.14), transparent 60%),
+      radial-gradient(240px 240px at 0% 100%, rgba(33, 111, 27, 0.12), transparent 62%),
+      linear-gradient(180deg, #f8fbf2 0%, #edf4e4 100%);
+    box-shadow:0 18px 44px rgba(22, 54, 23, 0.12);
     position:relative;
     overflow:hidden;
+    margin:0 auto;
   }
 
   .brand-panel{
     order:1;
+    align-self:stretch;
+    flex:0 0 auto;
+    width:100%;
     padding:14px 14px 13px;
     border-radius:18px;
     gap:0;
     min-height:auto;
-    background:linear-gradient(135deg, #0d617b 0%, #117799 100%);
+    background:linear-gradient(160deg, var(--accent-deep) 0%, var(--accent) 58%, var(--accent-bright) 100%);
     box-shadow:none;
   }
 
@@ -327,16 +363,43 @@ body::after{
   }
 
   .brand-mark{
-    gap:10px;
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr) auto;
+    gap:12px;
     align-items:center;
+    min-width:0;
   }
 
-  .brand-mark img{
+  .brand-main{
+    display:contents;
+  }
+
+  .brand-copy{
+    min-width:0;
+    text-align:center;
+  }
+
+  .brand-main-logo{
+    justify-self:start;
+  }
+
+  .brand-side-logo{
+    justify-self:end;
+  }
+
+  .brand-main-logo,
+  .brand-side-logo{
     width:36px;
     height:36px;
     border-radius:11px;
     padding:4px;
     flex-shrink:0;
+  }
+
+  .brand-side-logo{
+    width:34px;
+    height:34px;
+    padding:3px;
   }
 
   .brand-title{
@@ -355,13 +418,17 @@ body::after{
 
   .form-panel{
     order:2;
-    margin-top:clamp(132px, 17vh, 158px);
+    align-self:stretch;
+    position:relative;
+    top:50px;
+    width:100%;
+    margin-block:auto;
     padding:20px 16px 16px;
     border-radius:18px;
     gap:16px;
     background:rgba(255, 255, 255, 0.95);
-    box-shadow:0 16px 34px rgba(15, 23, 42, 0.12);
-    border:1px solid rgba(15, 23, 42, 0.04);
+    box-shadow:0 16px 34px rgba(22, 54, 23, 0.12);
+    border:1px solid rgba(220, 231, 206, 0.9);
   }
 
   .form-head h2{
@@ -386,24 +453,24 @@ body::after{
   .form-control{
     min-height:48px;
     border-radius:12px;
-    background:#f7f9fc;
+    background:#f7faef;
   }
 
   .form-control:focus{
-    border-color:#2a7fd0;
-    box-shadow:0 0 0 4px rgba(42, 127, 208, 0.14);
+    border-color:var(--accent);
+    box-shadow:0 0 0 4px rgba(33, 111, 27, 0.14);
   }
 
   .btn-primary{
     min-height:50px;
     border-radius:12px;
-    background:linear-gradient(135deg, #1d6fd0, #2c96d6);
-    box-shadow:0 14px 28px rgba(29, 111, 208, 0.22);
+    background:linear-gradient(160deg, var(--accent-deep), var(--accent) 58%, var(--accent-bright));
+    box-shadow:0 14px 28px rgba(21, 79, 21, 0.22);
   }
 
   .login-footer{
     order:3;
-    margin-top:auto;
+    margin-top:0;
     padding:18px 10px 10px;
     font-size:0.72rem;
     line-height:1.45;
@@ -413,11 +480,24 @@ body::after{
 @media (max-width: 600px){
   .page{
     padding:16px 8px 18px;
+    background:
+      linear-gradient(180deg, #fbfcf8 0%, #f4f7ef 100%);
   }
 
   .login-shell{
-    max-width:332px;
-    min-height:calc(100vh - 34px);
+    width:min(100%, 380px);
+    max-width:100%;
+    min-height:calc(100svh - 34px);
+    min-height:calc(100dvh - 34px);
+    background:
+      linear-gradient(180deg, rgba(251, 252, 248, 0.98) 0%, rgba(244, 247, 239, 0.96) 100%);
+    box-shadow:0 14px 30px rgba(22, 54, 23, 0.08);
+  }
+
+  .form-panel{
+    width:100%;
+    max-width:100%;
+    margin-inline:auto;
   }
 }
 
@@ -427,8 +507,10 @@ body::after{
   }
 
   .login-shell{
+    width:min(100%, 360px);
     max-width:100%;
-    min-height:calc(100vh - 26px);
+    min-height:calc(100svh - 26px);
+    min-height:calc(100dvh - 26px);
     border-radius:18px;
     padding:7px;
   }
@@ -442,9 +524,15 @@ body::after{
     gap:8px;
   }
 
-  .brand-mark img{
+  .brand-main-logo,
+  .brand-side-logo{
     width:34px;
     height:34px;
+  }
+
+  .brand-side-logo{
+    width:32px;
+    height:32px;
   }
 
   .brand-title{
@@ -456,7 +544,7 @@ body::after{
   }
 
   .form-panel{
-    margin-top:118px;
+    margin-top:0;
     padding:18px 14px 14px;
     border-radius:16px;
   }

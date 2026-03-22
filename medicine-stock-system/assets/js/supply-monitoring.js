@@ -137,6 +137,7 @@
     const match = text(value).match(/(\d+)$/);
     return match ? Number(match[1]) : 0;
   };
+  const normalizeRequestRecordStatus = (value) => text(value).toLowerCase() === "archived" ? "archived" : "active";
 
   const normalizeRequest = (entry = {}) => {
     const requestDate = normalizeInputDate(entry.requestDate || entry.createdAt || todayInputValue());
@@ -159,6 +160,7 @@
       source: text(entry.source) || "City Health Office (CHO)",
       requestedBy: text(entry.requestedBy) || "Nurse-in-Charge",
       notes: text(entry.notes),
+      recordStatus: normalizeRequestRecordStatus(entry.recordStatus || entry.record_status),
       createdAt: text(entry.createdAt) || `${requestDate}T08:00:00`,
       updatedAt: text(entry.updatedAt) || nowIso()
     };
@@ -412,6 +414,7 @@
       const totalRemainingQuantity = sortedItems.reduce((total, item) => total + numeric(item.remainingQuantity), 0);
       const hasDelivery = deliveredItems > 0;
       const isComplete = itemCount > 0 && completedItems === itemCount;
+      const recordStatus = sortedItems.every((item) => normalizeRequestRecordStatus(item.recordStatus) === "archived") ? "archived" : "active";
       const completionDates = sortedItems.map((item) => item.completionDate).filter(Boolean).sort();
       const receivedDates = sortedItems.map((item) => item.lastReceivedDate).filter(Boolean).sort();
       const completionDate = completionDates.length ? completionDates[completionDates.length - 1] : "";
@@ -453,6 +456,7 @@
         source: base.source,
         requestedBy: base.requestedBy,
         notes: base.notes,
+        recordStatus,
         createdAt: base.createdAt,
         updatedAt: base.updatedAt,
         items: sortedItems,
@@ -549,7 +553,7 @@
   } = {}) => hydrateRequests(requests, movements, today).filter((row) => {
     const sameMedicine = (text(row.medicineId) && text(row.medicineId) === text(medicineId))
       || (!text(row.medicineId) && text(row.medicineName).toLowerCase() === text(medicineName).toLowerCase());
-    return sameMedicine && !row.isComplete;
+    return sameMedicine && !row.isComplete && normalizeRequestRecordStatus(row.recordStatus) !== "archived";
   });
 
   const setState = ({
@@ -582,6 +586,7 @@
     addDays,
     normalizeInputDate,
     diffDays,
+    normalizeRequestRecordStatus,
     normalizeRequest,
     prepareRequests,
     nextRequestCode,

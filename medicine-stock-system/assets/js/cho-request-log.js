@@ -83,6 +83,7 @@
   };
   const isMobile = () => window.matchMedia("(max-width: 992px)").matches;
   const requesterName = () => text(currentAuthUser?.fullName) || "Nurse-in-Charge";
+  const isActiveRequestGroup = (requestGroup) => text(requestGroup?.recordStatus).toLowerCase() !== "archived";
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
 
@@ -133,7 +134,9 @@
   const isActiveInventoryMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
   const activeInventoryMedicines = () => state.inventory.filter(isActiveInventoryMedicine);
 
-  const requestGroups = () => supplyMonitoring.hydrateRequestGroups(state.requests, state.movements);
+  const requestGroups = () => supplyMonitoring
+    .hydrateRequestGroups(state.requests, state.movements)
+    .filter(isActiveRequestGroup);
 
   const findInventoryMedicine = (medicineId) => state.inventory.find((entry) => text(entry.id) === text(medicineId)) || null;
 
@@ -287,6 +290,7 @@
   };
 
   let activeActionMenu = null;
+  const canDeleteRequestGroup = (requestGroup) => Boolean(requestGroup) && (!requestGroup.hasDelivery || requestGroup.isComplete);
 
   const renderActionMenu = (row) => {
     return `
@@ -325,6 +329,9 @@
           <span>Edit</span>
         </button>
       `);
+    }
+
+    if (canDeleteRequestGroup(requestGroup)) {
       menuItems.push(`
         <button type="button" class="request-action-item text-danger" data-action="delete" data-id="${esc(requestGroup.requestGroupId)}">
           <i class="bi bi-trash3"></i>
@@ -761,14 +768,16 @@
     const row = findRequestGroup(requestGroupId);
     if (!row) return;
 
-    if (row.hasDelivery) {
-      showNotice("This request already has linked deliveries and cannot be deleted.", "danger");
+    if (!canDeleteRequestGroup(row)) {
+      showNotice("Only pending or completed requests can be deleted from the request log.", "danger");
       return;
     }
 
     uiState.pendingDeleteGroupId = requestGroupId;
     if (refs.requestDeleteMessage) {
-      refs.requestDeleteMessage.textContent = `Delete ${row.requestCode || "this CHO request"} and all listed medicines?`;
+      refs.requestDeleteMessage.textContent = row.isComplete
+        ? `Remove ${row.requestCode || "this completed CHO request"} from the request log? Dashboard analytics history will stay available.`
+        : `Delete ${row.requestCode || "this CHO request"} and all listed medicines?`;
     }
     requestDeleteModal?.show();
   };
@@ -776,12 +785,29 @@
   const confirmDeleteRequest = async () => {
     const requestGroupId = text(uiState.pendingDeleteGroupId);
     if (!requestGroupId) return;
+    const row = findRequestGroup(requestGroupId);
+    if (!row) return;
 
     const snapshot = createRequestStateSnapshot();
-    state.requests = state.requests.filter((entry) => {
-      const normalized = supplyMonitoring.normalizeRequest(entry);
-      return text(normalized.requestGroupId) !== text(requestGroupId);
-    });
+    if (row.isComplete) {
+      state.requests = state.requests.map((entry) => {
+        const normalized = supplyMonitoring.normalizeRequest(entry);
+        if (text(normalized.requestGroupId) !== text(requestGroupId)) {
+          return normalized;
+        }
+
+        return {
+          ...normalized,
+          recordStatus: "archived",
+          updatedAt: supplyMonitoring.nowIso()
+        };
+      });
+    } else {
+      state.requests = state.requests.filter((entry) => {
+        const normalized = supplyMonitoring.normalizeRequest(entry);
+        return text(normalized.requestGroupId) !== text(requestGroupId);
+      });
+    }
 
     try {
       await persistRequestState();

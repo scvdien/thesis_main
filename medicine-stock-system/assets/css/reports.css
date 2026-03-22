@@ -1111,15 +1111,24 @@
     width:min(320px, calc(100vw - 24px));
   }
 
+  .reports-main,
+  .reports-workspace,
+  .report-workspace-top{
+    gap:12px;
+  }
+
   .report-panel{
     padding:16px 14px;
     border-radius:20px;
   }
 
   .report-actions-row{
+    justify-content:flex-start;
     flex-direction:column;
     align-items:stretch;
     gap:10px;
+    min-height:0;
+    height:auto;
   }
 
   .report-type-select-wrap{
@@ -1136,11 +1145,28 @@
     flex-direction:column;
     align-items:stretch;
     justify-content:flex-start;
+    align-content:flex-start;
+    gap:10px;
+    min-height:0;
+    height:auto;
   }
 
   .report-table,
   .report-preview-table{
     min-width:980px;
+  }
+
+  .report-table-shell{
+    max-height:min(38vh, 280px);
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-gutter:stable;
+  }
+
+  .report-table thead th,
+  .report-table tbody td{
+    padding:10px 12px;
   }
 
   .btn-report-action{
@@ -1162,5 +1188,108 @@
 
   .report-format-actions{
     grid-template-columns:1fr;
+  }
+
+  .report-history-head{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .report-history-count,
+  .report-record-count{
+    width:100%;
+    justify-content:flex-start;
+  }
+}
+
+@media (max-width: 576px){
+  .report-table,
+  .report-preview-table{
+    min-width:860px;
+  }
+
+  .report-table-shell{
+    max-height:min(34vh, 228px);
+  }
+
+  .report-preview-sheet{
+    padding:16px 14px;
+  }
+
+  .report-preview-sheet__header{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .report-notice-popup__inner{
+    padding:12px 14px;
+  }
+
+  .report-notice-popup__text{
+    font-size:0.82rem;
+  }
+
+  .report-empty{
+    padding:18px 12px;
+  }
+}
+
+@media (max-width: 768px){
+  .admin-dashboard-page .reports-workspace .report-workspace-top{
+    display:grid;
+    grid-template-columns:minmax(0, 1fr);
+    align-content:start;
+    gap:12px;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-actions-row{
+    display:grid !important;
+    grid-template-columns:minmax(0, 1fr);
+    align-content:start;
+    align-items:stretch;
+    justify-content:stretch;
+    gap:12px;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-actions-row > .report-type-select-wrap,
+  .admin-dashboard-page .reports-workspace .report-actions-row > .report-actions-side{
+    width:100%;
+    max-width:none;
+    min-width:0;
+    margin:0;
+    flex:none;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-actions-side{
+    display:grid !important;
+    grid-template-columns:minmax(0, 1fr);
+    align-content:start;
+    justify-items:stretch;
+    gap:10px;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-record-count,
+  .admin-dashboard-page .reports-workspace .btn-report-action{
+    width:100%;
+    margin:0;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-table-shell{
+    margin-top:0;
+  }
+}
+
+@media (max-width: 576px){
+  .admin-dashboard-page .reports-workspace .report-actions-row,
+  .admin-dashboard-page .reports-workspace .report-actions-side{
+    gap:10px;
+  }
+
+  .admin-dashboard-page .reports-workspace .report-table-shell{
+    max-height:min(30vh, 210px);
+  }
+
+  .admin-dashboard-page .reports-workspace .report-empty{
+    padding:16px 12px;
   }
 }

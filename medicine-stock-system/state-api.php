@@ -163,6 +163,11 @@ function mss_state_inventory_record_status(mixed $value): string
     return strtolower(mss_state_text($value)) === 'archived' ? 'archived' : 'active';
 }
 
+function mss_state_request_record_status(mixed $value): string
+{
+    return strtolower(mss_state_text($value)) === 'archived' ? 'archived' : 'active';
+}
+
 function mss_state_assert_unique_inventory_records(array $rows): void
 {
     $seen = [];
@@ -459,6 +464,7 @@ function mss_state_fetch_requests(PDO $pdo): array
             'source' => mss_state_text($row['source'] ?? ''),
             'requestedBy' => mss_state_text($row['requested_by'] ?? ''),
             'notes' => mss_state_text($row['notes'] ?? ''),
+            'recordStatus' => mss_state_request_record_status($row['record_status'] ?? 'active'),
             'createdAt' => str_replace(' ', 'T', mss_state_text($row['created_at'] ?? '')),
             'updatedAt' => str_replace(' ', 'T', mss_state_text($row['updated_at'] ?? '')),
         ];
@@ -482,7 +488,8 @@ function mss_state_fetch_notifications(PDO $pdo): array
             'source' => mss_state_text($row['source'] ?? ''),
             'recommendation' => mss_state_text($row['recommendation'] ?? ''),
             'signature' => mss_state_text($row['signature'] ?? ''),
-            'read' => mss_state_int($row['is_read'] ?? 0, 0, 0) === 1,
+            // Read state is tracked per signed-in user through client-state storage.
+            'read' => false,
             'createdAt' => str_replace(' ', 'T', mss_state_text($row['created_at'] ?? '')),
             'updatedAt' => str_replace(' ', 'T', mss_state_text($row['updated_at'] ?? '')),
         ];
@@ -536,25 +543,142 @@ function mss_state_fetch_report_history(PDO $pdo): array
     }, $rows);
 }
 
-function mss_state_fetch_client_state_value(PDO $pdo, string $key, array $default = []): array
+function mss_state_client_state_scope(PDO $pdo): string
 {
+    static $resolvedScope = null;
+    if (is_string($resolvedScope) && $resolvedScope !== '') {
+        return $resolvedScope;
+    }
+
+    $user = mss_auth_current_user($pdo);
+    if (is_array($user)) {
+        $userId = mss_state_text($user['id'] ?? '');
+        if ($userId !== '') {
+            $resolvedScope = 'user:' . $userId;
+            return $resolvedScope;
+        }
+
+        $username = strtolower(mss_state_text($user['username'] ?? ''));
+        if ($username !== '') {
+            $resolvedScope = 'username:' . $username;
+            return $resolvedScope;
+        }
+
+        $role = mss_auth_user_role($user);
+        if ($role !== '') {
+            $resolvedScope = 'role:' . $role;
+            return $resolvedScope;
+        }
+    }
+
+    $resolvedScope = 'global';
+    return $resolvedScope;
+}
+
+function mss_state_client_state_storage_key(PDO $pdo, string $key, bool $scoped = false): string
+{
+    $baseKey = mss_state_text($key);
+    if ($baseKey === '' || !$scoped) {
+        return $baseKey;
+    }
+
+    return $baseKey . '::' . mss_state_client_state_scope($pdo);
+}
+
+function mss_state_fetch_client_state_value_by_storage_key(PDO $pdo, string $storageKey): ?array
+{
+    $normalizedKey = mss_state_text($storageKey);
+    if ($normalizedKey === '') {
+        return null;
+    }
+
     $stmt = $pdo->prepare('SELECT `state_json` FROM `mss_client_state` WHERE `state_key` = :state_key LIMIT 1');
     $stmt->execute([
-        ':state_key' => $key,
+        ':state_key' => $normalizedKey,
     ]);
 
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
-        return $default;
+        return null;
     }
 
-    $decoded = mss_state_json_decode_array($row['state_json'] ?? '');
-    return $decoded === [] && $default !== [] ? $default : $decoded;
+    return mss_state_json_decode_array($row['state_json'] ?? '');
+}
+
+/**
+ * @return array<string, array<mixed>>
+ */
+function mss_state_fetch_client_state_values(PDO $pdo, string $key, bool $includeScoped = false): array
+{
+    $normalizedKey = mss_state_text($key);
+    if ($normalizedKey === '') {
+        return [];
+    }
+
+    if ($includeScoped) {
+        $stmt = $pdo->prepare(
+            'SELECT `state_key`, `state_json`
+             FROM `mss_client_state`
+             WHERE `state_key` = :state_key OR `state_key` LIKE :state_prefix'
+        );
+        $stmt->execute([
+            ':state_key' => $normalizedKey,
+            ':state_prefix' => $normalizedKey . '::%',
+        ]);
+    } else {
+        $stmt = $pdo->prepare(
+            'SELECT `state_key`, `state_json`
+             FROM `mss_client_state`
+             WHERE `state_key` = :state_key'
+        );
+        $stmt->execute([
+            ':state_key' => $normalizedKey,
+        ]);
+    }
+
+    $values = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $storageKey = mss_state_text($row['state_key'] ?? '');
+        if ($storageKey === '') {
+            continue;
+        }
+
+        $values[$storageKey] = mss_state_json_decode_array($row['state_json'] ?? '');
+    }
+
+    return $values;
+}
+
+function mss_state_fetch_client_state_value(
+    PDO $pdo,
+    string $key,
+    array $default = [],
+    bool $scoped = false,
+    bool $fallbackToLegacy = false
+): array {
+    $storageKeys = [];
+    if ($scoped) {
+        $storageKeys[] = mss_state_client_state_storage_key($pdo, $key, true);
+        if ($fallbackToLegacy) {
+            $storageKeys[] = mss_state_client_state_storage_key($pdo, $key, false);
+        }
+    } else {
+        $storageKeys[] = mss_state_client_state_storage_key($pdo, $key, false);
+    }
+
+    foreach (array_values(array_unique(array_filter($storageKeys))) as $storageKey) {
+        $decoded = mss_state_fetch_client_state_value_by_storage_key($pdo, $storageKey);
+        if ($decoded !== null) {
+            return $decoded;
+        }
+    }
+
+    return $default;
 }
 
 function mss_state_fetch_notification_preferences(PDO $pdo): array
 {
-    $stored = mss_state_fetch_client_state_value($pdo, 'notification_preferences');
+    $stored = mss_state_fetch_client_state_value($pdo, 'notification_preferences', [], true, true);
     $soundEnabled = filter_var($stored['soundEnabled'] ?? true, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
     $browserAlertsEnabled = filter_var($stored['browserAlertsEnabled'] ?? false, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
 
@@ -566,7 +690,7 @@ function mss_state_fetch_notification_preferences(PDO $pdo): array
 
 function mss_state_fetch_notification_popup_state(PDO $pdo): array
 {
-    $stored = mss_state_fetch_client_state_value($pdo, 'notification_popup_state');
+    $stored = mss_state_fetch_client_state_value($pdo, 'notification_popup_state', [], true);
     $popupState = [];
 
     foreach ($stored as $key => $value) {
@@ -584,7 +708,7 @@ function mss_state_fetch_notification_popup_state(PDO $pdo): array
 
 function mss_state_fetch_notification_dismissed_state(PDO $pdo): array
 {
-    $stored = mss_state_fetch_client_state_value($pdo, 'notification_dismissed_state');
+    $stored = mss_state_fetch_client_state_value($pdo, 'notification_dismissed_state', [], true);
     $dismissedState = [];
 
     foreach ($stored as $key => $value) {
@@ -602,7 +726,7 @@ function mss_state_fetch_notification_dismissed_state(PDO $pdo): array
 
 function mss_state_fetch_notification_read_state(PDO $pdo): array
 {
-    $stored = mss_state_fetch_client_state_value($pdo, 'notification_read_state');
+    $stored = mss_state_fetch_client_state_value($pdo, 'notification_read_state', [], true);
     $readState = [];
 
     foreach ($stored as $key => $value) {
@@ -687,17 +811,21 @@ function mss_state_purge_expired_resolved_notifications(PDO $pdo, ?int $retentio
     $deleteStmt = $pdo->prepare("DELETE FROM `mss_notifications` WHERE `id` IN ({$placeholders})");
     $deleteStmt->execute($notificationIdsToPurge);
 
-    $popupState = mss_state_fetch_notification_popup_state($pdo);
-    $dismissedState = mss_state_fetch_notification_dismissed_state($pdo);
-    $readState = mss_state_fetch_notification_read_state($pdo);
-
     foreach ($notificationIdsToPurge as $notificationId) {
-        unset($resolvedState[$notificationId], $popupState[$notificationId], $dismissedState[$notificationId], $readState[$notificationId]);
+        unset($resolvedState[$notificationId]);
     }
 
-    mss_state_replace_notification_popup_state($pdo, $popupState);
-    mss_state_replace_notification_dismissed_state($pdo, $dismissedState);
-    mss_state_replace_notification_read_state($pdo, $readState);
+    foreach (['notification_popup_state', 'notification_dismissed_state', 'notification_read_state'] as $stateKey) {
+        $storedValues = mss_state_fetch_client_state_values($pdo, $stateKey, true);
+        foreach ($storedValues as $storageKey => $storedValue) {
+            $nextValue = is_array($storedValue) ? $storedValue : [];
+            foreach ($notificationIdsToPurge as $notificationId) {
+                unset($nextValue[$notificationId]);
+            }
+            mss_state_replace_client_state_value_by_storage_key($pdo, $storageKey, $nextValue);
+        }
+    }
+
     mss_state_replace_notification_resolved_state($pdo, $resolvedState);
 }
 
@@ -819,6 +947,36 @@ function mss_state_replace_sessions(PDO $pdo, array $rows): void
 
 function mss_state_replace_logs(PDO $pdo, array $rows): void
 {
+    $mergedRows = [];
+    $seen = [];
+
+    foreach (array_merge($rows, mss_state_fetch_logs($pdo)) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $id = mss_state_text($row['id'] ?? '');
+        if ($id === '') {
+            $id = mss_state_uid('log');
+            $row['id'] = $id;
+        }
+
+        if (isset($seen[$id])) {
+            continue;
+        }
+
+        $seen[$id] = true;
+        $mergedRows[] = $row;
+    }
+
+    usort($mergedRows, static function (array $left, array $right): int {
+        $leftTimestamp = strtotime((string) ($left['createdAt'] ?? $left['created_at'] ?? '')) ?: 0;
+        $rightTimestamp = strtotime((string) ($right['createdAt'] ?? $right['created_at'] ?? '')) ?: 0;
+        return $rightTimestamp <=> $leftTimestamp;
+    });
+
+    $rows = array_slice($mergedRows, 0, 250);
+
     $pdo->exec('DELETE FROM `mss_activity_logs`');
 
     if ($rows === []) {
@@ -988,9 +1146,9 @@ function mss_state_replace_requests(PDO $pdo, array $rows): void
 
     $stmt = $pdo->prepare(
         'INSERT INTO `mss_cho_requests`
-            (`id`, `request_group_id`, `request_code`, `medicine_id`, `medicine_name`, `generic_name`, `strength`, `unit`, `quantity_requested`, `request_date`, `expected_date`, `source`, `requested_by`, `notes`, `created_at`, `updated_at`)
+            (`id`, `request_group_id`, `request_code`, `medicine_id`, `medicine_name`, `generic_name`, `strength`, `unit`, `quantity_requested`, `request_date`, `expected_date`, `source`, `requested_by`, `notes`, `record_status`, `created_at`, `updated_at`)
          VALUES
-            (:id, :request_group_id, :request_code, :medicine_id, :medicine_name, :generic_name, :strength, :unit, :quantity_requested, :request_date, :expected_date, :source, :requested_by, :notes, :created_at, :updated_at)'
+            (:id, :request_group_id, :request_code, :medicine_id, :medicine_name, :generic_name, :strength, :unit, :quantity_requested, :request_date, :expected_date, :source, :requested_by, :notes, :record_status, :created_at, :updated_at)'
     );
 
     foreach ($rows as $row) {
@@ -1016,6 +1174,7 @@ function mss_state_replace_requests(PDO $pdo, array $rows): void
             ':source' => mss_state_text($row['source'] ?? 'City Health Office (CHO)') ?: 'City Health Office (CHO)',
             ':requested_by' => mss_state_text($row['requestedBy'] ?? $row['requested_by'] ?? 'Nurse-in-Charge') ?: 'Nurse-in-Charge',
             ':notes' => mss_state_text($row['notes'] ?? ''),
+            ':record_status' => mss_state_request_record_status($row['recordStatus'] ?? $row['record_status'] ?? 'active'),
             ':created_at' => $createdAt,
             ':updated_at' => mss_state_datetime($row['updatedAt'] ?? $row['updated_at'] ?? '', $createdAt),
         ]);
@@ -1053,7 +1212,8 @@ function mss_state_replace_notifications(PDO $pdo, array $rows): void
             ':source' => mss_state_text($row['source'] ?? 'Inventory Analytics') ?: 'Inventory Analytics',
             ':recommendation' => mss_state_text($row['recommendation'] ?? 'Review the medicine notification.') ?: 'Review the medicine notification.',
             ':signature' => mss_state_text($row['signature'] ?? ''),
-            ':is_read' => !empty($row['read']) ? 1 : 0,
+            // Persist shared notification records only. Per-user read state is stored separately.
+            ':is_read' => 0,
             ':created_at' => $createdAt,
             ':updated_at' => mss_state_datetime($row['updatedAt'] ?? $row['updated_at'] ?? '', $createdAt),
         ]);
@@ -1108,8 +1268,13 @@ function mss_state_replace_report_history(PDO $pdo, array $rows): void
     }
 }
 
-function mss_state_replace_client_state_value(PDO $pdo, string $key, array $value): void
+function mss_state_replace_client_state_value_by_storage_key(PDO $pdo, string $storageKey, array $value): void
 {
+    $normalizedKey = mss_state_text($storageKey);
+    if ($normalizedKey === '') {
+        return;
+    }
+
     $stmt = $pdo->prepare(
         'INSERT INTO `mss_client_state` (`state_key`, `state_json`, `updated_at`)
          VALUES (:state_key, :state_json, :updated_at)
@@ -1119,10 +1284,19 @@ function mss_state_replace_client_state_value(PDO $pdo, string $key, array $valu
     );
 
     $stmt->execute([
-        ':state_key' => $key,
+        ':state_key' => $normalizedKey,
         ':state_json' => mss_state_json_encode($value, '{}'),
         ':updated_at' => date('Y-m-d H:i:s'),
     ]);
+}
+
+function mss_state_replace_client_state_value(PDO $pdo, string $key, array $value, bool $scoped = false): void
+{
+    mss_state_replace_client_state_value_by_storage_key(
+        $pdo,
+        mss_state_client_state_storage_key($pdo, $key, $scoped),
+        $value
+    );
 }
 
 function mss_state_replace_notification_preferences(PDO $pdo, array $value): void
@@ -1133,7 +1307,7 @@ function mss_state_replace_notification_preferences(PDO $pdo, array $value): voi
     mss_state_replace_client_state_value($pdo, 'notification_preferences', [
         'soundEnabled' => $soundEnabled === null ? true : $soundEnabled,
         'browserAlertsEnabled' => $browserAlertsEnabled === null ? false : $browserAlertsEnabled,
-    ]);
+    ], true);
 }
 
 function mss_state_replace_notification_popup_state(PDO $pdo, array $value): void
@@ -1150,7 +1324,7 @@ function mss_state_replace_notification_popup_state(PDO $pdo, array $value): voi
         $popupState[$stateKey] = $stateSignature;
     }
 
-    mss_state_replace_client_state_value($pdo, 'notification_popup_state', $popupState);
+    mss_state_replace_client_state_value($pdo, 'notification_popup_state', $popupState, true);
 }
 
 function mss_state_replace_notification_dismissed_state(PDO $pdo, array $value): void
@@ -1167,7 +1341,7 @@ function mss_state_replace_notification_dismissed_state(PDO $pdo, array $value):
         $dismissedState[$stateKey] = $stateSignature;
     }
 
-    mss_state_replace_client_state_value($pdo, 'notification_dismissed_state', $dismissedState);
+    mss_state_replace_client_state_value($pdo, 'notification_dismissed_state', $dismissedState, true);
 }
 
 function mss_state_replace_notification_read_state(PDO $pdo, array $value): void
@@ -1184,7 +1358,7 @@ function mss_state_replace_notification_read_state(PDO $pdo, array $value): void
         $readState[$stateKey] = $stateSignature;
     }
 
-    mss_state_replace_client_state_value($pdo, 'notification_read_state', $readState);
+    mss_state_replace_client_state_value($pdo, 'notification_read_state', $readState, true);
 }
 
 function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): void

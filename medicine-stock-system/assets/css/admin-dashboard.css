@@ -3552,9 +3552,13 @@ footer.footer{
   }
 
   .supply-request-list{
-    max-height:none;
-    overflow:visible;
-    padding-right:0;
+    max-height:min(46vh, 280px);
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding-right:2px;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-gutter:stable;
   }
 
   .supply-chart-wrap{
@@ -4803,6 +4807,12 @@ body{
   .supply-reliability-card__top{
     flex-direction:column;
     align-items:flex-start;
+  }
+}
+
+@media (max-width:576px){
+  .supply-request-list{
+    max-height:min(42vh, 240px);
   }
 }
 
@@ -6356,4 +6366,93 @@ body{
   background:#ffffff;
   border-color:#d9e6dd;
   color:#23482f;
+}
+
+@media (max-width: 992px){
+  #content-area{
+    min-width:0;
+  }
+
+  .topbar > *,
+  .topbar .d-flex,
+  .page-intro{
+    min-width:0;
+  }
+
+  .topbar .d-flex{
+    flex-wrap:wrap;
+  }
+
+  .page-intro h4{
+    overflow-wrap:anywhere;
+  }
+}
+
+@media (max-width: 768px){
+  #main{
+    padding:16px 12px 24px;
+  }
+
+  .topbar{
+    align-items:center;
+    gap:10px;
+    padding:12px 14px;
+  }
+
+  .topbar .d-flex{
+    width:100%;
+    gap:12px !important;
+    align-items:center !important;
+  }
+
+  .page-intro{
+    flex:1 1 180px;
+    justify-content:center;
+    min-height:40px;
+  }
+
+  .page-intro h4{
+    font-size:clamp(1.08rem, 4vw, 1.24rem);
+    line-height:1.28;
+  }
+
+  .footer,
+  footer.footer{
+    padding:0 12px 18px;
+    font-size:0.82rem;
+    line-height:1.5;
+  }
+}
+
+@media (max-width: 576px){
+  #sidebar,
+  #sidebar.collapsed{
+    width:min(92vw, 300px);
+  }
+
+  .menu a{
+    padding:10px 11px;
+  }
+
+  .brand-title{
+    font-size:0.9rem;
+  }
+}
+
+@media (max-width: 768px){
+  .supply-request-list{
+    max-height:min(46vh, 280px);
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding-right:2px;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-gutter:stable;
+  }
+}
+
+@media (max-width: 576px){
+  .supply-request-list{
+    max-height:min(42vh, 240px);
+  }
 }

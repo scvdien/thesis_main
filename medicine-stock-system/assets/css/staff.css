@@ -2408,6 +2408,14 @@ html.staff-section-booting[data-staff-initial-section="my-settings"] .admin-dash
 }
 
 @media (max-width: 767px){
+  .staff-main .topbar .d-flex{
+    width:100%;
+    min-width:0;
+    flex-wrap:wrap;
+    gap:12px !important;
+    align-items:flex-start !important;
+  }
+
   .staff-account-btn--dashboard{
     grid-template-columns:auto minmax(0, 1fr);
     align-items:start;
@@ -2543,5 +2551,70 @@ html.staff-section-booting[data-staff-initial-section="my-settings"] .admin-dash
   .staff-selected-resident__use-btn{
     width:100%;
     min-width:0;
+  }
+
+  .staff-resident-form-dialog{
+    max-width:min(100vw - 1rem, 860px);
+    margin:0.5rem auto;
+  }
+
+  .staff-resident-modal,
+  .staff-credentials-modal{
+    border-radius:22px;
+    max-height:min(88vh, 860px);
+  }
+
+  .staff-resident-modal .modal-header{
+    padding:18px 18px 0;
+  }
+
+  .staff-resident-modal .modal-body{
+    padding:0 18px 18px;
+  }
+
+  .staff-credentials-modal .card-shell{
+    padding:16px 14px;
+  }
+
+  .staff-account-mode{
+    width:100%;
+    min-width:0;
+    padding-inline:12px;
+    text-align:center;
+  }
+
+  .staff-account-pane__copy,
+  .staff-selected-resident__copy,
+  .staff-notification-modal__title{
+    overflow-wrap:anywhere;
+  }
+
+  .staff-notification-modal__actions{
+    width:100%;
+    justify-content:stretch;
+  }
+
+  .staff-notification-modal__actions .btn{
+    width:100%;
+  }
+}
+
+@media (max-width: 576px){
+  .staff-panel{
+    padding:16px 14px;
+    border-radius:20px;
+  }
+
+  .staff-dashboard-profile{
+    padding:12px;
+  }
+
+  .staff-account-btn--dashboard{
+    padding:12px 14px;
+  }
+
+  .staff-resident-modal,
+  .staff-credentials-modal{
+    border-radius:18px;
   }
 }

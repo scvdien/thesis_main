@@ -212,6 +212,65 @@
     if (direct) return direct;
     return usageMap.get(keyOf(medicine.name)) || { quantity: 0, count: 0 };
   };
+  const analyticsDemandWindowDays = 14;
+  const projectedCoverDays = (stockOnHand, recentQuantity, windowDays = analyticsDemandWindowDays) => {
+    const safeStock = Math.max(0, numeric(stockOnHand));
+    const safeQuantity = Math.max(0, numeric(recentQuantity));
+    if (safeStock <= 0) return 0;
+    if (safeQuantity <= 0 || windowDays <= 0) return Number.POSITIVE_INFINITY;
+    return safeStock / (safeQuantity / windowDays);
+  };
+  const buildStatusAnalyticsNotification = ({ medicineKey, label, stock, reorderLevel, unit, recentQuantity }) => {
+    const safeStock = Math.max(0, numeric(stock));
+    const safeReorderLevel = Math.max(1, Math.round(numeric(reorderLevel) || 1));
+    const safeRecentQuantity = Math.max(0, Math.round(numeric(recentQuantity)));
+    const coverDays = projectedCoverDays(safeStock, safeRecentQuantity);
+    const roundedCoverDays = Number.isFinite(coverDays) ? Math.max(1, Math.ceil(coverDays)) : 0;
+
+    if (safeStock <= 0) {
+      return {
+        id: `status-${medicineKey}`,
+        category: "Medicine Status",
+        priority: safeRecentQuantity >= Math.max(20, Math.round(safeReorderLevel * 0.35)) ? "critical" : "high",
+        title: `${label} is out of stock`,
+        body: safeRecentQuantity > 0
+          ? `${quantityLabel(safeRecentQuantity, unit)} released in the last ${analyticsDemandWindowDays} days. Remaining stock can no longer cover current demand.`
+          : `Current stock is 0 ${unit}. Review expected demand and replenish immediately.`,
+        source: "Data Analytics",
+        recommendation: safeRecentQuantity > 0
+          ? "Prioritize replenishment because recent release activity shows active demand."
+          : "Restock and verify expected patient demand before the next release cycle."
+      };
+    }
+
+    if (safeRecentQuantity > 0 && coverDays <= 30) {
+      return {
+        id: `status-${medicineKey}`,
+        category: "Medicine Status",
+        priority: coverDays <= 7 ? "critical" : coverDays <= 14 ? "high" : "medium",
+        title: `${label} is low in stock`,
+        body: `${quantityLabel(safeRecentQuantity, unit)} released in the last ${analyticsDemandWindowDays} days. Remaining stock may last about ${pluralize(roundedCoverDays, "day")} at the current demand rate.`,
+        source: "Data Analytics",
+        recommendation: coverDays <= 14
+          ? "Prepare replenishment now to avoid stockout under the current demand trend."
+          : "Review reorder timing because current stock cover is below one month."
+      };
+    }
+
+    if (safeStock <= safeReorderLevel) {
+      return {
+        id: `status-${medicineKey}`,
+        category: "Medicine Status",
+        priority: safeStock <= Math.max(5, Math.round(safeReorderLevel * 0.5)) ? "high" : "medium",
+        title: `${label} is low in stock`,
+        body: `${quantityLabel(safeStock, unit)} remaining, below the safety stock level. No recent dispense was recorded in the last ${analyticsDemandWindowDays} days, so monitor upcoming demand.`,
+        source: "Stock Balance Analytics",
+        recommendation: "Review whether this medicine should be replenished now or monitored based on expected demand."
+      };
+    }
+
+    return null;
+  };
 
   const normalizeNotification = (entry = {}) => {
     const category = text(entry.category) || "Medicine Status";
@@ -299,6 +358,16 @@
     return nextReadState;
   };
 
+  const applyReadStateToNotifications = (notifications = [], readState = {}) => (
+    notifications.map((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (!normalized.resolved) {
+        normalized.read = text(readState[normalized.id]) === text(normalized.signature);
+      }
+      return normalized;
+    })
+  );
+
   const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
     const nextResolvedState = { ...currentResolvedState };
     notifications.forEach((notification) => {
@@ -360,7 +429,7 @@
         : state.notificationReadState,
       hydratedNotifications
     );
-    state.notifications = hydratedNotifications;
+    state.notifications = applyReadStateToNotifications(hydratedNotifications, state.notificationReadState);
   };
 
   const persistStateToServer = async (nextState, { keepalive = false } = {}) => {
@@ -429,22 +498,7 @@
     }));
     const inventory = readInventory();
     const movements = readMovements();
-    const recentCutoff = Date.now() - (14 * 86400000);
-    const demandMap = new Map();
-
-    movements.forEach((movement) => {
-      if (movement.actionType !== "dispense") return;
-      const createdAt = new Date(movement.createdAt).getTime();
-      if (Number.isNaN(createdAt) || createdAt < recentCutoff) return;
-
-      const keys = [text(movement.medicineId), keyOf(movement.medicineName)].filter(Boolean);
-      keys.forEach((key) => {
-        const entry = demandMap.get(key) || { count: 0, quantity: 0 };
-        entry.count += 1;
-        entry.quantity += movement.quantity;
-        demandMap.set(key, entry);
-      });
-    });
+    const usageMap = buildUsageMap(movements, analyticsDemandWindowDays);
 
     const notifications = [];
     const activeIds = new Set();
@@ -478,30 +532,29 @@
       const reorderLevel = Math.max(1, numeric(medicine.reorderLevel));
       const unit = text(medicine.unit) || "units";
       const expiryDays = daysUntil(medicine.expiryDate);
-      const demand = demandMap.get(medicineKey) || demandMap.get(keyOf(medicine.name)) || { count: 0, quantity: 0 };
+      const demand = usageForMedicine(usageMap, medicine);
+      const coverDays = projectedCoverDays(stock, demand.quantity);
+      const statusNotification = buildStatusAnalyticsNotification({
+        medicineKey,
+        label,
+        stock,
+        reorderLevel,
+        unit,
+        recentQuantity: demand.quantity
+      });
 
-      if (stock <= reorderLevel) {
-        const isOut = stock <= 0;
-        pushNotification({
-          id: `status-${medicineKey}`,
-          category: "Medicine Status",
-          priority: isOut ? "critical" : stock <= Math.max(5, Math.round(reorderLevel * 0.5)) ? "high" : "medium",
-          title: isOut ? `${label} is out of stock` : `${label} is low in stock`,
-          body: isOut ? `Stock is 0 ${unit}. Reorder immediately.` : `${quantityLabel(stock, unit)} remaining. Reorder soon.`,
-          source: "Inventory Analytics",
-          recommendation: isOut
-            ? "Prepare an urgent restock request and confirm supplier lead time."
-            : "Review stock balance and reorder before the medicine runs out."
-        });
+      if (statusNotification) {
+        pushNotification(statusNotification);
       }
 
-      if (demand.quantity >= Math.max(20, Math.round(reorderLevel * 0.35)) && stock <= Math.round(reorderLevel * 1.4)) {
+      if (demand.quantity >= Math.max(20, Math.round(reorderLevel * 0.35)) && coverDays > 30) {
+        const usageCount = Math.max(1, Math.round(numeric(demand.count)));
         pushNotification({
           id: `trend-${medicineKey}`,
           category: "Medicine Status",
-          priority: stock <= reorderLevel ? "high" : "medium",
+          priority: coverDays <= 45 ? "high" : "medium",
           title: `${label} shows high usage trend`,
-          body: `${quantityLabel(demand.quantity, unit)} released in recent transactions.`,
+          body: `${quantityLabel(demand.quantity, unit)} released in the last ${analyticsDemandWindowDays} days across ${pluralize(usageCount, "transaction")}. Current stock cover is about ${pluralize(Math.max(1, Math.ceil(coverDays)), "day")}.`,
           source: "Data Analytics",
           recommendation: "Monitor movement trends and consider early replenishment."
         });
@@ -1018,6 +1071,7 @@
       state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
       state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
     }
+    state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
   });
 
   document.addEventListener("visibilitychange", () => {

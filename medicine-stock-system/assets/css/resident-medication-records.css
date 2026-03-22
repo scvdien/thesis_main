@@ -416,4 +416,58 @@
   .records-count-chip{
     min-width:110px;
   }
+
+  .records-toolbar__controls{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:10px;
+  }
+
+  .records-select,
+  .records-count-chip{
+    width:100%;
+  }
+
+  .records-count-chip{
+    min-width:0;
+    justify-content:flex-start;
+  }
+
+  .records-card__head{
+    padding:14px 16px 12px;
+  }
+
+  .resident-list__item{
+    padding:14px;
+  }
+
+  .record-history__head{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .record-detail__submeta{
+    overflow-wrap:anywhere;
+  }
+
+  .record-history-modal .modal-header,
+  .record-history-modal .modal-body{
+    padding-left:16px;
+    padding-right:16px;
+  }
+
+  .record-history-modal .modal-header{
+    padding-top:16px;
+  }
+}
+
+@media (max-width: 576px){
+  .record-history__table{
+    min-width:560px;
+  }
+
+  .record-history__table th,
+  .record-history__table td{
+    padding:11px 14px;
+  }
 }

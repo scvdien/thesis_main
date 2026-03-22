@@ -2,7 +2,9 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = mss_page_require_auth(['admin']);
+$adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $settingsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/settings.css');
+$systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
 ?><!doctype html>
 <html lang="en">
@@ -25,9 +27,9 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="assets/css/admin-dashboard.css">
+  <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/settings.css?v=<?= urlencode($settingsCssVersion) ?>">
-  <link rel="stylesheet" href="assets/css/system-notifications.css">
+  <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page">
   <div id="wrapper">
@@ -162,7 +164,7 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
               <form id="createAccountForm" class="account-form-grid" autocomplete="off">
                 <div>
                   <label for="accountFullName" class="form-label">Full Name</label>
-                  <input type="text" id="accountFullName" class="form-control" placeholder="Maria L. Santos" required>
+                  <input type="text" id="accountFullName" class="form-control" placeholder="Enter full name" required>
                 </div>
                 <div>
                   <label for="accountRoleDisplay" class="form-label">Role</label>
@@ -171,19 +173,19 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
                 </div>
                 <div>
                   <label for="accountUsername" class="form-label">Username</label>
-                  <input type="text" id="accountUsername" class="form-control" placeholder="maria.santos" required>
+                  <input type="text" id="accountUsername" class="form-control" placeholder="Enter username" required>
                 </div>
                 <div>
                   <label for="accountPassword" class="form-label">Password</label>
-                  <input type="password" id="accountPassword" class="form-control" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
+                  <input type="password" id="accountPassword" class="form-control" placeholder="Enter password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
                 </div>
                 <div>
                   <label for="accountContact" class="form-label">Contact Number</label>
-                  <input type="text" id="accountContact" class="form-control" placeholder="09XX-XXX-XXXX" required>
+                  <input type="text" id="accountContact" class="form-control" placeholder="Enter contact number" required>
                 </div>
                 <div>
                   <label for="accountConfirmPassword" class="form-label">Confirm Password</label>
-                  <input type="password" id="accountConfirmPassword" class="form-control" placeholder="Re-enter password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
+                  <input type="password" id="accountConfirmPassword" class="form-control" placeholder="Confirm password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
                 </div>
                 <input type="hidden" id="accountType" value="BHW">
                 <div class="account-form-actions">
@@ -353,15 +355,15 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
             </div>
             <div>
               <label for="resetUsername" class="form-label small">Temporary Username</label>
-              <input type="text" id="resetUsername" class="form-control" placeholder="maria.santos" required>
+              <input type="text" id="resetUsername" class="form-control" placeholder="Enter username" required>
             </div>
             <div>
               <label for="newPassword" class="form-label small">Temporary Password</label>
-              <input type="password" id="newPassword" class="form-control" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
+              <input type="password" id="newPassword" class="form-control" placeholder="Enter password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
             </div>
             <div class="settings-form-full">
               <label for="confirmNewPassword" class="form-label small">Confirm Temporary Password</label>
-              <input type="password" id="confirmNewPassword" class="form-control" placeholder="Re-type temporary password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
+              <input type="password" id="confirmNewPassword" class="form-control" placeholder="Confirm password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character." required>
             </div>
           </div>
           <div class="small text-muted mt-3" id="resetCredentialsNotice">Temporary credentials are never shown again after this reset.</div>

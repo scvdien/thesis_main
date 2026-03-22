@@ -14,7 +14,7 @@
   const NOTIFICATION_STORAGE = "mss_notifications_v2";
   const STAFF_NOTIFICATION_HIDDEN_STORAGE_PREFIX = "mss_staff_hidden_notifications_v1";
 
-  const HOUSEHOLD_RESIDENT_API = "../household-system/registration-sync.php";
+  const HOUSEHOLD_RESIDENT_API = "household-residents-api.php";
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -139,10 +139,12 @@
     inventory: [],
     movements: [],
     residentAccounts: [],
+    householdResidents: [],
     users: [],
     sessions: [],
     activityLogs: [],
     notifications: [],
+    notificationReadState: {},
     notificationResolvedState: {},
     residentSearch: "",
     patientProfileSearch: "",
@@ -155,7 +157,8 @@
     residentFormMode: "cabarian",
     residentCabarianSearch: "",
     householdResidentsLoaded: false,
-    householdResidentsSyncing: false
+    householdResidentsSyncing: false,
+    householdResidentsError: ""
   };
   const staffNotificationUiState = {
     viewFilter: staffNotificationViewButtons.length ? "active" : "all",
@@ -338,6 +341,28 @@
     return resolvedState;
   };
 
+  const normalizeReadState = (entry = {}) => {
+    const readState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const notificationId = text(key);
+      const signature = text(value);
+      if (!notificationId || !signature) return;
+      readState[notificationId] = signature;
+    });
+    return readState;
+  };
+
+  const mergeReadStateWithNotifications = (currentReadState = {}, notifications = []) => {
+    const nextReadState = { ...normalizeReadState(currentReadState) };
+    notifications.forEach((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (!normalized.resolved && normalized.read && normalized.id && normalized.signature) {
+        nextReadState[normalized.id] = normalized.signature;
+      }
+    });
+    return nextReadState;
+  };
+
   const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
     const nextResolvedState = { ...normalizeResolvedState(currentResolvedState) };
     notifications.forEach((notification) => {
@@ -360,6 +385,16 @@
         normalized.resolvedAt = text(resolvedEntry.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso();
       } else if (!normalized.resolved) {
         normalized.resolvedAt = "";
+      }
+      return normalized;
+    })
+  );
+
+  const applyReadStateToNotifications = (notifications = [], readState = {}) => (
+    notifications.map((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (!normalized.resolved) {
+        normalized.read = text(readState[normalized.id]) === text(normalized.signature);
       }
       return normalized;
     })
@@ -489,6 +524,16 @@
     matchesStaffNotificationView(notification) && matchesStaffNotificationType(notification)
   ));
 
+  const dispatchStaffNotificationStateUpdate = () => {
+    window.dispatchEvent(new CustomEvent("mss:notifications-state-updated", {
+      detail: {
+        notifications: state.notifications.map(normalizeNotification),
+        notificationReadState: { ...state.notificationReadState },
+        notificationResolvedState: { ...state.notificationResolvedState }
+      }
+    }));
+  };
+
   const syncStaffNotificationFilterButtons = (buttons, dataKey, activeValue) => {
     buttons.forEach((button) => {
       const isActive = text(button.dataset[dataKey]) === activeValue;
@@ -497,7 +542,7 @@
     });
   };
 
-  const updateStoredNotification = (id, updater) => {
+  const updateStoredNotification = (id, updater, { persist = true } = {}) => {
     const nextItems = state.notifications.map((entry) => normalizeNotification(entry));
     const targetIndex = nextItems.findIndex((entry) => text(entry.id) === text(id));
     if (targetIndex < 0) return null;
@@ -507,8 +552,30 @@
     draft.updatedAt = nowIso();
     nextItems[targetIndex] = normalizeNotification(draft);
     state.notifications = nextItems;
-    void persistStaffState({ showSyncError: false });
+    if (persist) {
+      void persistStaffState({ showSyncError: false });
+    }
     return nextItems[targetIndex];
+  };
+
+  const markStaffNotificationRead = (notification) => {
+    if (!notification || notification.read) return notification;
+
+    const updated = updateStoredNotification(notification.id, (entry) => {
+      entry.read = true;
+    }, { persist: false });
+    if (!updated) return null;
+
+    if (!updated.resolved) {
+      state.notificationReadState = {
+        ...state.notificationReadState,
+        [updated.id]: updated.signature
+      };
+    }
+    state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
+    dispatchStaffNotificationStateUpdate();
+    void persistStaffState({ showSyncError: false });
+    return state.notifications.find((entry) => text(entry.id) === text(updated.id)) || updated;
   };
 
   const openStaffNotificationCenter = () => {
@@ -761,6 +828,12 @@
     const incomingNotifications = Array.isArray(serverState.notifications)
       ? serverState.notifications.map(normalizeNotification)
       : null;
+    const nextReadState = mergeReadStateWithNotifications(
+      serverState.notificationReadState && typeof serverState.notificationReadState === "object"
+        ? normalizeReadState(serverState.notificationReadState)
+        : state.notificationReadState,
+      incomingNotifications || state.notifications
+    );
     const nextResolvedState = mergeResolvedStateWithNotifications(
       serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
         ? normalizeResolvedState(serverState.notificationResolvedState)
@@ -781,14 +854,22 @@
         .slice(0, 60);
     }
     if (incomingNotifications) {
+      state.notificationReadState = nextReadState;
       state.notificationResolvedState = nextResolvedState;
-      state.notifications = applyResolvedStateToNotifications(
-        incomingNotifications,
-        state.notificationResolvedState
+      state.notifications = applyReadStateToNotifications(
+        applyResolvedStateToNotifications(
+          incomingNotifications,
+          state.notificationResolvedState
+        ),
+        state.notificationReadState
       );
     } else if (nextResolvedState && typeof nextResolvedState === "object") {
+      state.notificationReadState = nextReadState;
       state.notificationResolvedState = nextResolvedState;
-      state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
+      state.notifications = applyReadStateToNotifications(
+        applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState),
+        state.notificationReadState
+      );
     }
   };
   const roleName = (value) => keyOf(value) === "staff" ? "Staff" : "BHW";
@@ -1082,8 +1163,8 @@
     province: text(entry.province) || "Albay",
     address: text(entry.address),
     source: text(entry.source) || "medicine-system",
-    lastDispensedAt: text(entry.lastDispensedAt),
-    lastDispensedMedicine: text(entry.lastDispensedMedicine)
+    lastDispensedAt: text(entry.lastDispensedAt || entry.last_dispensed_at),
+    lastDispensedMedicine: text(entry.lastDispensedMedicine || entry.last_dispensed_medicine)
   });
 
   const loadCachedState = () => ({
@@ -1093,7 +1174,8 @@
     users: getStoredUsers(),
     sessions: getStoredSessions(),
     activityLogs: readList(ACTIVITY_LOG_STORAGE),
-    notifications: getStoredNotifications()
+    notifications: getStoredNotifications(),
+    notificationReadState: { ...state.notificationReadState }
   });
 
   const syncStateFromServer = (serverState = {}) => {
@@ -1117,6 +1199,7 @@
     sessions: cloneEntries(state.sessions),
     activityLogs: cloneEntries(state.activityLogs),
     notifications: cloneEntries(state.notifications),
+    notificationReadState: { ...state.notificationReadState },
     notificationResolvedState: { ...state.notificationResolvedState }
   });
 
@@ -1128,13 +1211,20 @@
     state.users = snapshot.users.map(normalizeModuleUser);
     state.sessions = [...snapshot.sessions].sort((left, right) => parseTimestamp(right.lastSeenAt) - parseTimestamp(left.lastSeenAt));
     state.activityLogs = cloneEntries(snapshot.activityLogs);
+    state.notificationReadState = mergeReadStateWithNotifications(
+      snapshot.notificationReadState,
+      snapshot.notifications
+    );
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
       snapshot.notificationResolvedState,
       snapshot.notifications
     );
-    state.notifications = applyResolvedStateToNotifications(
-      snapshot.notifications.map(normalizeNotification),
-      state.notificationResolvedState
+    state.notifications = applyReadStateToNotifications(
+      applyResolvedStateToNotifications(
+        snapshot.notifications.map(normalizeNotification),
+        state.notificationResolvedState
+      ),
+      state.notificationReadState
     );
     saveState();
   };
@@ -1156,7 +1246,9 @@
             users: state.users,
             sessions: state.sessions,
             logs: state.activityLogs,
-            notifications: state.notifications
+            notifications: state.notifications,
+            notificationReadState: state.notificationReadState,
+            notificationResolvedState: state.notificationResolvedState
           }
         })
       });
@@ -1200,6 +1292,7 @@
           state.sessions = cachedState.sessions;
           state.activityLogs = cachedState.activityLogs;
           state.notifications = cachedState.notifications;
+          state.notificationReadState = cachedState.notificationReadState || {};
           saveState();
           showNotice("Unable to refresh backend staff data right now. Showing the last synced records on this page.", "warning");
           return;
@@ -1289,6 +1382,45 @@
       lastReleaseAt: text(lastMovement?.createdAt) || text(resident?.lastDispensedAt),
       status: getResidentStatusMeta({ totalReleases: history.length, lastMovement })
     };
+  };
+  const isVisiblePatientAccount = (resident, stats = getResidentStats(resident)) => (
+    text(resident?.source).toLowerCase() !== "household-system" || stats.totalReleases > 0
+  );
+  const residentSourceLabel = (resident) => text(resident?.source).toLowerCase().startsWith("household")
+    ? "Household"
+    : "Manual";
+  const migrateLegacyHouseholdPatientAccounts = () => {
+    let changed = false;
+
+    state.residentAccounts = state.residentAccounts.reduce((carry, resident) => {
+      const source = text(resident?.source).toLowerCase();
+      if (source !== "household-system") {
+        carry.push(resident);
+        return carry;
+      }
+
+      const stats = getResidentStats(resident);
+      const shouldKeep = stats.totalReleases > 0 || Boolean(text(resident.lastDispensedAt) || text(resident.lastDispensedMedicine));
+      if (!shouldKeep) {
+        changed = true;
+        return carry;
+      }
+
+      carry.push({
+        ...resident,
+        source: "household-linked"
+      });
+      if (source !== "household-linked") {
+        changed = true;
+      }
+      return carry;
+    }, []);
+
+    if (changed) {
+      state.residentAccounts.sort((left, right) => text(left.fullName).localeCompare(text(right.fullName)));
+    }
+
+    return changed;
   };
   const residentStatusChipClass = (tone) => {
     if (tone === "warning") return "staff-chip staff-chip--warning";
@@ -1625,9 +1757,9 @@
   };
 
   const syncHouseholdResidents = async () => {
-    if (state.householdResidentsLoaded) return;
-    state.householdResidentsLoaded = true;
+    if (state.householdResidentsLoaded || state.householdResidentsSyncing) return;
     state.householdResidentsSyncing = true;
+    state.householdResidentsError = "";
     renderCabarianResidentResults();
 
     try {
@@ -1635,9 +1767,8 @@
       let offset = 0;
       let pageCount = 0;
 
-      while (pageCount < 6) {
+      while (pageCount < 20) {
         const params = new URLSearchParams({
-          action: "list_residents",
           limit: "250",
           offset: String(offset)
         });
@@ -1655,7 +1786,11 @@
           payload = null;
         }
 
-        if (!response.ok || !payload || payload.success !== true) break;
+        if (!response.ok || !payload || payload.success !== true) {
+          throw new Error(
+            String(payload?.message || payload?.error || "Unable to load Cabarian residents from the household system.")
+          );
+        }
 
         const pageItems = Array.isArray(payload?.data?.items) ? payload.data.items : [];
         items.push(...pageItems);
@@ -1665,29 +1800,22 @@
         offset += 250;
       }
 
-      if (!items.length) return;
-
-      const normalized = items.map((entry) => normalizeResidentAccount({
+      state.householdResidentsLoaded = true;
+      state.householdResidents = items.map((entry) => normalizeResidentAccount({
         resident_id: entry?.resident_id,
         household_id: entry?.household_id,
         full_name: entry?.full_name,
         zone: entry?.zone,
-        barangay: "Cabarian",
-        city: "Ligao City",
-        province: "Albay",
+        barangay: entry?.barangay,
+        city: entry?.city,
+        province: entry?.province,
+        address: entry?.address,
         source: "household-system"
-      }));
-
-      if (mergeResidentAccounts(normalized)) {
-        saveState();
-        renderResidentSearchResults();
-        renderPatientProfiles();
-        renderCabarianResidentResults();
-        renderDashboard();
-        void persistStaffState({ showSyncError: false });
-      }
+      })).sort((left, right) => text(left.fullName).localeCompare(text(right.fullName)));
     } catch (error) {
-      // Keep local resident lookup available even if sync fails.
+      state.householdResidentsLoaded = false;
+      state.householdResidents = [];
+      state.householdResidentsError = "Unable to load Cabarian residents from the household system right now.";
     } finally {
       state.householdResidentsSyncing = false;
       renderCabarianResidentResults();
@@ -1747,6 +1875,20 @@
   const findResidentAccount = (id) => state.residentAccounts.find((resident) =>
     text(resident.id) === text(id) || text(resident.residentId) === text(id)
   ) || null;
+  const findHouseholdResident = (id) => state.householdResidents.find((resident) =>
+    text(resident.id) === text(id) || text(resident.residentId) === text(id)
+  ) || null;
+  const residentMatchesAccount = (resident, incoming) => (
+    text(resident.residentId).toLowerCase() === text(incoming.residentId).toLowerCase()
+    || (
+      text(resident.fullName).toLowerCase() === text(incoming.fullName).toLowerCase()
+      && text(resident.barangay).toLowerCase() === text(incoming.barangay).toLowerCase()
+    )
+  );
+  const findMatchingResidentAccount = (entry) => {
+    const incoming = normalizeResidentAccount(entry);
+    return state.residentAccounts.find((resident) => residentMatchesAccount(resident, incoming)) || null;
+  };
 
   const clearResidentForm = () => {
     refs.residentForm?.reset();
@@ -1777,8 +1919,7 @@
 
   const filteredCabarianResidents = () => {
     const query = text(state.residentCabarianSearch).toLowerCase();
-    return state.residentAccounts
-      .filter((resident) => resident.source === "household-system")
+    return state.householdResidents
       .filter((resident) => {
         if (!query) return true;
         const haystack = [
@@ -1844,6 +1985,10 @@
     }
 
     if (!matches.length) {
+      if (state.householdResidentsError) {
+        refs.residentCabarianResults.innerHTML = `<div class="staff-empty">${esc(state.householdResidentsError)}</div>`;
+        return;
+      }
       refs.residentCabarianResults.innerHTML = '<div class="staff-empty">No matching Cabarian resident found in the household system.</div>';
       return;
     }
@@ -1931,6 +2076,7 @@
 
         if (query && !haystack.includes(query)) return false;
         if (barangayFilter !== "all" && keyOf(resident.barangay) !== barangayFilter) return false;
+        if (!isVisiblePatientAccount(resident, stats)) return false;
 
         return true;
       })
@@ -2053,6 +2199,7 @@
         resident,
         stats: getResidentStats(resident)
       }))
+      .filter(({ resident, stats }) => isVisiblePatientAccount(resident, stats))
       .filter(({ resident }) => {
         if (!query) return true;
         const haystack = [
@@ -2217,7 +2364,7 @@
       const isActive = text(resident.id) === text(state.selectedResidentId) ? " is-active" : "";
       const location = residentAddressLabel(resident) || resident.barangay || "Resident account";
       const statusClass = residentStatusChipClass(stats.status.tone);
-      const sourceLabel = resident.source === "household-system" ? "Household" : "Manual";
+      const sourceLabel = residentSourceLabel(resident);
       const lastMedicine = stats.totalReleases > 0 ? stats.lastMedicine : "No dispense yet";
       const lastRelease = stats.lastReleaseAt ? formatDateTime(stats.lastReleaseAt) : "No dispense yet";
 
@@ -2491,6 +2638,38 @@
     renderCabarianResidentResults();
     setSelectedResident(resident);
     return resident;
+  };
+
+  const addHouseholdResidentAsPatient = async (resident) => {
+    const householdResident = normalizeResidentAccount({
+      ...resident,
+      source: "household-linked"
+    });
+    const snapshot = createStaffStateSnapshot();
+    const changed = mergeResidentAccounts([householdResident]);
+    const selectedResident = findMatchingResidentAccount(householdResident);
+
+    if (!selectedResident) {
+      restoreStaffStateSnapshot(snapshot);
+      throw new Error("Unable to add the selected Cabarian resident as a patient account.");
+    }
+
+    if (changed) {
+      try {
+        await persistStaffState();
+      } catch (error) {
+        restoreStaffStateSnapshot(snapshot);
+        renderResidentSearchResults();
+        renderPatientProfiles();
+        renderDashboard();
+        renderSelectedResident();
+        renderDispenseResidentPicker();
+        renderHistory();
+        throw error;
+      }
+    }
+
+    return selectedResident;
   };
 
   const handleResidentFormSubmit = async (event) => {
@@ -2850,9 +3029,7 @@
     if (!notification) return;
 
     if (!notification.read) {
-      notification = updateStoredNotification(notificationId, (entry) => {
-        entry.read = true;
-      }) || notification;
+      notification = markStaffNotificationRead(notification) || notification;
       renderStaffNotifications();
     }
 
@@ -2864,13 +3041,22 @@
     if (Array.isArray(event.detail?.notifications)) {
       nextNotifications = event.detail.notifications.map(normalizeNotification);
     }
+    state.notificationReadState = mergeReadStateWithNotifications(
+      event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+        ? normalizeReadState(event.detail.notificationReadState)
+        : state.notificationReadState,
+      nextNotifications
+    );
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
       event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
         ? normalizeResolvedState(event.detail.notificationResolvedState)
         : state.notificationResolvedState,
       nextNotifications
     );
-    state.notifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
+    state.notifications = applyReadStateToNotifications(
+      applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState),
+      state.notificationReadState
+    );
     renderStaffNotifications();
   });
 
@@ -2952,11 +3138,17 @@
 
   refs.residentCabarianSearch?.addEventListener("input", (event) => {
     state.residentCabarianSearch = text(event.target.value);
+    if (state.residentCabarianSearch && !state.householdResidentsLoaded && !state.householdResidentsSyncing) {
+      void syncHouseholdResidents();
+    }
     renderCabarianResidentResults();
   });
 
   refs.residentCabarianSearchBtn?.addEventListener("click", () => {
     state.residentCabarianSearch = text(refs.residentCabarianSearch?.value);
+    if (state.residentCabarianSearch && !state.householdResidentsLoaded && !state.householdResidentsSyncing) {
+      void syncHouseholdResidents();
+    }
     renderCabarianResidentResults();
     refs.residentCabarianSearch?.focus();
   });
@@ -3023,14 +3215,22 @@
   refs.residentCabarianResults?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-cabarian-resident-id]");
     if (!button) return;
-    const resident = findResidentAccount(text(button.getAttribute("data-cabarian-resident-id")));
+    const resident = findHouseholdResident(text(button.getAttribute("data-cabarian-resident-id")));
     if (!resident) return;
-    setSelectedResident(resident);
-    residentFormModal?.hide();
-    openSection("dispense-medicine");
-    window.setTimeout(() => {
-      showResidentSelectedSuccess({ residentName: resident.fullName });
-    }, 180);
+
+    void (async () => {
+      try {
+        const patientAccount = await addHouseholdResidentAsPatient(resident);
+        setSelectedResident(patientAccount);
+        residentFormModal?.hide();
+        openSection("dispense-medicine");
+        window.setTimeout(() => {
+          showResidentSelectedSuccess({ residentName: patientAccount.fullName });
+        }, 180);
+      } catch (error) {
+        showNotice(error.message || "Unable to add the selected Cabarian resident as a patient account.", "danger");
+      }
+    })();
   });
 
   refs.dispenseMedicineResults?.addEventListener("click", (event) => {
@@ -3121,6 +3321,11 @@
 
   const initializeStaffPage = async () => {
     await hydrateStaffState();
+    const legacyHouseholdAccountsChanged = migrateLegacyHouseholdPatientAccounts();
+    if (legacyHouseholdAccountsChanged) {
+      saveState();
+      void persistStaffState({ showSyncError: false });
+    }
     renderMedicineOptions();
     renderSettings();
     renderTopbarAccount();
@@ -3130,7 +3335,6 @@
     renderHistory();
     renderStaffNotifications();
     setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
-    void syncHouseholdResidents();
   };
 
   void initializeStaffPage();

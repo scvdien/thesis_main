@@ -176,6 +176,58 @@ function mss_auth_uid(string $prefix): string
     }
 }
 
+function mss_auth_insert_activity_log(PDO $pdo, array $entry): void
+{
+    $stmt = $pdo->prepare(
+        'INSERT INTO `mss_activity_logs`
+            (`id`, `actor`, `username`, `action`, `action_type`, `target`, `details`, `category`, `result_label`, `result_tone`, `ip_address`, `created_at`)
+         VALUES
+            (:id, :actor, :username, :action, :action_type, :target, :details, :category, :result_label, :result_tone, :ip_address, :created_at)'
+    );
+    $stmt->execute([
+        ':id' => trim((string) ($entry['id'] ?? '')) ?: mss_auth_uid('log'),
+        ':actor' => trim((string) ($entry['actor'] ?? '')),
+        ':username' => trim((string) ($entry['username'] ?? '')),
+        ':action' => trim((string) ($entry['action'] ?? '')),
+        ':action_type' => trim((string) ($entry['action_type'] ?? '')) ?: 'updated',
+        ':target' => trim((string) ($entry['target'] ?? '')),
+        ':details' => trim((string) ($entry['details'] ?? '')),
+        ':category' => trim((string) ($entry['category'] ?? '')) ?: 'General',
+        ':result_label' => trim((string) ($entry['result_label'] ?? '')) ?: 'Success',
+        ':result_tone' => trim((string) ($entry['result_tone'] ?? '')) ?: 'success',
+        ':ip_address' => trim((string) ($entry['ip_address'] ?? '')),
+        ':created_at' => trim((string) ($entry['created_at'] ?? '')) ?: mss_auth_now(),
+    ]);
+}
+
+function mss_auth_record_login_attempt(PDO $pdo, bool $success, string $username, string $details, ?array $user = null, string $ipAddress = ''): void
+{
+    try {
+        $matchedFullName = trim((string) ($user['full_name'] ?? ''));
+        $matchedUsername = trim((string) ($user['username'] ?? ''));
+        $actor = $matchedFullName !== ''
+            ? $matchedFullName
+            : ($matchedUsername !== '' ? $matchedUsername : trim($username));
+        $target = $matchedUsername !== '' ? $matchedUsername : trim($username);
+
+        mss_auth_insert_activity_log($pdo, [
+            'actor' => $actor !== '' ? $actor : 'Unknown User',
+            'username' => trim($username),
+            'action' => $success ? 'Login successful.' : 'Failed login attempt',
+            'action_type' => $success ? 'access' : 'security',
+            'target' => $target !== '' ? $target : 'Authentication',
+            'details' => trim($details),
+            'category' => $success ? 'Access' : 'Security',
+            'result_label' => $success ? 'Success' : 'Failed',
+            'result_tone' => $success ? 'success' : 'danger',
+            'ip_address' => trim($ipAddress),
+            'created_at' => mss_auth_now(),
+        ]);
+    } catch (Throwable $exception) {
+        // Authentication must continue even if security logging fails.
+    }
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -468,21 +520,35 @@ function mss_auth_attempt_login(PDO $pdo, string $username, string $password, st
     $password = (string) $password;
 
     if ($username === '' || $password === '') {
+        mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: missing username or password.', null, $ipAddress);
         throw new InvalidArgumentException('Please enter username and password.');
     }
 
     $user = mss_auth_find_user_by_username_exact($pdo, $username);
-    if (!is_array($user) || !password_verify($password, (string) ($user['password_hash'] ?? ''))) {
+    if (!is_array($user)) {
+        $caseInsensitiveUser = mss_auth_find_user_by_username($pdo, $username);
+        if (is_array($caseInsensitiveUser) && trim((string) ($caseInsensitiveUser['username'] ?? '')) !== $username) {
+            mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: username casing mismatch.', $caseInsensitiveUser, $ipAddress);
+        } else {
+            mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: username not found.', null, $ipAddress);
+        }
+        throw new RuntimeException('Invalid username or password.');
+    }
+
+    if (!password_verify($password, (string) ($user['password_hash'] ?? ''))) {
+        mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: invalid password.', $user, $ipAddress);
         throw new RuntimeException('Invalid username or password.');
     }
 
     if (trim((string) ($user['status'] ?? '')) !== 'Active') {
+        mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: account is disabled.', $user, $ipAddress);
         throw new RuntimeException('This account is inactive.');
     }
 
     $_SESSION['mss_user_id'] = (string) $user['id'];
     session_regenerate_id(true);
     mss_auth_touch_session($pdo, $user, $ipAddress);
+    mss_auth_record_login_attempt($pdo, true, $username, 'Login successful.', $user, $ipAddress);
 
     return mss_auth_user_payload($user);
 }

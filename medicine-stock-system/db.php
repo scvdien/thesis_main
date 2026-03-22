@@ -235,6 +235,7 @@ CREATE TABLE IF NOT EXISTS `mss_cho_requests` (
   `source` VARCHAR(150) NOT NULL DEFAULT 'City Health Office (CHO)',
   `requested_by` VARCHAR(150) NOT NULL DEFAULT 'Nurse-in-Charge',
   `notes` TEXT NOT NULL,
+  `record_status` VARCHAR(20) NOT NULL DEFAULT 'active',
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
   PRIMARY KEY (`id`),
@@ -323,6 +324,12 @@ SQL,
         'mss_inventory_movements',
         'illness',
         "ALTER TABLE `mss_inventory_movements` ADD COLUMN `illness` VARCHAR(160) NOT NULL DEFAULT '' AFTER `disease_category`"
+    );
+    mss_ensure_table_column(
+        $pdo,
+        'mss_cho_requests',
+        'record_status',
+        "ALTER TABLE `mss_cho_requests` ADD COLUMN `record_status` VARCHAR(20) NOT NULL DEFAULT 'active' AFTER `notes`"
     );
 
     $schemaReady = true;

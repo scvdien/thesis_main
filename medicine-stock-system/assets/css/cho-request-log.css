@@ -452,4 +452,51 @@
   .request-toolbar .btn-add-medicine{
     width:100%;
   }
+
+  .request-toolbar > *,
+  .request-toolbar .form-select,
+  .request-toolbar .inventory-toolbar__action{
+    width:100%;
+  }
+
+  .request-items-panel{
+    padding:16px 14px;
+  }
+
+  .request-item-add-btn{
+    width:100%;
+    justify-content:center;
+  }
+
+  .request-detail-section__head{
+    padding:16px 16px 12px;
+  }
+
+  .request-detail-footer{
+    justify-content:stretch;
+  }
+
+  .request-detail-footer .btn{
+    width:100%;
+  }
+}
+
+@media (max-width: 576px){
+  .request-details-meta__card{
+    padding:12px 14px;
+  }
+
+  .request-detail-table{
+    min-width:560px;
+  }
+
+  .request-detail-table thead th,
+  .request-detail-table tbody td{
+    padding-left:16px;
+    padding-right:16px;
+  }
+
+  .request-table-shell .inventory-table{
+    min-width:1180px;
+  }
 }

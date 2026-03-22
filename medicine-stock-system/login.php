@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 mss_page_redirect_if_authenticated();
+$loginCssVersion = (string) @filemtime(__DIR__ . '/assets/css/login-style.css');
+$loginJsVersion = (string) @filemtime(__DIR__ . '/assets/js/login-scripts.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -14,7 +16,7 @@ mss_page_redirect_if_authenticated();
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="assets/css/login-style.css">
+  <link rel="stylesheet" href="assets/css/login-style.css?v=<?= urlencode($loginCssVersion) ?>">
 </head>
 <body>
   <div class="page">
@@ -25,11 +27,14 @@ mss_page_redirect_if_authenticated();
           Admin &amp; Staff Access
         </div>
         <div class="brand-mark">
-          <img src="assets/img/CityHealthOffice_LOGO.png" alt="Ligao City Coastal Rural Health Unit Logo">
-          <div class="brand-copy">
-            <div class="brand-title">Ligao City Coastal RHU</div>
-            <div class="brand-sub">Cabarian, Ligao City</div>
+          <div class="brand-main">
+            <img class="brand-main-logo" src="assets/img/CityHealthOffice_LOGO.png" alt="Ligao City Coastal Rural Health Unit Logo">
+            <div class="brand-copy">
+              <div class="brand-title">Ligao City Coastal RHU</div>
+              <div class="brand-sub">Cabarian, Ligao City</div>
+            </div>
           </div>
+          <img class="brand-side-logo" src="assets/img/ligao-city-logo.png" alt="Ligao City Logo">
         </div>
         <p class="brand-desc">
           Secure access for authorized personnel of Ligao City Coastal Rural Health Unit.
@@ -104,6 +109,6 @@ mss_page_redirect_if_authenticated();
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="assets/js/login-scripts.js"></script>
+  <script src="assets/js/login-scripts.js?v=<?= urlencode($loginJsVersion) ?>"></script>
 </body>
 </html>
