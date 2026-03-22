@@ -1,10 +1,5 @@
 (() => {
-  const REPORT_HISTORY_STORAGE_KEY = "mss_report_history_v1";
-  const INVENTORY_STORAGE = "mss_inventory_records_v1";
-  const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
-  const ACTIVITY_LOG_STORAGE = "mss_activity_logs_v1";
-  const USERS_STORAGE = "mss_users_v1";
-  const SESSIONS_STORAGE = "mss_active_sessions_v1";
+  const STATE_ENDPOINT = "state-api.php";
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -46,7 +41,10 @@
   const state = {
     inventory: [],
     movements: [],
-    reportHistory: []
+    reportHistory: [],
+    activityLogs: [],
+    users: [],
+    sessions: []
   };
 
   const uiState = {
@@ -140,14 +138,21 @@
     alertTimer = window.setTimeout(() => refs.reportNoticePopup?.classList.remove("is-visible"), 2200);
   };
 
-  const readStorageList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      const message = String(payload.message || "Unable to sync reports right now.");
+      throw new Error(message);
     }
+    return payload;
   };
 
   const closeMobileSidebar = () => {
@@ -168,14 +173,12 @@
   };
 
   const findAdminUser = () => {
-    const users = readStorageList(USERS_STORAGE);
-    return users.find((user) => keyOf(user.role) === "admin") || null;
+    return state.users.find((user) => keyOf(user.role) === "admin") || null;
   };
 
   const resolveSessionIp = (userId, fallbackIp = "192.168.10.15") => {
     if (!userId) return fallbackIp;
-    const sessions = readStorageList(SESSIONS_STORAGE);
-    const activeSession = sessions.find((session) => text(session.userId) === text(userId));
+    const activeSession = state.sessions.find((session) => text(session.userId) === text(userId));
     return text(activeSession?.ipAddress) || fallbackIp;
   };
 
@@ -192,8 +195,7 @@
     createdAt = nowIso(),
     ipAddress = "192.168.10.15"
   }) => {
-    const logs = readStorageList(ACTIVITY_LOG_STORAGE);
-    logs.unshift({
+    state.activityLogs.unshift({
       id: uid(),
       actor,
       username,
@@ -207,8 +209,9 @@
       ipAddress,
       createdAt
     });
-    logs.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-    localStorage.setItem(ACTIVITY_LOG_STORAGE, JSON.stringify(logs.slice(0, 60)));
+    state.activityLogs = state.activityLogs
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 60);
   };
 
   const currentAuditActor = () => {
@@ -260,6 +263,7 @@
       reorderLevel: Math.max(1, Math.round(numeric(entry.reorderLevel) || 1)),
       unit: text(entry.unit) || "units",
       expiryDate: safeExpiry,
+      recordStatus: text(entry.recordStatus || entry.record_status).toLowerCase() === "archived" ? "archived" : "active",
       updatedBy: text(entry.updatedBy) || "Nurse-in-Charge",
       lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
     };
@@ -315,14 +319,19 @@
     });
   };
 
-  const loadInventory = () => {
-    state.inventory = readStorageList(INVENTORY_STORAGE).map(normalizeInventoryItem);
-    if (!state.inventory.length) state.inventory = fallbackInventory();
+  const loadInventory = (serverState = {}) => {
+    state.inventory = Array.isArray(serverState.inventory)
+      ? serverState.inventory.map(normalizeInventoryItem)
+      : [];
   };
 
-  const loadMovements = () => {
-    state.movements = readStorageList(MOVEMENTS_STORAGE).map(normalizeMovement);
-    if (!state.movements.length) state.movements = fallbackMovements(state.inventory);
+  const isActiveInventoryItem = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
+  const activeInventory = () => state.inventory.filter(isActiveInventoryItem);
+
+  const loadMovements = (serverState = {}) => {
+    state.movements = Array.isArray(serverState.movements)
+      ? serverState.movements.map(normalizeMovement)
+      : [];
   };
 
   const medicineLabel = (medicine) => [text(medicine.name), text(medicine.strength)].filter(Boolean).join(" ");
@@ -402,7 +411,7 @@
     export: (row) => safeExport(row[key])
   });
 
-  const buildChoRequestRows = () => state.inventory.map((medicine) => {
+  const buildChoRequestRows = () => activeInventory().map((medicine) => {
     const status = inventoryStatus(medicine);
     const monthlyUse = estimateMonthlyUse(medicine);
     const disposedQuantity = state.movements
@@ -434,7 +443,7 @@
     };
   }).filter((row) => row.qtyRaw > 0 && ["low-stock", "critical", "out-of-stock", "expired"].includes(row.statusKey)).sort((left, right) => right.qtyRaw - left.qtyRaw || left.medicine.localeCompare(right.medicine));
 
-  const buildCurrentInventoryRows = () => state.inventory.slice().sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right))).map((medicine) => {
+  const buildCurrentInventoryRows = () => activeInventory().slice().sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right))).map((medicine) => {
     const status = inventoryStatus(medicine);
     const expiryDays = daysUntil(medicine.expiryDate);
     return {
@@ -454,7 +463,7 @@
     };
   });
 
-  const buildInventoryListRows = ({ filter, statusLabel, statusTone }) => state.inventory
+  const buildInventoryListRows = ({ filter, statusLabel, statusTone }) => activeInventory()
     .filter((medicine) => filter(medicine, daysUntil(medicine.expiryDate)))
     .sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)))
     .map((medicine) => {
@@ -575,7 +584,7 @@
     });
 
     const trackedKeys = new Set(removedRows.map((row) => `${keyOf(row.medicine)}|${keyOf(row.batch)}`));
-    const pendingExpiredRows = state.inventory.filter((medicine) => daysUntil(medicine.expiryDate) < 0).filter((medicine) => !trackedKeys.has(`${keyOf(medicineLabel(medicine))}|${keyOf(medicine.batchNumber)}`)).map((medicine) => ({
+    const pendingExpiredRows = activeInventory().filter((medicine) => daysUntil(medicine.expiryDate) < 0).filter((medicine) => !trackedKeys.has(`${keyOf(medicineLabel(medicine))}|${keyOf(medicine.batchNumber)}`)).map((medicine) => ({
       sortKey: new Date(medicine.lastUpdatedAt || nowIso()).getTime(),
       recordedDate: formatDate(medicine.lastUpdatedAt || nowIso()),
       recordedDateSubtext: "Pending segregation",
@@ -745,29 +754,61 @@
     });
   };
 
-  const saveReportHistory = () => {
-    localStorage.setItem(REPORT_HISTORY_STORAGE_KEY, JSON.stringify(state.reportHistory));
+  const syncStateFromServer = (serverState = {}) => {
+    loadInventory(serverState);
+    loadMovements(serverState);
+    state.users = Array.isArray(serverState.users) ? serverState.users : state.users;
+    state.sessions = Array.isArray(serverState.sessions) ? serverState.sessions : state.sessions;
+    state.activityLogs = Array.isArray(serverState.logs) ? serverState.logs : state.activityLogs;
+    state.reportHistory = Array.isArray(serverState.reportHistory)
+      ? serverState.reportHistory
+        .map((entry) => normalizeReportSnapshot(entry))
+        .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
+      : state.reportHistory;
   };
 
-  const loadReportHistory = () => {
-    state.reportHistory = readStorageList(REPORT_HISTORY_STORAGE_KEY)
-      .map((entry) => normalizeReportSnapshot(entry))
-      .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
+  const saveReportHistory = async () => {
+    try {
+      const payload = await requestJson(STATE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          state: {
+            reportHistory: state.reportHistory,
+            logs: state.activityLogs
+          }
+        })
+      });
+      syncStateFromServer(payload?.state || {});
+    } catch (error) {
+      console.error("Unable to persist report history.", error);
+    }
   };
 
-  const addReportHistoryEntry = (snapshot, format) => {
+  const loadReportHistory = async () => {
+    try {
+      const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+      syncStateFromServer(payload?.state || {});
+    } catch (error) {
+      console.error("Unable to load persisted report history.", error);
+    }
+  };
+
+  const addReportHistoryEntry = async (snapshot, format) => {
     const entry = normalizeReportSnapshot({ ...snapshot, id: uid(), format });
     state.reportHistory.unshift(entry);
     state.reportHistory = state.reportHistory
       .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
       .slice(0, 30);
-    saveReportHistory();
+    await saveReportHistory();
     return entry;
   };
 
-  const removeReportHistoryEntry = (historyId) => {
+  const removeReportHistoryEntry = async (historyId) => {
     state.reportHistory = state.reportHistory.filter((entry) => text(entry.id) !== text(historyId));
-    saveReportHistory();
+    await saveReportHistory();
   };
 
   const currentReportDefinition = () => REPORT_TYPES.find((definition) => definition.key === uiState.reportKey) || REPORT_TYPES[0];
@@ -1204,7 +1245,7 @@
     const reportDefinition = currentReportDefinition();
     const timestamp = nowIso();
     const snapshot = buildReportSnapshot(timestamp, reportDefinition);
-    const historyEntry = addReportHistoryEntry(snapshot, format);
+    const historyEntry = await addReportHistoryEntry(snapshot, format);
     renderAll();
     reportFormatModal?.hide();
 
@@ -1229,8 +1270,6 @@
       resultTone: "success",
       createdAt: historyEntry.generatedAt
     });
-
-    showNotice(`${formatLabelForHistory(format)} report generated and saved to history.`);
   };
 
   const redownloadHistoryEntry = async (historyId) => {
@@ -1258,7 +1297,6 @@
       createdAt: nowIso()
     });
 
-    showNotice(`${formatLabelForHistory(entry.format)} file downloaded.`);
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1351,7 +1389,7 @@
         iconClass: "bi-trash3-fill",
         iconTone: "text-danger",
         onConfirm: async () => {
-          removeReportHistoryEntry(historyId);
+          await removeReportHistoryEntry(historyId);
           renderAll();
           const audit = currentAuditActor();
           appendActivityLog({
@@ -1365,7 +1403,6 @@
             resultTone: "warning",
             createdAt: nowIso()
           });
-          showNotice("Report removed from history.");
         }
       });
       return;
@@ -1388,9 +1425,13 @@
     }
   });
 
-  loadInventory();
-  loadMovements();
-  loadReportHistory();
-  uiState.reportKey = REPORT_TYPES[0].key;
-  renderAll();
+  const init = async () => {
+    loadInventory();
+    loadMovements();
+    await loadReportHistory();
+    uiState.reportKey = REPORT_TYPES[0].key;
+    renderAll();
+  };
+
+  void init();
 })();

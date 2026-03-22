@@ -1,13 +1,14 @@
 (() => {
   const supplyMonitoring = window.MSSSupplyMonitoring;
+  const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
+    ? window.MSS_AUTH_USER
+    : null;
+  const STATE_ENDPOINT = "state-api.php";
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
     movements: "mss_inventory_movements_v1",
     residents: "mss_resident_accounts_v1"
   };
-  const ACTIVITY_LOG_STORAGE = "mss_activity_logs_v1";
-  const USERS_STORAGE = "mss_users_v1";
-  const SESSIONS_STORAGE = "mss_active_sessions_v1";
 
   const HOUSEHOLD_RESIDENT_API = "../household-system/registration-sync.php";
 
@@ -48,6 +49,12 @@
     reorderLevel: byId("reorderLevel"),
     batchNumber: byId("batchNumber"),
     expiryDate: byId("expiryDate"),
+    recordStatusModalTitle: byId("recordStatusModalTitle"),
+    recordStatusModalMessage: byId("recordStatusModalMessage"),
+    recordStatusModalHint: byId("recordStatusModalHint"),
+    recordStatusModalIcon: byId("recordStatusModalIcon"),
+    recordStatusModalIconGlyph: byId("recordStatusModalIconGlyph"),
+    recordStatusModalConfirmBtn: byId("recordStatusModalConfirmBtn"),
     stockActionForm: byId("stockActionForm"),
     stockMedicineId: byId("stockMedicineId"),
     stockActionMedicineLabel: byId("stockActionMedicineLabel"),
@@ -78,6 +85,8 @@
 
   const medicineModal = byId("medicineModal") && window.bootstrap ? new window.bootstrap.Modal(byId("medicineModal")) : null;
   const stockActionModal = byId("stockActionModal") && window.bootstrap ? new window.bootstrap.Modal(byId("stockActionModal")) : null;
+  const recordStatusModalEl = byId("recordStatusModal");
+  const recordStatusModal = recordStatusModalEl && window.bootstrap ? new window.bootstrap.Modal(recordStatusModalEl) : null;
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
@@ -87,6 +96,9 @@
     movements: [],
     residentAccounts: [],
     choRequests: [],
+    activityLogs: [],
+    users: [],
+    sessions: [],
     householdResidentsLoaded: false
   };
 
@@ -103,6 +115,7 @@
   };
 
   let alertTimer = 0;
+  let inventoryHydrationPromise = null;
 
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -141,6 +154,7 @@
     if (["other", "others"].includes(normalized)) return "Others";
     return text(value);
   };
+  const normalizeRecordStatus = (value) => keyOf(value) === "archived" ? "archived" : "active";
   const formatNumber = (value) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(numeric(value)));
   const formatCurrency = (value) => new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -194,86 +208,297 @@
     return Math.round((parsed.getTime() - today.getTime()) / 86400000);
   };
 
-  const readList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
-  };
-
-  const findStoredUser = ({ fullName = "", role = "" } = {}) => {
-    const users = readList(USERS_STORAGE);
-    if (fullName) {
-      const matchedByName = users.find((user) => keyOf(user.fullName) === keyOf(fullName));
-      if (matchedByName) return matchedByName;
-    }
-
-    if (role) {
-      return users.find((user) => keyOf(user.role) === keyOf(role)) || null;
-    }
-
-    return null;
-  };
-
-  const resolveSessionIp = (userId, fallbackIp) => {
-    if (!userId) return fallbackIp;
-    const sessions = readList(SESSIONS_STORAGE);
-    const activeSession = sessions.find((session) => text(session.userId) === text(userId));
-    return text(activeSession?.ipAddress) || fallbackIp;
-  };
-
-  const appendActivityLog = ({
-    actor = "Nurse-in-Charge",
-    username = "nurse.incharge",
-    action = "Updated inventory",
-    actionType = "updated",
-    target = "",
-    details = "",
-    category = "Inventory",
-    resultLabel = "Success",
-    resultTone = "success",
-    createdAt = nowIso(),
-    ipAddress = "192.168.10.15"
-  }) => {
-    const logs = readList(ACTIVITY_LOG_STORAGE);
-    logs.unshift({
-      id: uid(),
-      actor,
-      username,
-      action,
-      actionType,
-      target,
-      details,
-      category,
-      resultLabel,
-      resultTone,
-      ipAddress,
-      createdAt
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
     });
-    logs.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-    localStorage.setItem(ACTIVITY_LOG_STORAGE, JSON.stringify(logs.slice(0, 60)));
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      const message = String(payload.message || "Unable to sync medicine inventory right now.");
+      throw new Error(message);
+    }
+    return payload;
   };
 
-  const saveState = () => {
-    localStorage.setItem(STORAGE.inventory, JSON.stringify(state.inventory));
-    localStorage.setItem(STORAGE.movements, JSON.stringify(state.movements));
-    localStorage.setItem(STORAGE.residents, JSON.stringify(state.residentAccounts));
-    if (supplyMonitoring) supplyMonitoring.writeRequests(state.choRequests);
+  const currentUserRecord = () => {
+    const authId = text(currentAuthUser?.id);
+    return state.users.find((user) => text(user.id) === authId) || currentAuthUser || null;
   };
+
+  const actorName = () => text(currentUserRecord()?.fullName) || "Nurse-in-Charge";
+  const actorUsername = () => text(currentUserRecord()?.username) || "admin";
+  const currentActorIp = () => {
+    const currentUser = currentUserRecord();
+    const session = currentUser
+      ? state.sessions.find((entry) => text(entry.userId) === text(currentUser.id))
+      : null;
+    return text(session?.ipAddress) || "127.0.0.1";
+  };
+
   const emitInventoryNotificationRefresh = () => {
     window.dispatchEvent(new CustomEvent("mss:inventory-updated"));
   };
 
+  const NOTICE_THEME = {
+    success: {
+      title: "Saved",
+      icon: "bi-check2-circle",
+      accent: "#2f8f24",
+      accentSoft: "rgba(47, 143, 36, 0.16)",
+      border: "rgba(171, 214, 164, 0.92)",
+      text: "#17331a"
+    },
+    info: {
+      title: "Notice",
+      icon: "bi-info-circle",
+      accent: "#2f6ea3",
+      accentSoft: "rgba(47, 110, 163, 0.16)",
+      border: "rgba(153, 198, 230, 0.92)",
+      text: "#183b57"
+    },
+    warning: {
+      title: "Warning",
+      icon: "bi-exclamation-triangle",
+      accent: "#c78712",
+      accentSoft: "rgba(199, 135, 18, 0.16)",
+      border: "rgba(233, 205, 143, 0.95)",
+      text: "#68470c"
+    },
+    danger: {
+      title: "Unable to Save",
+      icon: "bi-x-circle",
+      accent: "#c63d3d",
+      accentSoft: "rgba(198, 61, 61, 0.16)",
+      border: "rgba(233, 171, 171, 0.95)",
+      text: "#6b1e1e"
+    }
+  };
+
+  const ensureNoticePortal = () => {
+    const host = refs.moduleAlert;
+    if (!host) return null;
+
+    if (host.parentElement !== document.body) {
+      document.body.appendChild(host);
+    }
+
+    if (host.dataset.modalReady === "true") {
+      return {
+        host,
+        card: host.querySelector("[data-notice-card]"),
+        icon: host.querySelector("[data-notice-icon]"),
+        title: host.querySelector("[data-notice-title]"),
+        message: host.querySelector("[data-notice-message]")
+      };
+    }
+
+    host.dataset.modalReady = "true";
+    host.className = "";
+    host.textContent = "";
+    host.setAttribute("role", "status");
+    host.setAttribute("aria-live", "polite");
+    Object.assign(host.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2000",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+      background: "rgba(16, 33, 18, 0.18)",
+      opacity: "0",
+      visibility: "hidden",
+      pointerEvents: "none",
+      transition: "opacity 0.18s ease, visibility 0.18s ease"
+    });
+
+    const card = document.createElement("div");
+    card.dataset.noticeCard = "true";
+    Object.assign(card.style, {
+      width: "min(420px, calc(100vw - 32px))",
+      padding: "24px 22px",
+      borderRadius: "24px",
+      background: "rgba(255, 255, 255, 0.98)",
+      border: "1px solid rgba(171, 214, 164, 0.92)",
+      boxShadow: "0 24px 52px rgba(22, 54, 23, 0.24)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "10px",
+      textAlign: "center",
+      transform: "translateY(10px) scale(0.96)",
+      transition: "transform 0.18s ease"
+    });
+
+    const icon = document.createElement("div");
+    icon.dataset.noticeIcon = "true";
+    icon.setAttribute("aria-hidden", "true");
+    Object.assign(icon.style, {
+      width: "62px",
+      height: "62px",
+      borderRadius: "999px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "1.7rem",
+      background: "rgba(47, 143, 36, 0.16)",
+      color: "#2f8f24"
+    });
+
+    const title = document.createElement("h5");
+    title.dataset.noticeTitle = "true";
+    Object.assign(title.style, {
+      margin: "0",
+      fontFamily: "'Sora', sans-serif",
+      fontSize: "1.08rem",
+      fontWeight: "700",
+      color: "#17331a"
+    });
+
+    const message = document.createElement("p");
+    message.dataset.noticeMessage = "true";
+    Object.assign(message.style, {
+      margin: "0",
+      color: "#4d5f4c",
+      fontSize: "0.95rem",
+      fontWeight: "600",
+      lineHeight: "1.5"
+    });
+
+    card.append(icon, title, message);
+    host.appendChild(card);
+
+    return { host, card, icon, title, message };
+  };
+
+  const hideNotice = () => {
+    const notice = ensureNoticePortal();
+    if (!notice) return;
+    notice.host.style.opacity = "0";
+    notice.host.style.visibility = "hidden";
+    notice.card.style.transform = "translateY(10px) scale(0.96)";
+  };
+
   const showNotice = (message, type = "success") => {
-    if (!refs.moduleAlert) return;
-    refs.moduleAlert.className = `alert alert-${type}`;
-    refs.moduleAlert.textContent = message;
-    refs.moduleAlert.classList.remove("d-none");
+    const notice = ensureNoticePortal();
+    if (!notice) return;
+    const theme = NOTICE_THEME[type] || NOTICE_THEME.success;
+
+    notice.icon.innerHTML = `<i class="bi ${theme.icon}"></i>`;
+    notice.title.textContent = theme.title;
+    notice.message.textContent = message;
+    notice.card.style.borderColor = theme.border;
+    notice.card.style.color = theme.text;
+    notice.icon.style.color = theme.accent;
+    notice.icon.style.background = theme.accentSoft;
+    notice.title.style.color = theme.text;
+
     window.clearTimeout(alertTimer);
-    alertTimer = window.setTimeout(() => refs.moduleAlert?.classList.add("d-none"), 3200);
+    window.requestAnimationFrame(() => {
+      notice.host.style.opacity = "1";
+      notice.host.style.visibility = "visible";
+      notice.card.style.transform = "translateY(0) scale(1)";
+    });
+    alertTimer = window.setTimeout(hideNotice, 1800);
+  };
+
+  const initializeInventoryActionDropdowns = () => {
+    if (!window.bootstrap?.Dropdown || !refs.inventoryTableBody) return;
+    refs.inventoryTableBody
+      .querySelectorAll(".inventory-action-toggle[data-bs-toggle='dropdown']")
+      .forEach((toggle) => {
+        window.bootstrap.Dropdown.getOrCreateInstance(toggle, {
+          boundary: "viewport",
+          popperConfig(defaultConfig) {
+            const modifiers = Array.isArray(defaultConfig?.modifiers) ? defaultConfig.modifiers : [];
+            return {
+              ...defaultConfig,
+              strategy: "fixed",
+              modifiers: modifiers.map((modifier) => {
+                if (modifier.name === "flip" || modifier.name === "preventOverflow") {
+                  return {
+                    ...modifier,
+                    options: {
+                      ...(modifier.options || {}),
+                      boundary: "viewport"
+                    }
+                  };
+                }
+                return modifier;
+              })
+            };
+          }
+        });
+      });
+  };
+
+  const confirmMedicineRecordStatusChange = ({
+    title,
+    message,
+    hint,
+    confirmLabel,
+    confirmButtonClass,
+    iconClass,
+    tone,
+    fallbackMessage
+  }) => {
+    if (
+      !recordStatusModal
+      || !recordStatusModalEl
+      || !refs.recordStatusModalTitle
+      || !refs.recordStatusModalMessage
+      || !refs.recordStatusModalHint
+      || !refs.recordStatusModalIcon
+      || !refs.recordStatusModalIconGlyph
+      || !refs.recordStatusModalConfirmBtn
+    ) {
+      return Promise.resolve(window.confirm(fallbackMessage || message || "Please confirm this action."));
+    }
+
+    refs.recordStatusModalTitle.textContent = text(title) || "Confirm action";
+    refs.recordStatusModalMessage.textContent = text(message) || "Please confirm this action.";
+    refs.recordStatusModalHint.textContent = text(hint);
+    refs.recordStatusModalHint.classList.toggle("d-none", !text(hint));
+    refs.recordStatusModalIcon.className = `inventory-confirm-modal__icon inventory-confirm-modal__icon--${text(tone) || "archive"}`;
+    refs.recordStatusModalIconGlyph.className = `bi ${text(iconClass) || "bi-question-circle-fill"}`;
+    refs.recordStatusModalConfirmBtn.className = `btn btn-modern ${text(confirmButtonClass) || "btn-primary"}`;
+    refs.recordStatusModalConfirmBtn.textContent = text(confirmLabel) || "Confirm";
+
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const finalize = (value) => {
+        if (settled) return;
+        settled = true;
+        refs.recordStatusModalConfirmBtn.removeEventListener("click", handleConfirm);
+        recordStatusModalEl.removeEventListener("hidden.bs.modal", handleHidden);
+        recordStatusModalEl.removeEventListener("shown.bs.modal", handleShown);
+        resolve(Boolean(value));
+      };
+
+      const handleConfirm = () => {
+        finalize(true);
+        recordStatusModal.hide();
+      };
+
+      const handleHidden = () => {
+        finalize(false);
+      };
+
+      const handleShown = () => {
+        refs.recordStatusModalConfirmBtn.focus();
+      };
+
+      refs.recordStatusModalConfirmBtn.addEventListener("click", handleConfirm);
+      recordStatusModalEl.addEventListener("hidden.bs.modal", handleHidden);
+      recordStatusModalEl.addEventListener("shown.bs.modal", handleShown);
+      recordStatusModal.show();
+    });
   };
 
   const closeMobileSidebar = () => {
@@ -314,7 +539,8 @@
       batchNumber: text(entry.batchNumber).toUpperCase() || "-",
       expiryDate: safeExpiry,
       unitCost: Number(numeric(entry.unitCost).toFixed(2)),
-      updatedBy: text(entry.updatedBy) || "Nurse-in-Charge",
+      recordStatus: normalizeRecordStatus(entry.recordStatus || entry.record_status),
+      updatedBy: text(entry.updatedBy) || actorName(),
       lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
     };
   };
@@ -329,7 +555,7 @@
     stockBefore: Math.max(0, Math.round(numeric(entry.stockBefore))),
     stockAfter: Math.max(0, Math.round(numeric(entry.stockAfter))),
     createdAt: text(entry.createdAt) || nowIso(),
-    user: text(entry.user) || "Nurse-in-Charge",
+    user: text(entry.user) || actorName(),
     recipientId: text(entry.recipientId),
     recipientName: text(entry.recipientName),
     recipientBarangay: text(entry.recipientBarangay),
@@ -356,6 +582,21 @@
     lastDispensedMedicine: text(entry.lastDispensedMedicine)
   });
 
+  const normalizeActivityLog = (entry = {}) => ({
+    id: text(entry.id) || uid(),
+    actor: text(entry.actor) || actorName(),
+    username: text(entry.username) || actorUsername(),
+    action: text(entry.action) || "Updated inventory",
+    actionType: text(entry.actionType) || "updated",
+    target: text(entry.target),
+    details: text(entry.details),
+    category: text(entry.category) || "Inventory",
+    resultLabel: text(entry.resultLabel) || "Success",
+    resultTone: text(entry.resultTone) || "success",
+    ipAddress: text(entry.ipAddress) || currentActorIp(),
+    createdAt: text(entry.createdAt) || nowIso()
+  });
+
   const residentAddressLabel = (resident) => [
     text(resident.zone),
     text(resident.barangay),
@@ -363,204 +604,180 @@
   ].filter(Boolean).join(", ");
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
+  const isArchivedMedicine = (medicine) => normalizeRecordStatus(medicine?.recordStatus) === "archived";
+  const isActiveMedicine = (medicine) => !isArchivedMedicine(medicine);
+  const activeInventory = () => state.inventory.filter(isActiveMedicine);
+  const inventoryIdentityPart = (value) => text(value).replace(/\s+/g, " ").toLowerCase();
+  const inventoryIdentityKey = (medicine = {}) => [
+    inventoryIdentityPart(medicine.name),
+    inventoryIdentityPart(normalizeDosageForm(medicine.form)),
+    inventoryIdentityPart(medicine.strength)
+  ].join("|");
+  const inventoryIdentityLabel = (medicine = {}) => {
+    const label = medicineLabel(medicine) || text(medicine.name) || "This medicine";
+    const form = normalizeDosageForm(medicine.form);
+    return form ? `${label} (${form})` : label;
+  };
+  const findDuplicateInventoryMedicine = (candidate) => {
+    const candidateKey = inventoryIdentityKey(candidate);
+    return state.inventory.find((medicine) => medicine.id !== candidate.id && inventoryIdentityKey(medicine) === candidateKey) || null;
+  };
+  const LEGACY_SEED_INVENTORY_KEYS = new Set([
+    "paracetamol|pcm-2026-041",
+    "amoxicillin|amx-2026-013",
+    "cetirizine|ctz-2026-020",
+    "ors|ors-2026-115",
+    "lagundi|lgd-2026-018",
+    "zinc sulfate|znc-2026-006",
+    "metformin|mtf-2026-044",
+    "salbutamol|slb-2026-017",
+    "amlodipine|aml-2026-008"
+  ]);
 
-  const seedInventory = () => ([
-    {
-      name: "Paracetamol",
-      genericName: "Acetaminophen",
-      category: "Analgesic",
-      form: "Tablet",
-      strength: "500mg",
-      stockOnHand: 540,
-      reorderLevel: 220,
-      unit: "tablets",
-      batchNumber: "PCM-2026-041",
-      expiryDate: "2026-09-14",
-      supplier: "Ligao City Coastal RHU Supply",
-      location: "Main Cabinet A",
-      unitCost: 2.15
-    },
-    {
-      name: "Amoxicillin",
-      genericName: "Amoxicillin Trihydrate",
-      category: "Antibiotic",
-      form: "Capsule",
-      strength: "500mg",
-      stockOnHand: 95,
-      reorderLevel: 160,
-      unit: "capsules",
-      batchNumber: "AMX-2026-013",
-      expiryDate: "2026-05-22",
-      supplier: "DOH Provincial Supply",
-      location: "Antibiotic Shelf",
-      unitCost: 5.4
-    },
-    {
-      name: "Cetirizine",
-      genericName: "Cetirizine Hydrochloride",
-      category: "Antihistamine",
-      form: "Tablet",
-      strength: "10mg",
-      stockOnHand: 132,
-      reorderLevel: 120,
-      unit: "tablets",
-      batchNumber: "CTZ-2026-020",
-      expiryDate: "2026-08-09",
-      supplier: "Ligao City Coastal RHU Supply",
-      location: "Allergy Drawer",
-      unitCost: 3.8
-    },
-    {
-      name: "ORS",
-      genericName: "Oral Rehydration Salts",
-      category: "Hydration",
-      form: "Sachet",
-      strength: "20.5g",
-      stockOnHand: 62,
-      reorderLevel: 120,
-      unit: "sachets",
-      batchNumber: "ORS-2026-115",
-      expiryDate: "2026-04-30",
-      supplier: "DOH Provincial Supply",
-      location: "Emergency Rack",
-      unitCost: 7.25
-    },
-    {
-      name: "Lagundi",
-      genericName: "Vitex negundo",
-      category: "Herbal",
-      form: "Syrup",
-      strength: "60mL",
-      stockOnHand: 28,
-      reorderLevel: 40,
-      unit: "bottles",
-      batchNumber: "LGD-2026-018",
-      expiryDate: "2026-04-16",
-      supplier: "LGU Herbal Procurement",
-      location: "Liquid Cabinet",
-      unitCost: 68
-    },
-    {
-      name: "Zinc Sulfate",
-      genericName: "Zinc Sulfate",
-      category: "Vitamins",
-      form: "Tablet",
-      strength: "20mg",
-      stockOnHand: 0,
-      reorderLevel: 90,
-      unit: "tablets",
-      batchNumber: "ZNC-2026-006",
-      expiryDate: "2026-07-20",
-      supplier: "Ligao City Coastal RHU Supply",
-      location: "Supplement Shelf",
-      unitCost: 1.9
-    },
-    {
-      name: "Metformin",
-      genericName: "Metformin Hydrochloride",
-      category: "Maintenance",
-      form: "Tablet",
-      strength: "500mg",
-      stockOnHand: 186,
-      reorderLevel: 140,
-      unit: "tablets",
-      batchNumber: "MTF-2026-044",
-      expiryDate: "2026-11-03",
-      supplier: "City Medical Depot",
-      location: "Maintenance Cabinet",
-      unitCost: 4.3
-    },
-    {
-      name: "Salbutamol",
-      genericName: "Salbutamol Sulfate",
-      category: "Respiratory",
-      form: "Tablet",
-      strength: "2mg",
-      stockOnHand: 74,
-      reorderLevel: 110,
-      unit: "tablets",
-      batchNumber: "SLB-2026-017",
-      expiryDate: "2026-06-18",
-      supplier: "City Medical Depot",
-      location: "Respiratory Tray",
-      unitCost: 3.15
-    },
-    {
-      name: "Amlodipine",
-      genericName: "Amlodipine Besylate",
-      category: "Maintenance",
-      form: "Tablet",
-      strength: "5mg",
-      stockOnHand: 154,
-      reorderLevel: 100,
-      unit: "tablets",
-      batchNumber: "AML-2026-008",
-      expiryDate: "2026-10-01",
-      supplier: "Ligao City Coastal RHU Supply",
-      location: "Maintenance Cabinet",
-      unitCost: 6.1
-    }
-  ]).map((entry, index) => normalizeMedicine({
-    ...entry,
-    lastUpdatedAt: new Date(Date.now() - ((index + 1) * 3600000)).toISOString()
-  }));
+  const legacySeedInventoryKey = (medicine) => `${keyOf(medicine?.name)}|${keyOf(medicine?.batchNumber)}`;
+  const isLegacySeedInventory = (inventory = []) => inventory.length === LEGACY_SEED_INVENTORY_KEYS.size
+    && inventory.every((medicine) => LEGACY_SEED_INVENTORY_KEYS.has(legacySeedInventoryKey(medicine)));
 
-  const seedMovements = (inventory) => {
-    const findByName = (name) => inventory.find((medicine) => medicine.name === name);
-    return [
-      {
-        medicineName: "Paracetamol",
-        actionType: "restock",
-        quantity: 180,
-        stockBefore: 360,
-        stockAfter: 540,
-        createdAt: new Date(Date.now() - (2 * 3600000)).toISOString(),
-        note: "Monthly replenishment from RHU supply."
-      },
-      {
-        medicineName: "ORS",
-        actionType: "dispense",
-        quantity: 18,
-        stockBefore: 80,
-        stockAfter: 62,
-        createdAt: new Date(Date.now() - (5 * 3600000)).toISOString(),
-        note: "Distributed for diarrhea support cases."
-      },
-      {
-        medicineName: "Lagundi",
-        actionType: "dispense",
-        quantity: 6,
-        stockBefore: 34,
-        stockAfter: 28,
-        createdAt: new Date(Date.now() - (9 * 3600000)).toISOString(),
-        note: "Released for cough and colds consultations."
-      },
-      {
-        medicineName: "Zinc Sulfate",
-        actionType: "dispose",
-        quantity: 20,
-        stockBefore: 20,
-        stockAfter: 0,
-        createdAt: new Date(Date.now() - (26 * 3600000)).toISOString(),
-        note: "Expired batch removed from shelf."
-      },
-      {
-        medicineName: "Salbutamol",
-        actionType: "restock",
-        quantity: 40,
-        stockBefore: 34,
-        stockAfter: 74,
-        createdAt: new Date(Date.now() - (34 * 3600000)).toISOString(),
-        note: "Supplemental request delivered by city medical depot."
-      }
-    ].map((entry) => {
-      const medicine = findByName(entry.medicineName);
-      return normalizeMovement({
-        ...entry,
-        medicineId: medicine?.id || "",
-        user: "Nurse-in-Charge"
-      });
+  const saveState = () => {
+    if (!supplyMonitoring) return;
+    supplyMonitoring.setState({
+      inventory: state.inventory,
+      movements: state.movements,
+      requests: state.choRequests
     });
+  };
+
+  const appendActivityLog = ({
+    actor = actorName(),
+    username = actorUsername(),
+    action = "Updated inventory",
+    actionType = "updated",
+    target = "",
+    details = "",
+    category = "Inventory",
+    resultLabel = "Success",
+    resultTone = "success",
+    createdAt = nowIso(),
+    ipAddress = currentActorIp()
+  }) => {
+    state.activityLogs.unshift(normalizeActivityLog({
+      id: uid(),
+      actor,
+      username,
+      action,
+      actionType,
+      target,
+      details,
+      category,
+      resultLabel,
+      resultTone,
+      ipAddress,
+      createdAt
+    }));
+    state.activityLogs = state.activityLogs
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 60);
+  };
+
+  const syncStateFromServer = (serverState = {}) => {
+    state.users = Array.isArray(serverState.users) ? serverState.users : state.users;
+    state.sessions = Array.isArray(serverState.sessions) ? serverState.sessions : state.sessions;
+    state.activityLogs = Array.isArray(serverState.logs)
+      ? serverState.logs.map(normalizeActivityLog).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()).slice(0, 60)
+      : state.activityLogs;
+    state.inventory = Array.isArray(serverState.inventory)
+      ? serverState.inventory.map(normalizeMedicine)
+      : state.inventory;
+    state.movements = Array.isArray(serverState.movements)
+      ? serverState.movements.map(normalizeMovement)
+      : state.movements;
+    state.residentAccounts = Array.isArray(serverState.residentAccounts)
+      ? serverState.residentAccounts.map(normalizeResidentAccount)
+      : state.residentAccounts;
+
+    const serverRequests = Array.isArray(serverState.requests) ? serverState.requests : [];
+    state.choRequests = supplyMonitoring
+      ? serverRequests.map((entry) => supplyMonitoring.normalizeRequest(entry))
+      : serverRequests;
+    saveState();
+  };
+
+  const cloneEntries = (entries = []) => entries.map((entry) => ({ ...entry }));
+  const createStateSnapshot = () => ({
+    inventory: cloneEntries(state.inventory),
+    movements: cloneEntries(state.movements),
+    residentAccounts: cloneEntries(state.residentAccounts),
+    activityLogs: cloneEntries(state.activityLogs)
+  });
+
+  const restoreStateSnapshot = (snapshot) => {
+    if (!snapshot) return;
+    state.inventory = snapshot.inventory.map(normalizeMedicine);
+    state.movements = snapshot.movements.map(normalizeMovement);
+    state.residentAccounts = snapshot.residentAccounts.map(normalizeResidentAccount);
+    state.activityLogs = snapshot.activityLogs.map(normalizeActivityLog);
+    saveState();
+  };
+
+  const persistInventoryState = async ({ showSyncError = true } = {}) => {
+    saveState();
+
+    try {
+      const payload = await requestJson(STATE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          state: {
+            inventory: state.inventory,
+            movements: state.movements,
+            residentAccounts: state.residentAccounts,
+            logs: state.activityLogs
+          }
+        })
+      });
+      syncStateFromServer(payload.state || {});
+      return payload;
+    } catch (error) {
+      saveState();
+      if (showSyncError) throw error;
+      console.error("Unable to persist medicine inventory state.", error);
+      return null;
+    }
+  };
+
+  const hydrateInventoryState = async () => {
+    if (inventoryHydrationPromise) {
+      await inventoryHydrationPromise;
+      return;
+    }
+
+    inventoryHydrationPromise = (async () => {
+      try {
+        const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+        syncStateFromServer(payload?.state || {});
+      } catch (error) {
+        const fallbackState = supplyMonitoring ? supplyMonitoring.getState() : null;
+        if (fallbackState && (fallbackState.inventory.length || fallbackState.movements.length || state.activityLogs.length)) {
+          state.inventory = fallbackState.inventory.map(normalizeMedicine);
+          state.movements = fallbackState.movements.map(normalizeMovement);
+          state.choRequests = supplyMonitoring.readRequests();
+          saveState();
+          showNotice("Unable to refresh backend inventory data right now. Showing the last synced records on this page.", "warning");
+          return;
+        }
+
+        syncStateFromServer({});
+        showNotice("Unable to load backend inventory data right now.", "danger");
+      }
+    })();
+
+    try {
+      await inventoryHydrationPromise;
+    } finally {
+      inventoryHydrationPromise = null;
+    }
   };
 
   const nextResidentAccountCode = () => {
@@ -568,53 +785,6 @@
     const count = state.residentAccounts.filter((resident) => text(resident.residentId).startsWith(`MSR-${year}-`)).length + 1;
     return `MSR-${year}-${String(count).padStart(4, "0")}`;
   };
-
-  const seedResidentAccounts = () => ([
-    {
-      residentId: "RS-2026-0012",
-      householdId: "HH-2026-004",
-      fullName: "Maria Santos",
-      barangay: "Cabarian",
-      zone: "Zone 2",
-      city: "Ligao City",
-      province: "Albay",
-      source: "household-system"
-    },
-    {
-      residentId: "RS-2026-0048",
-      householdId: "HH-2026-011",
-      fullName: "Juan Dela Cruz",
-      barangay: "Cabarian",
-      zone: "Zone 4",
-      city: "Ligao City",
-      province: "Albay",
-      source: "household-system"
-    },
-    {
-      residentId: "MSR-2026-0001",
-      fullName: "Lorna Reyes",
-      barangay: "Bonga",
-      city: "Ligao City",
-      province: "Albay",
-      source: "medicine-system"
-    },
-    {
-      residentId: "MSR-2026-0002",
-      fullName: "Kevin Ramos",
-      barangay: "Tinago",
-      city: "Ligao City",
-      province: "Albay",
-      source: "medicine-system"
-    },
-    {
-      residentId: "MSR-2026-0003",
-      fullName: "Ana Lopez",
-      barangay: "Busac",
-      city: "Oas",
-      province: "Albay",
-      source: "medicine-system"
-    }
-  ]).map(normalizeResidentAccount);
 
   const mergeResidentAccounts = (entries = []) => {
     let changed = false;
@@ -651,27 +821,6 @@
 
     state.residentAccounts.sort((left, right) => text(left.fullName).localeCompare(text(right.fullName)));
     return changed;
-  };
-
-  const ensureSeedData = () => {
-    state.inventory = readList(STORAGE.inventory).map(normalizeMedicine);
-    state.movements = readList(STORAGE.movements).map(normalizeMovement);
-    state.residentAccounts = readList(STORAGE.residents).map(normalizeResidentAccount);
-    state.choRequests = supplyMonitoring ? supplyMonitoring.readRequests() : [];
-
-    if (!state.inventory.length) {
-      state.inventory = seedInventory();
-    }
-
-    if (!state.movements.length) {
-      state.movements = seedMovements(state.inventory);
-    }
-
-    if (!state.residentAccounts.length) {
-      state.residentAccounts = seedResidentAccounts();
-    }
-
-    saveState();
   };
 
   const syncHouseholdResidents = async () => {
@@ -728,6 +877,7 @@
 
       if (mergeResidentAccounts(normalized)) {
         saveState();
+        await persistInventoryState({ showSyncError: false });
       }
 
       renderResidentSearchResults();
@@ -737,6 +887,10 @@
   };
 
   const getStatus = (medicine) => {
+    if (isArchivedMedicine(medicine)) {
+      return { key: "archived", label: "Archived", tone: "olive", note: "Hidden from active workflows" };
+    }
+
     const stock = numeric(medicine.stockOnHand);
     const reorderLevel = Math.max(1, numeric(medicine.reorderLevel));
     const expiryDays = daysUntil(medicine.expiryDate);
@@ -978,6 +1132,7 @@
 
     mergeResidentAccounts([resident]);
     saveState();
+    void persistInventoryState({ showSyncError: false });
     clearQuickResidentFields();
     toggleQuickResidentFields(false);
     const savedResident = state.residentAccounts.find((entry) =>
@@ -1003,7 +1158,8 @@
 
   const sortedInventory = () => {
     const query = text(uiState.search).toLowerCase();
-    const filtered = state.inventory.filter((medicine) => {
+    const baseInventory = uiState.status === "archived" ? state.inventory.filter(isArchivedMedicine) : activeInventory();
+    const filtered = baseInventory.filter((medicine) => {
       const status = getStatus(medicine);
       const haystack = [
         medicine.name,
@@ -1016,7 +1172,7 @@
 
       const matchesQuery = !query || haystack.includes(query);
       const matchesCategory = uiState.category === "all" || medicine.category === uiState.category;
-      const matchesStatus = uiState.status === "all" || status.key === uiState.status;
+      const matchesStatus = uiState.status === "all" || uiState.status === "archived" || status.key === uiState.status;
       return matchesQuery && matchesCategory && matchesStatus;
     });
 
@@ -1030,7 +1186,8 @@
   const renderCategoryFilter = () => {
     if (!refs.categoryFilter) return;
     const current = refs.categoryFilter.value || uiState.category;
-    const categories = Array.from(new Set(state.inventory.map((medicine) => medicine.category))).sort();
+    const sourceInventory = uiState.status === "archived" ? state.inventory.filter(isArchivedMedicine) : activeInventory();
+    const categories = Array.from(new Set(sourceInventory.map((medicine) => medicine.category))).sort();
     refs.categoryFilter.innerHTML = [
       '<option value="all">Category</option>',
       ...categories.map((category) => `<option value="${esc(category)}">${esc(category)}</option>`)
@@ -1040,13 +1197,14 @@
   };
 
   const renderMetrics = () => {
-    const totalMedicines = state.inventory.length;
-    const unitsOnHand = state.inventory.reduce((total, medicine) => total + numeric(medicine.stockOnHand), 0);
-    const lowStock = state.inventory.filter((medicine) => {
+    const inventory = activeInventory();
+    const totalMedicines = inventory.length;
+    const unitsOnHand = inventory.reduce((total, medicine) => total + numeric(medicine.stockOnHand), 0);
+    const lowStock = inventory.filter((medicine) => {
       const status = getStatus(medicine).key;
       return status === "low-stock" || status === "critical" || status === "out-of-stock";
     }).length;
-    const expiringSoon = state.inventory.filter((medicine) => daysUntil(medicine.expiryDate) <= 60).length;
+    const expiringSoon = inventory.filter((medicine) => daysUntil(medicine.expiryDate) <= 60).length;
 
     if (refs.metricTotalMedicines) refs.metricTotalMedicines.textContent = formatNumber(totalMedicines);
     if (refs.metricUnitsOnHand) refs.metricUnitsOnHand.textContent = formatNumber(unitsOnHand);
@@ -1070,11 +1228,30 @@
       return;
     }
 
-    refs.inventoryTableBody.innerHTML = medicines.map((medicine) => {
+    refs.inventoryTableBody.innerHTML = medicines.map((medicine, index) => {
       const status = getStatus(medicine);
       const expiryDays = daysUntil(medicine.expiryDate);
       const expiryNote = expiryDays < 0 ? `${Math.abs(expiryDays)} days overdue` : `${expiryDays} days left`;
       const medicineMeta = [text(medicine.strength)].filter(Boolean).join(" | ");
+      const shouldOpenUp = medicines.length === 1 || index >= medicines.length - 2;
+      const batchHelper = isArchivedMedicine(medicine) ? "Archived record" : "Tracked batch";
+      const stockHelper = isArchivedMedicine(medicine)
+        ? "Restore this record to return it to active workflows."
+        : `Alert at ${formatNumber(medicine.reorderLevel)} ${medicine.unit}`;
+      const actionItems = isArchivedMedicine(medicine)
+        ? `
+                  <button type="button" class="dropdown-item inventory-action-item" data-action="restore" data-id="${esc(medicine.id)}">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restore
+                  </button>
+                `
+        : `
+                  <button type="button" class="dropdown-item inventory-action-item" data-action="adjust" data-id="${esc(medicine.id)}">
+                    <i class="bi bi-arrow-left-right"></i> Adjust
+                  </button>
+                  <button type="button" class="dropdown-item inventory-action-item" data-action="archive" data-id="${esc(medicine.id)}">
+                    <i class="bi bi-archive"></i> Archive
+                  </button>
+                `;
 
       return `
         <tr>
@@ -1097,13 +1274,13 @@
           <td>
             <div class="inventory-expiry">
               <strong>${esc(medicine.batchNumber)}</strong>
-              <small>Tracked batch</small>
+              <small>${esc(batchHelper)}</small>
             </div>
           </td>
           <td>
             <div class="inventory-stock">
               <strong>${esc(formatNumber(medicine.stockOnHand))}</strong>
-              <small>Alert at ${esc(formatNumber(medicine.reorderLevel))} ${esc(medicine.unit)}</small>
+              <small>${esc(stockHelper)}</small>
             </div>
           </td>
           <td>
@@ -1115,7 +1292,7 @@
           <td><span class="inventory-status inventory-status--${esc(status.tone)}">${esc(status.label)}</span></td>
           <td>
             <div class="inventory-actions">
-              <div class="dropdown inventory-action-menu">
+              <div class="dropdown inventory-action-menu${shouldOpenUp ? " dropup" : ""}">
                 <button
                   type="button"
                   class="btn btn-sm btn-light table-action-btn inventory-action-toggle"
@@ -1129,9 +1306,7 @@
                   <button type="button" class="dropdown-item inventory-action-item" data-action="edit" data-id="${esc(medicine.id)}">
                     <i class="bi bi-pencil-square"></i> Edit
                   </button>
-                  <button type="button" class="dropdown-item inventory-action-item" data-action="adjust" data-id="${esc(medicine.id)}">
-                    <i class="bi bi-arrow-left-right"></i> Adjust
-                  </button>
+${actionItems}
                 </div>
               </div>
             </div>
@@ -1139,11 +1314,13 @@
         </tr>
       `;
     }).join("");
+
+    initializeInventoryActionDropdowns();
   };
 
   const renderRestockList = () => {
     if (!refs.restockList) return;
-    const items = state.inventory
+    const items = activeInventory()
       .map((medicine) => ({ medicine, status: getStatus(medicine), suggested: reorderQuantity(medicine) }))
       .filter(({ status, suggested }) => (status.key === "low-stock" || status.key === "critical" || status.key === "out-of-stock") && suggested > 0)
       .sort((left, right) => right.suggested - left.suggested)
@@ -1173,7 +1350,7 @@
 
   const renderExpiryList = () => {
     if (!refs.expiryList) return;
-    const items = [...state.inventory]
+    const items = [...activeInventory()]
       .sort((left, right) => daysUntil(left.expiryDate) - daysUntil(right.expiryDate))
       .slice(0, 5);
 
@@ -1207,8 +1384,9 @@
 
   const renderCategorySummary = () => {
     if (!refs.categorySummaryList) return;
-    const totalUnits = Math.max(1, state.inventory.reduce((total, medicine) => total + numeric(medicine.stockOnHand), 0));
-    const groups = Array.from(state.inventory.reduce((map, medicine) => {
+    const inventory = activeInventory();
+    const totalUnits = Math.max(1, inventory.reduce((total, medicine) => total + numeric(medicine.stockOnHand), 0));
+    const groups = Array.from(inventory.reduce((map, medicine) => {
       const category = medicine.category;
       const entry = map.get(category) || { category, medicines: 0, units: 0, flagged: 0 };
       entry.medicines += 1;
@@ -1239,7 +1417,7 @@
 
   const renderReorderPlanner = () => {
     if (!refs.reorderPlannerList) return;
-    const plans = state.inventory
+    const plans = activeInventory()
       .map((medicine) => ({
         medicine,
         suggested: reorderQuantity(medicine),
@@ -1272,8 +1450,13 @@
   };
 
   const renderAll = () => {
+    renderMetrics();
     renderCategoryFilter();
     renderInventoryTable();
+    renderRestockList();
+    renderExpiryList();
+    renderCategorySummary();
+    renderReorderPlanner();
   };
 
   const logMovement = ({
@@ -1303,7 +1486,7 @@
       stockAfter,
       note,
       createdAt,
-      user: "Nurse-in-Charge",
+      user: actorName(),
       recipientId,
       recipientName,
       recipientBarangay,
@@ -1340,6 +1523,11 @@
 
   const openStockActionModal = (medicine) => {
     if (!medicine || !refs.stockActionForm) return;
+    if (isArchivedMedicine(medicine)) {
+      showNotice("Restore this medicine record first before updating stock.", "warning");
+      return;
+    }
+
     refs.stockActionForm.reset();
     refs.stockMedicineId.value = medicine.id;
     refs.stockActionMedicineLabel.textContent = medicineLabel(medicine);
@@ -1351,7 +1539,7 @@
     stockActionModal?.show();
   };
 
-  const handleMedicineSubmit = (event) => {
+  const handleMedicineSubmit = async (event) => {
     event.preventDefault();
     const existingId = text(refs.medicineId.value);
     const existing = existingId ? findMedicine(existingId) : null;
@@ -1374,7 +1562,8 @@
       batchNumber: refs.batchNumber.value,
       expiryDate: refs.expiryDate.value,
       unitCost: existing?.unitCost || 0,
-      updatedBy: "Nurse-in-Charge",
+      recordStatus: existing?.recordStatus || "active",
+      updatedBy: actorName(),
       lastUpdatedAt: nowIso()
     });
 
@@ -1382,6 +1571,17 @@
       showNotice("Please complete the medicine name, category, dosage form, unit, and batch number.", "danger");
       return;
     }
+
+    const duplicateMedicine = findDuplicateInventoryMedicine(payload);
+    if (duplicateMedicine) {
+      const duplicateGuidance = isArchivedMedicine(duplicateMedicine)
+        ? "Restore the archived record instead."
+        : "Update the existing record instead.";
+      showNotice(`${inventoryIdentityLabel(payload)} is already in the inventory. ${duplicateGuidance}`, "danger");
+      return;
+    }
+
+    const snapshot = createStateSnapshot();
 
     if (existing) {
       const previousStock = existing.stockOnHand;
@@ -1399,7 +1599,6 @@
         });
       }
 
-      showNotice(`${payload.name} record updated successfully.`);
     } else {
       state.inventory.unshift(payload);
       logMovement({
@@ -1411,20 +1610,111 @@
         note: "Initial inventory record created.",
         createdAt: payload.lastUpdatedAt
       });
-      showNotice(`${payload.name} added to medicine inventory.`);
     }
 
-    saveState();
+    try {
+      await persistInventoryState();
+    } catch (error) {
+      restoreStateSnapshot(snapshot);
+      renderAll();
+      showNotice(error.message || "Unable to save the medicine record right now.", "danger");
+      return;
+    }
+
     renderAll();
     emitInventoryNotificationRefresh();
     medicineModal?.hide();
   };
 
-  const handleStockActionSubmit = (event) => {
+  const handleMedicineRecordStatusChange = async (medicine, nextStatus) => {
+    if (!medicine) return;
+
+    const normalizedNextStatus = normalizeRecordStatus(nextStatus);
+    if (normalizeRecordStatus(medicine.recordStatus) === normalizedNextStatus) {
+      return;
+    }
+
+    if (normalizedNextStatus === "archived" && numeric(medicine.stockOnHand) > 0) {
+      showNotice(`Set ${medicine.name} stock to 0 or dispose the remaining units before archiving this record.`, "warning");
+      return;
+    }
+
+    const confirmed = await confirmMedicineRecordStatusChange(normalizedNextStatus === "archived"
+      ? {
+          title: "Archive medicine record?",
+          message: `${inventoryIdentityLabel(medicine)} will be hidden from the active inventory list and request workflows.`,
+          hint: "You can restore it later from the Archived filter.",
+          confirmLabel: "Archive",
+          confirmButtonClass: "btn-danger",
+          iconClass: "bi-archive-fill",
+          tone: "archive",
+          fallbackMessage: `Archive ${inventoryIdentityLabel(medicine)}? This hides it from active inventory workflows.`
+        }
+      : {
+          title: "Restore medicine record?",
+          message: `${inventoryIdentityLabel(medicine)} will return to the active inventory list and request workflows.`,
+          hint: "This only changes visibility. Stock quantities stay the same.",
+          confirmLabel: "Restore",
+          confirmButtonClass: "btn-success",
+          iconClass: "bi-arrow-counterclockwise",
+          tone: "restore",
+          fallbackMessage: `Restore ${inventoryIdentityLabel(medicine)} to the active inventory list?`
+        });
+    if (!confirmed) {
+      return;
+    }
+
+    const snapshot = createStateSnapshot();
+    medicine.recordStatus = normalizedNextStatus;
+    medicine.updatedBy = actorName();
+    medicine.lastUpdatedAt = nowIso();
+
+    appendActivityLog({
+      actor: actorName(),
+      username: actorUsername(),
+      action: normalizedNextStatus === "archived" ? "Archived medicine record" : "Restored medicine record",
+      actionType: normalizedNextStatus === "archived" ? "deleted" : "updated",
+      target: inventoryIdentityLabel(medicine),
+      details: normalizedNextStatus === "archived"
+        ? "Medicine record was archived and hidden from active inventory workflows."
+        : "Medicine record was restored to the active inventory workflows.",
+      category: "Inventory",
+      resultLabel: normalizedNextStatus === "archived" ? "Archived" : "Restored",
+      resultTone: normalizedNextStatus === "archived" ? "neutral" : "success",
+      createdAt: medicine.lastUpdatedAt,
+      ipAddress: currentActorIp()
+    });
+
+    try {
+      await persistInventoryState();
+    } catch (error) {
+      restoreStateSnapshot(snapshot);
+      renderAll();
+      showNotice(error.message || "Unable to update the medicine record status right now.", "danger");
+      return;
+    }
+
+    if (normalizedNextStatus === "active" && refs.statusFilter && text(refs.statusFilter.value) === "archived") {
+      refs.statusFilter.value = "all";
+      uiState.status = "all";
+      uiState.category = "all";
+      if (refs.categoryFilter) refs.categoryFilter.value = "all";
+    }
+
+    renderAll();
+    emitInventoryNotificationRefresh();
+  };
+
+  const handleStockActionSubmit = async (event) => {
     event.preventDefault();
     const medicine = findMedicine(text(refs.stockMedicineId.value));
     if (!medicine) {
       showNotice("Unable to locate the selected medicine record.", "danger");
+      return;
+    }
+
+    if (isArchivedMedicine(medicine)) {
+      showNotice("Restore this medicine record first before updating stock.", "warning");
       return;
     }
 
@@ -1451,6 +1741,7 @@
       return;
     }
 
+    const snapshot = createStateSnapshot();
     const stockBefore = medicine.stockOnHand;
     let stockAfter = stockBefore;
 
@@ -1466,7 +1757,7 @@
 
     medicine.stockOnHand = stockAfter;
     medicine.lastUpdatedAt = `${actionDate}T08:00:00`;
-    medicine.updatedBy = "Nurse-in-Charge";
+    medicine.updatedBy = actorName();
 
     const defaultNote = actionType === "restock"
       ? (linkedRequest
@@ -1488,10 +1779,6 @@
       linkedRequestCode: linkedRequest?.requestCode || ""
     });
 
-    const adminUser = findStoredUser({ role: "Admin" });
-    const actor = text(adminUser?.fullName) || "Nurse-in-Charge";
-    const username = text(adminUser?.username) || "nurse.incharge";
-    const ipAddress = resolveSessionIp(adminUser?.id, "192.168.10.15");
     const actionLabel = actionType === "restock" ? "Restocked medicine" : "Disposed medicine";
     const detailParts = [
       `${formatNumber(quantity)} ${medicine.unit} processed for ${medicineLabel(medicine)}.`,
@@ -1507,8 +1794,8 @@
     }
 
     appendActivityLog({
-      actor,
-      username,
+      actor: actorName(),
+      username: actorUsername(),
       action: actionLabel,
       actionType: actionType === "restock" ? "updated" : "deleted",
       target: medicineLabel(medicine),
@@ -1517,16 +1804,21 @@
       resultLabel: actionType === "restock" ? "Updated" : "Disposed",
       resultTone: actionType === "restock" ? "success" : "neutral",
       createdAt: medicine.lastUpdatedAt,
-      ipAddress
+      ipAddress: currentActorIp()
     });
 
-    saveState();
+    try {
+      await persistInventoryState();
+    } catch (error) {
+      restoreStateSnapshot(snapshot);
+      renderAll();
+      showNotice(error.message || "Unable to save the stock action right now.", "danger");
+      return;
+    }
+
     renderAll();
     emitInventoryNotificationRefresh();
     stockActionModal?.hide();
-    showNotice(linkedRequest
-      ? `${medicine.name} stock updated and linked to ${linkedRequest.requestCode}.`
-      : `${medicine.name} stock updated successfully.`);
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1541,7 +1833,9 @@
   });
 
   refs.openAddMedicineBtn?.addEventListener("click", () => openMedicineModal());
-  refs.medicineForm?.addEventListener("submit", handleMedicineSubmit);
+  refs.medicineForm?.addEventListener("submit", (event) => {
+    void handleMedicineSubmit(event);
+  });
   refs.medicineFormType?.addEventListener("change", () => {
     const suggestedUnit = DOSAGE_FORM_UNIT_MAP[text(refs.medicineFormType?.value)];
     if (!suggestedUnit || !refs.medicineUnit) return;
@@ -1549,7 +1843,9 @@
       refs.medicineUnit.value = suggestedUnit;
     }
   });
-  refs.stockActionForm?.addEventListener("submit", handleStockActionSubmit);
+  refs.stockActionForm?.addEventListener("submit", (event) => {
+    void handleStockActionSubmit(event);
+  });
   refs.stockActionType?.addEventListener("change", updateDispenseSectionVisibility);
   refs.stockLinkedRequestId?.addEventListener("change", () => {
     updateLinkedRequestHint(findMedicine(text(refs.stockMedicineId?.value)));
@@ -1595,7 +1891,9 @@
 
   refs.statusFilter?.addEventListener("change", (event) => {
     uiState.status = text(event.target.value) || "all";
-    renderInventoryTable();
+    uiState.category = "all";
+    if (refs.categoryFilter) refs.categoryFilter.value = "all";
+    renderAll();
   });
 
   document.addEventListener("click", (event) => {
@@ -1610,14 +1908,30 @@
       openMedicineModal(medicine);
     } else if (action === "adjust") {
       openStockActionModal(medicine);
+    } else if (action === "archive") {
+      void handleMedicineRecordStatusChange(medicine, "archived");
+    } else if (action === "restore") {
+      void handleMedicineRecordStatusChange(medicine, "active");
     }
   });
 
-  window.addEventListener("storage", (event) => {
-    if (!supplyMonitoring || event.key !== supplyMonitoring.STORAGE.requests) return;
+  window.addEventListener("mss:supply-state-updated", (event) => {
+    if (!supplyMonitoring) return;
+    const changedKeys = Array.isArray(event.detail?.keys) ? event.detail.keys : [];
+    if (!changedKeys.includes(supplyMonitoring.STORAGE.requests)) return;
     state.choRequests = supplyMonitoring.readRequests();
   });
 
-  ensureSeedData();
-  renderAll();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    void hydrateInventoryState().then(renderAll).catch(() => {});
+  });
+
+  const initializeInventory = async () => {
+    await hydrateInventoryState();
+    renderAll();
+    void syncHouseholdResidents();
+  };
+
+  void initializeInventory();
 })();

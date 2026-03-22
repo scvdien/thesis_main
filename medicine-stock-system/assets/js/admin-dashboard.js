@@ -18,6 +18,7 @@
 
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const nextCycleLabel = "Next";
+  const DASHBOARD_ANALYTICS_ENDPOINT = "dashboard-analytics-api.php";
 
   const toNumber = (value) => {
     const parsed = Number(value);
@@ -104,26 +105,46 @@
     if (!el) return;
     el.innerHTML = value;
   };
-  const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
-  const readStoredList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(String(payload.message || payload.error || "Unable to load dashboard analytics right now."));
     }
+    return payload;
   };
-  const MONITORING_SNAPSHOT_STORAGE = "mss_monitoring_snapshot_v1";
-  const readMonitoringSnapshot = () => {
-    try {
-      const raw = localStorage.getItem(MONITORING_SNAPSHOT_STORAGE);
-      const parsed = raw ? JSON.parse(raw) : null;
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch (error) {
-      return null;
+  const buildEmptyMonitoringSnapshot = () => ({
+    generatedAt: new Date().toISOString(),
+    movement: {
+      fast: [],
+      slow: []
+    },
+    expiry: {
+      soonCount: 0,
+      withinThirtyCount: 0,
+      inventoryTotalUnits: 0,
+      slowConsumptionCount: 0,
+      medicines: [],
+      slowConsumption: [],
+      riskItem: null
+    },
+    balance: {
+      totalMedicines: 0,
+      balancedCount: 0,
+      lowCount: 0,
+      overstockCount: 0,
+      rows: [],
+      focusItem: null,
+      comparisonItems: []
     }
-  };
+  });
   const balanceTone = (item) => (item?.isLow ? "low" : item?.isOverstock ? "over" : "balanced");
   const balanceLabel = (item) => (item?.isLow ? "Low Stock" : item?.isOverstock ? "Overstock" : "Balanced");
   const stockNote = (item) => {
@@ -346,7 +367,7 @@
     window.requestAnimationFrame(syncBalancePanelHeights);
   };
 
-  const applyLiveMonitoringSnapshot = (snapshot = readMonitoringSnapshot()) => {
+  const applyLiveMonitoringSnapshot = (snapshot = buildEmptyMonitoringSnapshot()) => {
     if (!snapshot) return;
 
     const fastMovement = Array.isArray(snapshot.movement?.fast) ? snapshot.movement.fast : [];
@@ -450,6 +471,7 @@
       setHTML("balanceLowList", renderBalanceBucketItems(lowItems, "low"));
       setHTML("balanceBalancedList", renderBalanceBucketItems(balancedItems, "balanced"));
       setHTML("balanceOverstockList", renderBalanceBucketItems(overstockItems, "over"));
+      syncBalancePanelHeightsDeferred();
     }
   };
 
@@ -519,8 +541,12 @@
     });
   }
 
-  const renderDemandPredictionScenario = () => {
+  const renderDemandPredictionScenario = async (prefetchedAnalytics = null) => {
     const demandChartEl = document.getElementById("demandForecastChart");
+    const demandSignalList = document.getElementById("seasonalSignalList");
+    const metricDemandSeasonLabel = document.getElementById("metricDemandSeasonLabel");
+    const metricDemandSeasonIcon = document.getElementById("metricDemandSeasonIcon");
+    const fallbackNextSeason = getNextSeasonDefinition(getSeasonDefinition(new Date().getMonth()).key);
     const palette = {
       green: "#18a957",
       greenSoft: "#34c779",
@@ -530,141 +556,67 @@
       blue: "#2f80ed",
       slate: "#64748b"
     };
+    const destroyDemandChart = () => {
+      if (!window.__demandPredictionChart) return;
+      window.__demandPredictionChart.destroy();
+      window.__demandPredictionChart = null;
+    };
 
-    const demandMedicines = [
-      {
-        name: "Paracetamol",
-        label: "500mg Tablet",
-        stockOnHand: 540,
-        safetyStock: 210,
-        reason: "Tumataas kapag dumarami ang lagnat at trangkaso sa tag-ulan.",
-        monthlyDemand: [210, 195, 205, 220, 238, 272, 310, 325, 298, 276, 244, 228]
-      },
-      {
-        name: "Lagundi",
-        label: "Syrup",
-        stockOnHand: 220,
-        safetyStock: 110,
-        reason: "Mas mataas ang request kapag laganap ang ubo at sipon.",
-        monthlyDemand: [72, 68, 74, 82, 91, 118, 138, 146, 134, 121, 98, 84]
-      },
-      {
-        name: "Cetirizine",
-        label: "10mg Tablet",
-        stockOnHand: 190,
-        safetyStock: 90,
-        reason: "Mas maraming kumukuha kapag may allergy at weather-related symptoms.",
-        monthlyDemand: [88, 81, 86, 93, 104, 126, 147, 152, 143, 132, 109, 96]
-      }
-    ];
-
-    const currentSeason = getSeasonDefinition(new Date().getMonth());
-    const nextSeason = getNextSeasonDefinition(currentSeason.key);
-    const metricDemandSeasonLabel = document.getElementById("metricDemandSeasonLabel");
-    const metricDemandSeasonIcon = document.getElementById("metricDemandSeasonIcon");
-    if (metricDemandSeasonIcon) metricDemandSeasonIcon.className = nextSeason.icon;
-
-    const medicineForecasts = demandMedicines.map((medicine) => {
-      const monthlyAverage = average(medicine.monthlyDemand);
-      const seasonalAverages = Object.fromEntries(
-        seasonDefinitions.map((season) => [
-          season.key,
-          average(season.months.map((index) => medicine.monthlyDemand[index]))
-        ])
-      );
-      const currentSeasonAverage = seasonalAverages[currentSeason.key] || 0;
-      const nextSeasonAverage = seasonalAverages[nextSeason.key] || 0;
-      const nextSeasonShift = currentSeasonAverage > 0
-        ? ((nextSeasonAverage - currentSeasonAverage) / currentSeasonAverage) * 100
-        : 0;
-      const movingAverage = movingAverageForecast(medicine.monthlyDemand, 3);
-      const smoothing = exponentialSmoothingForecast(medicine.monthlyDemand, 0.35);
-      const forecast = Math.round((movingAverage + smoothing) / 2);
-      const reorderTarget = Math.ceil(forecast + medicine.safetyStock);
-      const suggestedOrder = Math.max(0, reorderTarget - medicine.stockOnHand);
-      const coverageMonths = monthlyAverage > 0 ? medicine.stockOnHand / monthlyAverage : 0;
-
-      let action = "Ready";
-      let actionNote = `Stock cover ${formatDecimal(coverageMonths, 1)} months`;
-
-      if (suggestedOrder > 0) {
-        action = "Early Request";
-        actionNote = `Mag-request ng ${formatNumber(suggestedOrder)} units bago ang ${seasonLabelLower(nextSeason)}`;
-      } else if (nextSeasonShift >= 15 && medicine.stockOnHand < forecast * 2.4) {
-        action = "Build Buffer";
-        actionNote = `Maghanda para sa ${formatSignedPercent(nextSeasonShift, 0)} ${seasonLabelLower(nextSeason)} demand shift`;
+    const renderDemandList = (medicines, emptyMessage) => {
+      if (!demandSignalList) return;
+      if (!Array.isArray(medicines) || !medicines.length) {
+        demandSignalList.innerHTML = `<div class="text-muted small">${esc(emptyMessage || "No demand prediction signals available yet.")}</div>`;
+        return;
       }
 
-      return {
-        ...medicine,
-        monthlyAverage,
-        currentSeasonAverage,
-        nextSeasonAverage,
-        nextSeasonShift,
-        movingAverage,
-        smoothing,
-        forecast,
-        reorderTarget,
-        suggestedOrder,
-        coverageMonths,
-        action,
-        actionNote
-      };
-    });
+      demandSignalList.innerHTML = medicines
+        .slice(0, 8)
+        .map((medicine) => {
+          const tone = medicine.actionTone || (["Early Request", "Build Buffer"].includes(text(medicine.action)) ? "warning" : "success");
+          const badgeIcon = tone === "warning" ? "bi bi-exclamation-lg" : "bi bi-arrow-up";
+          return `
+            <article class="demand-priority-item" title="${esc(medicine.actionNote || "")}">
+              <div class="demand-priority-item__left">
+                <div class="demand-priority-item__icon demand-priority-item__icon--${esc(tone)}">
+                  <i class="${esc(medicine.iconClass || "bi bi-capsule")}"></i>
+                </div>
+                <div class="demand-priority-item__copy">
+                  <strong>${esc(medicine.displayName || medicine.name || "Medicine")}</strong>
+                  <span>${esc(medicine.actionLabel || "Watch Demand")}</span>
+                </div>
+              </div>
+              <div class="demand-priority-item__badge demand-priority-item__badge--${esc(tone)}">
+                <i class="${esc(badgeIcon)}"></i>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    };
 
-    const aggregateDemand = months.map((_, monthIndex) => sum(
-      medicineForecasts.map((medicine) => medicine.monthlyDemand[monthIndex])
-    ));
-    const aggregateMovingAverage = movingAverageForecast(aggregateDemand, 3);
-    const aggregateSmoothing = exponentialSmoothingForecast(aggregateDemand, 0.35);
-    const combinedForecast = Math.round((aggregateMovingAverage + aggregateSmoothing) / 2);
-    const currentSeasonAverage = average(currentSeason.months.map((index) => aggregateDemand[index]));
-    const nextSeasonAverage = average(nextSeason.months.map((index) => aggregateDemand[index]));
-    const seasonalShift = currentSeasonAverage > 0
-      ? ((nextSeasonAverage - currentSeasonAverage) / currentSeasonAverage) * 100
-      : 0;
-    const earlyReorderCount = medicineForecasts.filter((medicine) => medicine.action === "Early Request").length;
-    const sortedMedicines = [...medicineForecasts].sort((left, right) => right.forecast - left.forecast);
-    const seasonalSummaryLabel = seasonalShift >= 0
-      ? `Expected ${nextSeason.label} Increase`
-      : `Expected ${nextSeason.label} Decrease`;
-    setText("metricDemandForecast", formatNumber(combinedForecast));
-    setText("metricDemandUplift", formatSignedPercent(seasonalShift, 0));
-    if (metricDemandSeasonLabel) metricDemandSeasonLabel.textContent = seasonalSummaryLabel;
-    setText("metricDemandPriority", formatNumber(medicineForecasts.length));
-    setText("metricDemandReorder", formatNumber(earlyReorderCount));
-    setHTML(
-      "seasonalSignalList",
-      sortedMedicines
-        .map((medicine) => `
-        <article class="demand-priority-item">
-          <div class="demand-priority-item__left">
-            <div class="demand-priority-item__icon demand-priority-item__icon--${medicine.action === "Early Request" ? "warning" : "success"}">
-              <i class="${medicine.name === "Lagundi" ? "bi bi-capsule-pill" : "bi bi-capsule"}"></i>
-            </div>
-            <div class="demand-priority-item__copy">
-              <strong>${medicine.name}</strong>
-              <span>${medicine.action === "Early Request" ? "Request Soon" : medicine.action === "Build Buffer" ? "Prepare Extra Stock" : "Watch Demand"}</span>
-            </div>
-          </div>
-          <div class="demand-priority-item__badge demand-priority-item__badge--${medicine.action === "Early Request" ? "warning" : "success"}">
-            <i class="${medicine.action === "Early Request" ? "bi bi-exclamation-lg" : "bi bi-arrow-up"}"></i>
-          </div>
-        </article>
-      `).join("")
-    );
+    const renderDemandChart = (labels, actualDemand, predictedDemand) => {
+      if (!demandChartEl || !window.Chart) return;
 
-    if (demandChartEl && window.Chart) {
-      if (window.__demandPredictionChart) window.__demandPredictionChart.destroy();
+      destroyDemandChart();
+
+      const safeLabels = Array.isArray(labels) && labels.length ? labels : [...months, nextCycleLabel];
+      const safeActualDemand = Array.isArray(actualDemand) ? actualDemand : Array.from({ length: safeLabels.length }, () => null);
+      const safePredictedDemand = Array.isArray(predictedDemand) ? predictedDemand : Array.from({ length: safeLabels.length }, () => null);
+      const chartValues = [...safeActualDemand, ...safePredictedDemand]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      const highestValue = chartValues.length ? Math.max(...chartValues) : 0;
+      const suggestedMax = highestValue > 0 ? Math.ceil(highestValue / 50) * 50 : 100;
+      const stepSize = suggestedMax <= 100 ? 20 : suggestedMax <= 300 ? 50 : 100;
 
       window.__demandPredictionChart = new window.Chart(demandChartEl, {
         type: "line",
         data: {
-          labels: [...months, nextCycleLabel],
+          labels: safeLabels,
           datasets: [
             {
               label: "Actual Demand",
-              data: [...aggregateDemand, null],
+              data: safeActualDemand,
               borderColor: palette.green,
               backgroundColor: "rgba(24,169,87,0.22)",
               fill: true,
@@ -675,7 +627,7 @@
             },
             {
               label: "Predicted Demand",
-              data: [...Array(11).fill(null), aggregateDemand[11], combinedForecast],
+              data: safePredictedDemand,
               borderColor: palette.blue,
               borderDash: [6, 5],
               borderWidth: 3,
@@ -704,10 +656,10 @@
           scales: {
             y: {
               beginAtZero: true,
-              suggestedMax: 500,
+              suggestedMax,
               ticks: {
                 precision: 0,
-                stepSize: 100
+                stepSize
               },
               grid: {
                 color: "rgba(92, 103, 80, 0.12)"
@@ -721,13 +673,75 @@
           }
         }
       });
+    };
+
+    const applyDemandFallbackState = (message) => {
+      setText("metricDemandForecast", "0");
+      setText("metricDemandUplift", "0%");
+      setText("metricDemandPriority", "0");
+      setText("metricDemandReorder", "0");
+      if (metricDemandSeasonLabel) metricDemandSeasonLabel.textContent = "Expected Next Season Change";
+      if (metricDemandSeasonIcon) metricDemandSeasonIcon.className = fallbackNextSeason.icon;
+      renderDemandList([], message);
+      renderDemandChart([...months, nextCycleLabel], Array.from({ length: 13 }, () => null), Array.from({ length: 13 }, () => null));
+    };
+
+    if (metricDemandSeasonIcon) metricDemandSeasonIcon.className = fallbackNextSeason.icon;
+
+    try {
+      let analytics = prefetchedAnalytics && typeof prefetchedAnalytics === "object"
+        ? prefetchedAnalytics
+        : null;
+      if (!analytics) {
+        const url = new URL(DASHBOARD_ANALYTICS_ENDPOINT, window.location.href);
+        url.searchParams.set("scope", "demand_prediction");
+
+        const payload = await requestJson(url.toString());
+        analytics = payload && typeof payload.analytics === "object" && payload.analytics
+          ? payload.analytics
+          : {};
+      }
+      const summary = analytics && typeof analytics.summary === "object" && analytics.summary
+        ? analytics.summary
+        : {};
+      const nextSeason = analytics && typeof analytics.nextSeason === "object" && analytics.nextSeason
+        ? analytics.nextSeason
+        : {};
+      const chart = analytics && typeof analytics.chart === "object" && analytics.chart
+        ? analytics.chart
+        : {};
+      const watchList = Array.isArray(analytics.watchList) ? analytics.watchList : [];
+      const hasData = Boolean(analytics.hasData);
+
+      setText("metricDemandForecast", formatNumber(summary.predictedNextDemand || 0));
+      setText("metricDemandUplift", formatSignedPercent(summary.seasonalShiftPercent || 0, 0));
+      setText("metricDemandPriority", formatNumber(summary.medicinesToWatch || watchList.length));
+      setText("metricDemandReorder", formatNumber(summary.medicinesToRequestSoon || 0));
+      if (metricDemandSeasonLabel) {
+        metricDemandSeasonLabel.textContent = String(summary.seasonalSummaryLabel || "Expected Next Season Change");
+      }
+      if (metricDemandSeasonIcon) {
+        metricDemandSeasonIcon.className = String(nextSeason.iconClass || fallbackNextSeason.icon);
+      }
+
+      renderDemandList(watchList, analytics.emptyMessage || "No demand prediction signals available yet.");
+      renderDemandChart(chart.labels, chart.actualDemand, chart.predictedDemand);
+
+      if (!hasData) {
+        setText("metricDemandUplift", "0%");
+      }
+    } catch (error) {
+      console.error("Demand prediction analytics request failed.", error);
+      applyDemandFallbackState(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to load demand prediction analytics right now."
+      );
     }
   };
 
-  const renderDiseasePatternScenario = () => {
+  const renderDiseasePatternScenario = (prefetchedAnalytics = null) => {
     const diseaseChartEl = document.getElementById("diseasePatternChart");
-    const dispenseMovements = readStoredList(MOVEMENTS_STORAGE)
-      .filter((movement) => keyOf(movement?.actionType) === "dispense");
     const accentOrder = ["danger", "orange", "gold", "teal"];
     const chartColors = ["#75a85a", "#cba43b", "#7cb7ac", "#6baf63", "#eb8b5a", "#79a4d8"];
     const diseaseVisuals = [
@@ -755,56 +769,20 @@
         icon: "bi bi-clipboard2-pulse"
       };
     };
-    const diseaseSignals = [];
-    const diseaseSignalMap = new Map();
-    const medicineSignals = [];
-    const medicineSignalMap = new Map();
-
-    dispenseMovements.forEach((movement) => {
-      const illness = resolvePatternLabel(movement);
-      const medicine = text(movement?.medicineName) || "Unknown medicine";
-      const quantity = Math.max(0, Math.round(toNumber(movement?.quantity)));
-
-      if (illness) {
-        if (!diseaseSignalMap.has(illness)) {
-          const nextSignal = {
-            illness,
-            requests: 0,
-            quantity: 0,
-            latestAt: ""
-          };
-          diseaseSignalMap.set(illness, nextSignal);
-          diseaseSignals.push(nextSignal);
-        }
-        const diseaseSignal = diseaseSignalMap.get(illness);
-        diseaseSignal.requests += 1;
-        diseaseSignal.quantity += quantity;
-        diseaseSignal.latestAt = text(movement?.createdAt) || diseaseSignal.latestAt;
-      }
-
-      if (medicine) {
-        if (!medicineSignalMap.has(medicine)) {
-          const nextMedicineSignal = {
-            medicine,
-            requests: 0,
-            quantity: 0
-          };
-          medicineSignalMap.set(medicine, nextMedicineSignal);
-          medicineSignals.push(nextMedicineSignal);
-        }
-        const medicineSignal = medicineSignalMap.get(medicine);
-        medicineSignal.requests += 1;
-        medicineSignal.quantity += quantity;
-      }
-    });
-
-    diseaseSignals.sort((left, right) => right.requests - left.requests || right.quantity - left.quantity || left.illness.localeCompare(right.illness));
-    medicineSignals.sort((left, right) => right.requests - left.requests || right.quantity - left.quantity || left.medicine.localeCompare(right.medicine));
+    const analytics = prefetchedAnalytics && typeof prefetchedAnalytics === "object"
+      ? prefetchedAnalytics
+      : null;
+    const diseaseSignals = analytics
+      ? (Array.isArray(analytics.patterns) ? analytics.patterns : [])
+      : [];
+    const medicineSignals = analytics
+      ? (Array.isArray(analytics.medicines) ? analytics.medicines : [])
+      : [];
 
     if (!diseaseSignals.length) {
       setHTML(
         "diseasePatternList",
-        '<div class="text-muted small">No disease pattern data yet. Start recording dispense cases to build this analysis.</div>'
+        `<div class="text-muted small">${esc(analytics?.emptyMessage || "No disease pattern data yet. Start recording dispense cases to build this analysis.")}</div>`
       );
     } else {
       setHTML(
@@ -884,22 +862,15 @@
     }
   };
 
-  const renderStockMovementScenario = () => {
-    const snapshot = readMonitoringSnapshot();
-    if (snapshot?.movement) {
-      applyLiveMonitoringSnapshot(snapshot);
-      return;
-    }
-
-    setText("stockMovementFastCount", "0 items");
-    setText("stockMovementSlowCount", "0 items");
-    setHTML("stockFastList", '<div class="text-muted small">Movement analytics will appear after dispense activity is recorded.</div>');
-    setHTML("stockSlowList", '<div class="text-muted small">Slow-moving medicines will appear after inventory activity is available.</div>');
+  const renderStockMovementScenario = (snapshot = null) => {
+    applyLiveMonitoringSnapshot(snapshot || buildEmptyMonitoringSnapshot());
   };
 
-  const renderSupplyDeliveryScenario = () => {
+  const renderSupplyDeliveryScenario = (prefetchedAnalytics = null) => {
     const leadTimeChartEl = document.getElementById("supplyLeadTimeChart");
-    const analytics = supplyMonitoring ? supplyMonitoring.buildSupplyAnalytics() : {
+    const analytics = prefetchedAnalytics && typeof prefetchedAnalytics === "object"
+      ? prefetchedAnalytics
+      : supplyMonitoring ? supplyMonitoring.buildSupplyAnalytics() : {
       rows: [],
       recentRows: [],
       monthlyLeadTimes: Array(12).fill(0),
@@ -914,7 +885,19 @@
       }
     };
 
-    const summary = analytics.summary;
+    const summary = analytics && typeof analytics.summary === "object" && analytics.summary
+      ? analytics.summary
+      : {
+        averageLeadTime: 0,
+        onTimeCount: 0,
+        delayedCount: 0,
+        incompleteCount: 0,
+        pendingCount: 0,
+        completedCount: 0,
+        onTimeRate: 0
+      };
+    const recentRows = Array.isArray(analytics?.recentRows) ? analytics.recentRows : [];
+    const monthlyLeadTimes = Array.isArray(analytics?.monthlyLeadTimes) ? analytics.monthlyLeadTimes : Array(12).fill(0);
     const sourceLabel = "Monitor supply lead times and delivery reliability.";
 
     const chartPalette = {
@@ -943,8 +926,8 @@
 
     setHTML(
       "supplyRequestList",
-      analytics.recentRows.length
-        ? analytics.recentRows
+      recentRows.length
+        ? recentRows
           .map((request) => {
             const badgeTone = request.onTime
               ? "done"
@@ -1038,7 +1021,7 @@
         data: {
           labels: months,
           datasets: [{
-            data: analytics.monthlyLeadTimes,
+            data: monthlyLeadTimes,
             borderColor: chartPalette.green,
             backgroundColor: "rgba(24, 169, 87, 0.18)",
             fill: true,
@@ -1069,7 +1052,7 @@
             },
             y: {
               beginAtZero: true,
-              suggestedMax: Math.max(6, ...analytics.monthlyLeadTimes.map((value) => Math.ceil(value || 0))),
+              suggestedMax: Math.max(6, ...monthlyLeadTimes.map((value) => Math.ceil(value || 0))),
               ticks: {
                 stepSize: 1,
                 precision: 0,
@@ -1088,162 +1071,101 @@
     syncSupplyPanelHeightsDeferred();
   };
 
-  const renderExpiryConsumptionScenario = () => {
-    const expiringMedicines = [
-      { name: "Amoxicillin", expiry: "Aug 20", daysLeft: 12, tone: "danger", icon: "bi bi-capsule" },
-      { name: "ORS", expiry: "Aug 25", daysLeft: 17, tone: "warning", icon: "bi bi-droplet-half" },
-      { name: "Vitamin C", expiry: "Sep 1", daysLeft: 24, tone: "watch", icon: "bi bi-capsule" },
-      { name: "Amlodipine", expiry: "Sep 8", daysLeft: 31, tone: "watch", icon: "bi bi-capsule" },
-      { name: "Salbutamol", expiry: "Sep 16", daysLeft: 39, tone: "watch", icon: "bi bi-capsule" }
-    ];
-
-    const consumptionRates = [
-      { name: "Paracetamol", dispensed: 120, level: "Fast", tone: "fast", icon: "bi bi-capsule" },
-      { name: "Lagundi", dispensed: 60, level: "Moderate", tone: "moderate", icon: "bi bi-capsule-pill" },
-      { name: "Vitamin C", dispensed: 15, level: "Slow", tone: "slow", icon: "bi bi-capsule" },
-      { name: "Multivitamins", dispensed: 22, level: "Slow", tone: "slow", icon: "bi bi-capsule" }
-    ];
-
-    const riskItem = {
-      name: "Vitamin C",
-      stock: 200,
-      consumption: "Slow",
-      expiryWindow: "30 Days"
-    };
-
-    const inventoryTotalUnits = 2150;
-    const slowConsumptionCount = consumptionRates.filter((item) => item.level === "Slow").length;
-    const withinThirtyDays = expiringMedicines.filter((item) => item.daysLeft <= 30).length;
-
-    setText("expirySoonCount", `${formatNumber(expiringMedicines.length)} medicines`);
-    setText("expiryThirtyCount", `${formatNumber(withinThirtyDays)} medicines`);
-    setText("expiryInventoryTotal", `${formatNumber(inventoryTotalUnits)} units`);
-    setText("expirySlowCount", `${formatNumber(slowConsumptionCount)} medicines`);
-    setText("expiryRiskTitle", riskItem.name);
-
-    setHTML(
-      "expiryMedicineList",
-      expiringMedicines
-        .map((medicine) => `
-          <article class="expiry-medicine-item">
-            <div class="expiry-medicine-item__icon">
-              <i class="${medicine.icon}"></i>
-            </div>
-            <div class="expiry-medicine-item__copy">
-              <strong>${medicine.name}</strong>
-              <span>Expiry: ${medicine.expiry}</span>
-            </div>
-            <div class="expiry-days-pill expiry-days-pill--${medicine.tone}">
-              <small>Days Left</small>
-              <strong>${formatNumber(medicine.daysLeft)}</strong>
-            </div>
-          </article>
-        `)
-        .join("")
-    );
-
-    setHTML(
-      "expiryConsumptionList",
-      consumptionRates
-        .map((item) => `
-          <article class="expiry-consumption-item">
-            <div class="expiry-consumption-item__left">
-              <div class="expiry-consumption-item__icon">
-                <i class="${item.icon}"></i>
-              </div>
-              <div class="expiry-consumption-item__copy">
-                <strong>${item.name}</strong>
-                <span>${formatNumber(item.dispensed)} dispensed / month</span>
-              </div>
-            </div>
-            <div class="expiry-consumption-item__meta">
-              <span class="expiry-rate-pill expiry-rate-pill--${item.tone}">${item.level}</span>
-              <span class="expiry-consumption-item__value">${formatNumber(item.dispensed)} / month</span>
-            </div>
-          </article>
-        `)
-        .join("")
-    );
-
-    setHTML(
-      "expiryRiskFacts",
-      [
-        { label: "Stock", value: formatNumber(riskItem.stock) },
-        { label: "Consumption", value: riskItem.consumption },
-        { label: "Expiry", value: riskItem.expiryWindow }
-      ]
-        .map((item) => `
-          <div class="expiry-risk-fact">
-            <span>${item.label}</span>
-            <strong>${item.value}</strong>
-          </div>
-        `)
-        .join("")
-    );
-
-    syncExpiryPanelHeightsDeferred();
-
+  const renderExpiryConsumptionScenario = (snapshot = null) => {
+    applyLiveMonitoringSnapshot(snapshot || buildEmptyMonitoringSnapshot());
   };
 
-  const renderInventoryBalanceScenario = () => {
-    const stockItems = [
-      { name: "Paracetamol", stock: 150, status: "Balanced", tone: "balanced", target: 120, max: 180, icon: "bi bi-capsule" },
-      { name: "Cetirizine", stock: 20, status: "Low Stock", tone: "low", target: 80, max: 140, icon: "bi bi-capsule" },
-      { name: "Vitamin C", stock: 300, status: "Overstock", tone: "over", target: 180, max: 230, icon: "bi bi-capsule" },
-      { name: "Lagundi", stock: 96, status: "Balanced", tone: "balanced", target: 85, max: 130, icon: "bi bi-capsule-pill" },
-      { name: "ORS", stock: 72, status: "Balanced", tone: "balanced", target: 70, max: 110, icon: "bi bi-droplet-half" }
-    ];
+  const renderInventoryBalanceScenario = (snapshot = null) => {
+    applyLiveMonitoringSnapshot(snapshot || buildEmptyMonitoringSnapshot());
+  };
 
-    const lowItems = stockItems.filter((item) => item.tone === "low");
-    const overstockItems = stockItems.filter((item) => item.tone === "over");
-    const balancedItems = stockItems.filter((item) => item.tone === "balanced");
-    const totalMedicines = stockItems.length;
-    const balancedCount = balancedItems.length;
-    const lowCount = lowItems.length;
-    const overstockCount = overstockItems.length;
-    setText("balanceTotalMedicines", `${formatNumber(totalMedicines)} items`);
-    setText("balanceBalancedCount", `${formatNumber(balancedCount)} medicines`);
-    setText("balanceLowCount", `${formatNumber(lowCount)} medicines`);
-    setText("balanceOverstockCount", `${formatNumber(overstockCount)} medicines`);
-    setHTML("balanceLowList", renderBalanceBucketItems(lowItems.map((item) => ({
-      ...item,
-      reorderLevel: item.target,
-      overstockThreshold: item.max
-    })), "low"));
-    setHTML("balanceBalancedList", renderBalanceBucketItems(balancedItems.map((item) => ({
-      ...item,
-      reorderLevel: item.target,
-      overstockThreshold: item.max
-    })), "balanced"));
-    setHTML("balanceOverstockList", renderBalanceBucketItems(overstockItems.map((item) => ({
-      ...item,
-      reorderLevel: item.target,
-      overstockThreshold: item.max
-    })), "over"));
+  let adminOverviewRequest = null;
+  const loadAdminDashboardOverview = async () => {
+    if (adminOverviewRequest) return adminOverviewRequest;
 
+    adminOverviewRequest = (async () => {
+      const emptySupplyAnalytics = {
+        rows: [],
+        recentRows: [],
+        monthlyLeadTimes: Array(12).fill(0),
+        summary: {
+          averageLeadTime: 0,
+          onTimeCount: 0,
+          delayedCount: 0,
+          incompleteCount: 0,
+          pendingCount: 0,
+          completedCount: 0,
+          onTimeRate: 0
+        }
+      };
+      const fallbackDemandMessage = "Unable to load demand prediction analytics right now.";
+      const fallbackDiseaseMessage = "Unable to load disease pattern analytics right now.";
+      const emptySnapshot = buildEmptyMonitoringSnapshot();
+
+      try {
+        const url = new URL(DASHBOARD_ANALYTICS_ENDPOINT, window.location.href);
+        url.searchParams.set("scope", "admin_overview");
+
+        const payload = await requestJson(url.toString());
+        const analytics = payload && typeof payload.analytics === "object" && payload.analytics
+          ? payload.analytics
+          : {};
+        const demandAnalytics = analytics.demand && typeof analytics.demand === "object"
+          ? analytics.demand
+          : { hasData: false, emptyMessage: fallbackDemandMessage };
+        const diseaseAnalytics = analytics.diseasePattern && typeof analytics.diseasePattern === "object"
+          ? analytics.diseasePattern
+          : { patterns: [], medicines: [], emptyMessage: fallbackDiseaseMessage };
+        const monitoringSnapshot = analytics.monitoringSnapshot && typeof analytics.monitoringSnapshot === "object"
+          ? analytics.monitoringSnapshot
+          : emptySnapshot;
+        const supplyAnalytics = analytics.supply && typeof analytics.supply === "object"
+          ? analytics.supply
+          : emptySupplyAnalytics;
+
+        await renderDemandPredictionScenario(demandAnalytics);
+        renderDiseasePatternScenario(diseaseAnalytics);
+        applyLiveMonitoringSnapshot(monitoringSnapshot);
+        renderSupplyDeliveryScenario(supplyAnalytics);
+      } catch (error) {
+        console.error("Admin dashboard overview request failed.", error);
+        const message = error instanceof Error && error.message
+          ? error.message
+          : "Unable to load dashboard analytics right now.";
+
+        await renderDemandPredictionScenario({
+          hasData: false,
+          emptyMessage: message
+        });
+        renderDiseasePatternScenario({
+          patterns: [],
+          medicines: [],
+          emptyMessage: message
+        });
+        applyLiveMonitoringSnapshot(emptySnapshot);
+        renderSupplyDeliveryScenario(emptySupplyAnalytics);
+      }
+    })().finally(() => {
+      adminOverviewRequest = null;
+    });
+
+    return adminOverviewRequest;
   };
 
   if (!document.getElementById("metricTotalMedicines")) {
-    if (document.getElementById("demandForecastChart")) renderDemandPredictionScenario();
-    if (document.getElementById("diseasePatternList")) renderDiseasePatternScenario();
-    if (document.getElementById("stockFastList")) renderStockMovementScenario();
-    if (document.getElementById("supplyLeadTimeChart")) renderSupplyDeliveryScenario();
-    if (document.getElementById("expiryMedicineList")) renderExpiryConsumptionScenario();
-    if (document.getElementById("balanceLowList")) renderInventoryBalanceScenario();
-    applyLiveMonitoringSnapshot();
-    window.addEventListener("mss:notifications-synced", (event) => {
-      applyLiveMonitoringSnapshot(event.detail);
+    loadAdminDashboardOverview();
+    window.addEventListener("mss:notifications-synced", () => {
+      loadAdminDashboardOverview();
     });
-    window.addEventListener("storage", (event) => {
-      if (event.key === MONITORING_SNAPSHOT_STORAGE) applyLiveMonitoringSnapshot();
-      if (event.key === MOVEMENTS_STORAGE && document.getElementById("diseasePatternList")) {
-        renderDiseasePatternScenario();
-      }
+    window.addEventListener("mss:inventory-updated", () => {
+      loadAdminDashboardOverview();
+    });
+    window.addEventListener("mss:supply-state-updated", () => {
+      loadAdminDashboardOverview();
     });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") return;
-      applyLiveMonitoringSnapshot();
-      if (document.getElementById("diseasePatternList")) renderDiseasePatternScenario();
+      loadAdminDashboardOverview();
     });
     return;
   }
@@ -2243,9 +2165,7 @@
 
   initCharts();
   loadDashboard(Number(yearSelect?.value) || currentYear);
-  window.addEventListener("storage", (event) => {
-    if (!supplyMonitoring) return;
-    if (![supplyMonitoring.STORAGE.requests, supplyMonitoring.STORAGE.movements].includes(event.key)) return;
+  window.addEventListener("mss:supply-state-updated", () => {
     renderSupplyDeliveryScenario();
   });
 })();

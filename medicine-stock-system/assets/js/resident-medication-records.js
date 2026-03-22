@@ -1,9 +1,5 @@
 (() => {
-  const STORAGE = {
-    residents: "mss_resident_accounts_v1",
-    movements: "mss_inventory_movements_v1",
-    inventory: "mss_inventory_records_v1"
-  };
+  const STATE_ENDPOINT = "state-api.php";
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -29,6 +25,7 @@
   const recordHistoryModal = byId("recordHistoryModal") && window.bootstrap ? new window.bootstrap.Modal(byId("recordHistoryModal")) : null;
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
+  let recordsHydrationPromise = null;
 
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
@@ -70,21 +67,21 @@
 
     const items = pageRole === "staff"
       ? [
-          { href: "staff.html#staff-dashboard", icon: "bi bi-speedometer2", label: "Dashboard" },
-          { href: "staff.html#patient-profiles", icon: "bi bi-person-vcard", label: "Patient Profiles" },
-          { href: "dispensing-records.html?role=staff", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
-          { href: "staff.html#notifications", icon: "bi bi-bell", label: "Notifications" },
-          { href: "staff.html#my-settings", icon: "bi bi-gear", label: "Settings" },
+          { href: "staff.php#staff-dashboard", icon: "bi bi-speedometer2", label: "Dashboard" },
+          { href: "staff.php#patient-profiles", icon: "bi bi-person-vcard", label: "Patient Profiles" },
+          { href: "dispensing-records.php?role=staff", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
+          { href: "staff.php#notifications", icon: "bi bi-bell", label: "Notifications" },
+          { href: "staff.php#my-settings", icon: "bi bi-gear", label: "Settings" },
           { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
         ]
       : [
-          { href: "admin-dashboard.html", icon: "bi bi-speedometer2", label: "Dashboard" },
-          { href: "medicine-inventory.html", icon: "bi bi-capsule-pill", label: "Medicine Inventory" },
-          { href: "cho-request-log.html", icon: "bi bi-clipboard2-plus", label: "CHO Request Log" },
-          { href: "dispensing-records.html?role=admin", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
-          { href: "reports.html", icon: "bi bi-file-earmark-text", label: "Reports" },
-          { href: "notifications.html", icon: "bi bi-bell", label: "Notifications" },
-          { href: "settings.html", icon: "bi bi-gear", label: "Settings" },
+          { href: "index.php", icon: "bi bi-speedometer2", label: "Dashboard" },
+          { href: "medicine-inventory.php", icon: "bi bi-capsule-pill", label: "Medicine Inventory" },
+          { href: "cho-request-log.php", icon: "bi bi-clipboard2-plus", label: "CHO Request Log" },
+          { href: "dispensing-records.php?role=admin", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
+          { href: "reports.php", icon: "bi bi-file-earmark-text", label: "Reports" },
+          { href: "notifications.php", icon: "bi bi-bell", label: "Notifications" },
+          { href: "settings.php", icon: "bi bi-gear", label: "Settings" },
           { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
         ];
 
@@ -97,14 +94,20 @@
     refs.logoutLink = byId("logoutLink");
   };
 
-  const readList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(String(payload.message || "Unable to load dispensing records right now."));
     }
+    return payload;
   };
 
   const normalizeResident = (entry = {}, index = 0) => ({
@@ -418,15 +421,50 @@
     });
   };
 
-  const loadState = () => {
-    const residents = readList(STORAGE.residents).map(normalizeResident);
-    const movements = readList(STORAGE.movements).map(normalizeMovement);
-    const inventory = readList(STORAGE.inventory).map(normalizeInventoryEntry);
-    const residentSource = residents.length ? residents : (movements.length ? [] : fallbackResidents);
-    const movementSource = movements.length ? movements : (residents.length ? [] : fallbackMovements);
+  const applyRecordsState = ({
+    residents = [],
+    movements = [],
+    inventory = []
+  } = {}) => {
+    state.inventory = inventory;
+    state.records = buildRecords(residents, movements);
+  };
 
-    state.inventory = inventory.length ? inventory : fallbackInventory;
-    state.records = buildRecords(residentSource, movementSource);
+  const hydrateRecordsState = async () => {
+    if (recordsHydrationPromise) {
+      await recordsHydrationPromise;
+      return;
+    }
+
+    recordsHydrationPromise = (async () => {
+      try {
+        const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+        const serverState = payload?.state || {};
+        const serverResidents = Array.isArray(serverState.residentAccounts)
+          ? serverState.residentAccounts.map(normalizeResident)
+          : [];
+        const serverMovements = Array.isArray(serverState.movements)
+          ? serverState.movements.map(normalizeMovement)
+          : [];
+        const serverInventory = Array.isArray(serverState.inventory)
+          ? serverState.inventory.map(normalizeInventoryEntry)
+          : [];
+        applyRecordsState({
+          residents: serverResidents,
+          movements: serverMovements,
+          inventory: serverInventory
+        });
+      } catch (error) {
+        applyRecordsState();
+        console.error("Unable to load backend dispensing records right now.", error);
+      }
+    })();
+
+    try {
+      await recordsHydrationPromise;
+    } finally {
+      recordsHydrationPromise = null;
+    }
   };
 
   const filteredRecords = () => {
@@ -588,7 +626,31 @@
     recordHistoryModal?.show();
   });
 
-  loadState();
-  renderBarangayOptions();
-  renderAll();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    void hydrateRecordsState().then(() => {
+      renderBarangayOptions();
+      renderAll();
+    }).catch(() => {});
+  });
+
+  window.addEventListener("mss:inventory-updated", () => {
+    void hydrateRecordsState().then(() => {
+      renderBarangayOptions();
+      renderAll();
+    }).catch(() => {});
+  });
+
+  window.addEventListener("mss:supply-state-updated", () => {
+    renderBarangayOptions();
+    renderAll();
+  });
+
+  const initializeRecordsPage = async () => {
+    await hydrateRecordsState();
+    renderBarangayOptions();
+    renderAll();
+  };
+
+  void initializeRecordsPage();
 })();

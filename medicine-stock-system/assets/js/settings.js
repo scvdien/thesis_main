@@ -1,9 +1,10 @@
 (() => {
-  const STORAGE = {
-    users: "mss_users_v1",
-    logs: "mss_activity_logs_v1",
-    sessions: "mss_active_sessions_v1"
-  };
+  const STATE_ENDPOINT = "state-api.php";
+  const PRESENCE_ENDPOINT = `${STATE_ENDPOINT}?scope=presence`;
+  const ACTIVE_USERS_REFRESH_MS = 30000;
+  const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
+    ? window.MSS_AUTH_USER
+    : null;
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -13,12 +14,16 @@
     sidebarToggle: byId("sidebarToggle"),
     logoutLink: byId("logoutLink"),
     moduleAlert: byId("moduleAlert"),
+    moduleAlertIcon: byId("moduleAlertIcon"),
+    moduleAlertText: byId("moduleAlertText"),
     createAccountForm: byId("createAccountForm"),
     usersList: byId("usersList"),
     usersListNotice: byId("usersListNotice"),
     nurseSettingsForm: byId("nurseSettingsForm"),
+    nurseCredentialsSummary: byId("nurseCredentialsSummary"),
     nurseCredentialsPanel: byId("nurseCredentialsPanel"),
     nurseCredentialsStartBtn: byId("nurseCredentialsStartBtn"),
+    nurseCredentialsCancelBtn: byId("nurseCredentialsCancelBtn"),
     nurseFullName: byId("nurseFullName"),
     nurseUsername: byId("nurseUsername"),
     nurseContact: byId("nurseContact"),
@@ -38,27 +43,36 @@
     editType: byId("editType"),
     editRole: byId("editRole"),
     editRoleDisplay: byId("editRoleDisplay"),
-    editToggleStatusBtn: byId("editToggleStatusBtn"),
-    editResetPasswordBtn: byId("editResetPasswordBtn"),
-    editChangePasswordBtn: byId("editChangePasswordBtn"),
     changePasswordForm: byId("changePasswordForm"),
     passwordUserId: byId("passwordUserId"),
+    resetFullName: byId("resetFullName"),
+    resetUsername: byId("resetUsername"),
     newPassword: byId("newPassword"),
-    confirmNewPassword: byId("confirmNewPassword")
+    confirmNewPassword: byId("confirmNewPassword"),
+    resetCredentialsNotice: byId("resetCredentialsNotice"),
+    confirmAccountActionTitle: byId("confirmAccountActionTitle"),
+    confirmAccountActionMessage: byId("confirmAccountActionMessage"),
+    confirmAccountActionBtn: byId("confirmAccountActionBtn")
   };
 
   const settingsNavLinks = Array.from(document.querySelectorAll(".settings-nav a[href^='#']"));
   const settingsPanels = Array.from(document.querySelectorAll(".settings-panel"));
   const settingsContent = document.querySelector(".settings-content");
   const activityLogFilterButtons = Array.from(document.querySelectorAll("[data-activity-log-filter]"));
+  const confirmAccountActionModalElement = byId("confirmAccountActionModal");
   const editUserModal = byId("editUserModal") && window.bootstrap ? new window.bootstrap.Modal(byId("editUserModal")) : null;
   const changePasswordModal = byId("changePasswordModal") && window.bootstrap ? new window.bootstrap.Modal(byId("changePasswordModal")) : null;
+  const confirmAccountActionModal = confirmAccountActionModalElement && window.bootstrap ? new window.bootstrap.Modal(confirmAccountActionModalElement) : null;
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
 
   const state = { users: [], logs: [], sessions: [] };
   const logUiState = { actionType: "all" };
+  let pendingAccountAction = null;
+  let pendingConfirmedAccountAction = null;
+  let activeUsersRefreshHandle = 0;
+  let noticeTimer = 0;
   const LOG_ACTION_LABELS = {
     created: "Created",
     updated: "Updated",
@@ -72,6 +86,7 @@
   const minutesAgoIso = (minutes) => new Date(Date.now() - (Math.max(0, Number(minutes) || 0) * 60000)).toISOString();
   const text = (value) => String(value || "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  const hasSpecialCharacter = (value) => /[^A-Za-z0-9]/.test(String(value || ""));
   const esc = (value) => String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -120,21 +135,41 @@
   const USER_ROLE_BHW = "BHW";
   const normalizeUserRole = (value) => text(value) === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_BHW;
 
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      const message = String(payload.message || "Unable to load settings data right now.");
+      const requestError = new Error(message);
+      requestError.payload = payload;
+      throw requestError;
+    }
+
+    return payload;
+  };
+
   const resolveLogActionType = (value = {}) => {
     const explicitType = keyOf(value.actionType || value.type);
-    if (LOG_ACTION_LABELS[explicitType]) return explicitType;
-
     const category = keyOf(value.category);
     const actionText = `${text(value.action)} ${text(value.details)}`.toLowerCase();
 
     if (category === "security" || /password|credential|security/.test(actionText)) return "security";
-    if (category === "access" || /login|logout|activate|deactivate|access/.test(actionText)) return "access";
     if (/created|added|provisioned|registered/.test(actionText)) return "created";
     if (/deleted|removed|archived|expired batch/.test(actionText)) return "deleted";
+    if (category === "access" || /login|logout|activate|deactivate|access/.test(actionText)) return "access";
+    if (LOG_ACTION_LABELS[explicitType]) return explicitType;
     return "updated";
   };
 
-  const currentActorUsername = () => getAdminUser()?.username || "nurse.incharge";
+  const currentActorUsername = () => getAdminUser()?.username || text(currentAuthUser?.username) || "admin";
   const currentActorIp = () => {
     const admin = getAdminUser();
     const session = admin ? state.sessions.find((entry) => entry.userId === admin.id) : null;
@@ -160,20 +195,31 @@
     };
   };
 
-  const readList = (storageKey) => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
+  const syncStateFromServer = (serverState = {}) => {
+    state.users = Array.isArray(serverState.users) ? serverState.users.map(normalizeUser) : [];
+    state.logs = Array.isArray(serverState.logs)
+      ? serverState.logs.map(normalizeLog).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 60)
+      : [];
+    state.sessions = Array.isArray(serverState.sessions)
+      ? [...serverState.sessions].sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime())
+      : [];
   };
 
-  const saveState = () => {
-    localStorage.setItem(STORAGE.users, JSON.stringify(state.users));
-    localStorage.setItem(STORAGE.logs, JSON.stringify(state.logs));
-    localStorage.setItem(STORAGE.sessions, JSON.stringify(state.sessions));
+  const persistState = async () => {
+    const payload = await requestJson(STATE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        state: {
+          users: state.users,
+          logs: state.logs
+        }
+      })
+    });
+    syncStateFromServer(payload.state || {});
+    return payload;
   };
 
   const setNotice = (element, baseClass, message, tone = "muted") => {
@@ -185,14 +231,40 @@
 
   const showNotice = (message, type = "success") => {
     if (!refs.moduleAlert) return;
-    refs.moduleAlert.className = `alert alert-${type}`;
-    refs.moduleAlert.textContent = message;
-    refs.moduleAlert.classList.remove("d-none");
-    window.setTimeout(() => refs.moduleAlert?.classList.add("d-none"), 3200);
+    const tone = type === "danger"
+      ? "danger"
+      : type === "warning"
+        ? "warning"
+        : type === "info"
+          ? "info"
+          : "success";
+    const iconClass = tone === "danger"
+      ? "bi bi-x-octagon-fill"
+      : tone === "warning"
+        ? "bi bi-exclamation-triangle-fill"
+        : tone === "info"
+          ? "bi bi-info-circle-fill"
+          : "bi bi-check2-circle";
+
+    window.clearTimeout(noticeTimer);
+    refs.moduleAlert.dataset.tone = tone;
+    refs.moduleAlert.setAttribute("aria-hidden", "false");
+    refs.moduleAlert.classList.add("is-visible");
+    if (refs.moduleAlertIcon) {
+      refs.moduleAlertIcon.innerHTML = `<i class="${iconClass}"></i>`;
+    }
+    if (refs.moduleAlertText) {
+      refs.moduleAlertText.textContent = message;
+    } else {
+      refs.moduleAlert.textContent = message;
+    }
+    noticeTimer = window.setTimeout(() => hideNotice(), 2400);
   };
 
   const hideNotice = () => {
-    refs.moduleAlert?.classList.add("d-none");
+    window.clearTimeout(noticeTimer);
+    refs.moduleAlert?.classList.remove("is-visible");
+    refs.moduleAlert?.setAttribute("aria-hidden", "true");
   };
 
   const normalizeUser = (entry = {}) => {
@@ -215,7 +287,7 @@
   };
 
   const getAdminUser = () => state.users.find((user) => text(user.role) === USER_ROLE_ADMIN) || null;
-  const actorName = () => getAdminUser()?.fullName || "Nurse-in-Charge";
+  const actorName = () => getAdminUser()?.fullName || text(currentAuthUser?.fullName) || "Nurse-in-Charge";
   const roleLabel = (role) => text(role) === USER_ROLE_ADMIN ? "Nurse-in-Charge" : "BHW";
   const findUser = (id) => state.users.find((user) => user.id === id) || null;
   const getUsers = () => state.users
@@ -225,38 +297,6 @@
   const accountMeta = (user) => text(user.role) === USER_ROLE_ADMIN
     ? "Nurse-in-Charge | Medicine Stock Module"
     : "BHW Access | Medicine Stock Module";
-
-  const ensureAdminUser = () => {
-    const existing = getAdminUser();
-    if (existing) return existing;
-    const timestamp = nowIso();
-    const user = {
-      id: uid(),
-      fullName: "Nurse-in-Charge",
-      username: "nurse.incharge",
-      contact: "09170000000",
-      accountType: USER_ROLE_ADMIN,
-      role: USER_ROLE_ADMIN,
-      status: "Active",
-      password: "Admin123!",
-      credentialsUpdatedAt: "",
-      createdAt: timestamp,
-      createdBy: "System Seed",
-      updatedAt: timestamp,
-      updatedBy: "System Seed"
-    };
-    state.users.push(user);
-    return user;
-  };
-
-  const seedUsers = () => {
-    const timestamp = nowIso();
-    state.users = [
-      { id: uid(), fullName: "Maricel Dela Cruz", username: "mdelacruz", contact: "09171234567", accountType: USER_ROLE_BHW, role: USER_ROLE_BHW, status: "Active", password: "BHW123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
-      { id: uid(), fullName: "Rico L. Ramos", username: "rramos", contact: "09179876543", accountType: USER_ROLE_ADMIN, role: USER_ROLE_ADMIN, status: "Active", password: "Admin123!", credentialsUpdatedAt: "", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" },
-      { id: uid(), fullName: "Ana Mae Santillan", username: "asantillan", contact: "09172345678", accountType: USER_ROLE_BHW, role: USER_ROLE_BHW, status: "Inactive", password: "BHW123!", createdAt: timestamp, createdBy: "System Seed", updatedAt: timestamp, updatedBy: "System Seed" }
-    ].map(normalizeUser);
-  };
 
   const addLog = ({ actor = actorName(), username = currentActorUsername(), action, actionType = "", target = "", details = "", category = "Settings", resultLabel = "Success", resultTone = "success", ipAddress = currentActorIp(), createdAt = nowIso() }) => {
     state.logs.unshift(normalizeLog({
@@ -323,137 +363,56 @@
       .sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime());
   };
 
-  const seedLogs = () => {
-    const admin = getAdminUser();
-    const staff = getUsers();
-    state.logs = [
-      normalizeLog({
-        id: uid(),
-        actor: admin?.fullName || "Rico L. Ramos",
-        username: admin?.username || "rramos",
-        actionType: "access",
-        action: "Login successful",
-        target: "Ligao City Coastal RHU Medicine Stock Monitoring System",
-        details: "Admin accessed the medicine stock dashboard to review daily inventory movements.",
-        resultLabel: "Success",
-        resultTone: "success",
-        ipAddress: "127.0.0.1 (localhost)",
-        createdAt: minutesAgoIso(4)
-      }),
-      normalizeLog({
-        id: uid(),
-        actor: staff[0]?.fullName || "Maricel Dela Cruz",
-        username: staff[0]?.username || "mdelacruz",
-        actionType: "updated",
-        action: "Updated stock count",
-        target: "Paracetamol 500mg",
-        details: "Stock balance was updated from 420 to 360 units after morning dispensing.",
-        resultLabel: "Success",
-        resultTone: "success",
-        ipAddress: "192.168.10.24",
-        createdAt: minutesAgoIso(18)
-      }),
-      normalizeLog({
-        id: uid(),
-        actor: admin?.fullName || "Rico L. Ramos",
-        username: admin?.username || "rramos",
-        actionType: "created",
-        action: "Created medicine batch",
-        target: "Amoxicillin 250mg",
-        details: "New lot CAB-2026-014 was added to inventory with 180 units and a June 2027 expiry date.",
-        resultLabel: "Success",
-        resultTone: "success",
-        ipAddress: "192.168.10.15",
-        createdAt: minutesAgoIso(47)
-      }),
-      normalizeLog({
-        id: uid(),
-        actor: staff[1]?.fullName || "Ana Mae Santillan",
-        username: staff[1]?.username || "asantillan",
-        actionType: "deleted",
-        action: "Archived expired lot",
-        target: "Cetirizine 10mg",
-        details: "Expired lot CET-2025-003 was removed from active stock after verification.",
-        resultLabel: "Archived",
-        resultTone: "neutral",
-        ipAddress: "192.168.10.31",
-        createdAt: new Date("2025-11-12T09:14:00+08:00").toISOString()
-      }),
-      normalizeLog({
-        id: uid(),
-        actor: admin?.fullName || "Rico L. Ramos",
-        username: admin?.username || "rramos",
-        actionType: "security",
-        action: "Updated admin credentials",
-        target: "Admin Credentials",
-        details: "Primary monitoring account credentials were updated for secure system access.",
-        resultLabel: "Success",
-        resultTone: "success",
-        ipAddress: "192.168.10.15",
-        createdAt: new Date("2025-08-27T14:36:00+08:00").toISOString()
-      }),
-      normalizeLog({
-        id: uid(),
-        actor: staff[0]?.fullName || "Maricel Dela Cruz",
-        username: staff[0]?.username || "mdelacruz",
-        actionType: "access",
-        action: "Logout successful",
-        target: "Medicine Inventory",
-        details: "User signed out after completing the low-stock review for the afternoon shift.",
-        resultLabel: "Success",
-        resultTone: "success",
-        ipAddress: "127.0.0.1 (localhost)",
-        createdAt: new Date("2025-08-27T16:05:00+08:00").toISOString()
-      })
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  };
-
-  const seedSessions = () => {
-    state.sessions = [];
-    const admin = getAdminUser();
-    const activeStaff = getUsers().filter((user) => text(user.status) === "Active");
-    if (admin) upsertSession(admin, { presence: "Online", location: "Settings Module", deviceLabel: "Desktop Browser", ipAddress: "192.168.10.15", signedInAt: minutesAgoIso(6), lastSeenAt: minutesAgoIso(1) });
-    if (activeStaff[0]) upsertSession(activeStaff[0], { presence: "Online", location: "Medicine Inventory", deviceLabel: "Android Tablet", ipAddress: "192.168.10.24", signedInAt: minutesAgoIso(22), lastSeenAt: minutesAgoIso(4) });
-    if (activeStaff[1]) upsertSession(activeStaff[1], { presence: "Idle", location: "Reports Workspace", deviceLabel: "Windows Laptop", ipAddress: "192.168.10.31", signedInAt: minutesAgoIso(54), lastSeenAt: minutesAgoIso(13) });
-  };
-
-  const loadState = () => {
-    state.users = readList(STORAGE.users).map(normalizeUser);
-    if (!state.users.length) seedUsers();
-    state.logs = readList(STORAGE.logs).map(normalizeLog);
-    state.logs = state.logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 60);
-    state.sessions = readList(STORAGE.sessions);
-    ensureAdminUser();
-    if (!state.logs.length) seedLogs();
-    if (!state.sessions.length) seedSessions();
+  const loadState = async () => {
+    const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+    syncStateFromServer(payload.state || {});
     syncSessions();
-    const admin = getAdminUser();
-    if (admin) upsertSession(admin, { presence: "Online", location: "Settings Module", deviceLabel: "Desktop Browser", ipAddress: "192.168.10.15", lastSeenAt: nowIso() });
-    saveState();
   };
 
-  const hasUpdatedAdminCredentials = (admin) => {
-    if (!admin || text(admin.role) !== "Admin") return false;
-    return Boolean(text(admin.credentialsUpdatedAt) || (text(admin.password) && admin.password !== "Admin123!"));
+  const refreshActiveUsers = async () => {
+    const separator = PRESENCE_ENDPOINT.includes("?") ? "&" : "?";
+    const payload = await requestJson(`${PRESENCE_ENDPOINT}${separator}t=${Date.now()}`);
+    const presenceState = payload.state || {};
+    if (Array.isArray(presenceState.users)) {
+      state.users = presenceState.users.map(normalizeUser);
+    }
+    if (Array.isArray(presenceState.sessions)) {
+      state.sessions = [...presenceState.sessions].sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime());
+    }
+    syncSessions();
+    renderSessions();
   };
 
-  const syncNurseCredentialsVisibility = ({ forceOpen = false } = {}) => {
-    const admin = ensureAdminUser();
-    const shouldHidePanel = hasUpdatedAdminCredentials(admin) && !forceOpen;
-    refs.nurseCredentialsPanel?.classList.toggle("d-none", shouldHidePanel);
-    refs.nurseCredentialsStartBtn?.classList.toggle("d-none", !shouldHidePanel);
+  const startActiveUsersPolling = () => {
+    if (activeUsersRefreshHandle) {
+      window.clearInterval(activeUsersRefreshHandle);
+    }
+
+    activeUsersRefreshHandle = window.setInterval(() => {
+      if (document.hidden) return;
+      void refreshActiveUsers().catch(() => {});
+    }, ACTIVE_USERS_REFRESH_MS);
+  };
+
+  const setNurseCredentialsEditorOpen = (open) => {
+    refs.nurseCredentialsSummary?.classList.toggle("d-none", open);
+    refs.nurseCredentialsPanel?.classList.toggle("d-none", !open);
   };
 
   const syncNurseSettingsForm = () => {
-    const admin = ensureAdminUser();
-    if (!admin) return;
+    const admin = getAdminUser();
+    if (!admin) {
+      setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account details are not available right now.", "danger");
+      setNurseCredentialsEditorOpen(true);
+      return;
+    }
     if (refs.nurseFullName) refs.nurseFullName.value = admin.fullName || "";
     if (refs.nurseUsername) refs.nurseUsername.value = admin.username || "";
     if (refs.nurseContact) refs.nurseContact.value = admin.contact || "";
     if (refs.nursePassword) refs.nursePassword.value = "";
     if (refs.nurseConfirmPassword) refs.nurseConfirmPassword.value = "";
     setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account only.");
-    syncNurseCredentialsVisibility();
+    setNurseCredentialsEditorOpen(false);
   };
 
   const renderUsers = () => {
@@ -465,25 +424,64 @@
       return;
     }
 
-    refs.usersList.innerHTML = users.map((user) => `
-      <div class="account-list-item">
-        <div class="account-card-main">
-          <div class="account-card-head">
-            <div class="item-info">
-              <div class="account-card-name">${esc(user.fullName)}</div>
-              <div class="account-card-meta">${esc(accountMeta(user))}</div>
-              <div class="account-card-subline">Username: ${esc(user.username)}</div>
+    refs.usersList.innerHTML = users.map((user) => {
+      const badgeClass = user.status === "Active" ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger";
+      const badgeText = user.status === "Active" ? "Active" : "Inactive";
+      const accountId = esc(user.id);
+      const fullName = esc(user.fullName);
+      const username = esc(user.username);
+      const contactNumber = esc(user.contact || "Not provided");
+      const accountMetaText = esc(accountMeta(user));
+      const toggleAction = user.status === "Active"
+        ? { label: "Deactivate", icon: "bi-person-slash", tone: "text-danger" }
+        : { label: "Activate", icon: "bi-person-check", tone: "text-success" };
+
+      return `
+        <div class="account-list-item settings-list-item staff-account-card">
+          <div class="staff-account-main">
+            <div class="staff-account-head">
+              <div class="item-info">
+                <div class="staff-account-name">${fullName}</div>
+                <div class="staff-account-meta">${accountMetaText}</div>
+                <div class="small">Username: ${username}</div>
+                <div class="small text-muted">Mobile: ${contactNumber}</div>
+              </div>
+            </div>
+          </div>
+          <div class="staff-account-actions">
+            <span class="badge ${badgeClass} staff-account-status">${badgeText}</span>
+            <div class="dropdown staff-action-menu">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary staff-action-menu-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="More staff actions"
+              >
+                <i class="bi bi-three-dots"></i>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end staff-action-menu-list">
+                <li>
+                  <button type="button" class="dropdown-item ${toggleAction.tone}" data-action="toggle" data-id="${accountId}">
+                    <i class="bi ${toggleAction.icon}"></i> ${toggleAction.label}
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="dropdown-item" data-action="reset" data-id="${accountId}">
+                    <i class="bi bi-key"></i> Reset
+                  </button>
+                </li>
+                <li>
+                  <button type="button" class="dropdown-item text-danger" data-action="delete" data-id="${accountId}">
+                    <i class="bi bi-trash"></i> Delete
+                  </button>
+                </li>
+              </ul>
             </div>
           </div>
         </div>
-        <div class="account-card-actions">
-          <span class="badge ${user.status === "Active" ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger"} status-badge">${esc(user.status)}</span>
-          <button type="button" class="btn btn-sm btn-outline-primary account-action-btn account-view-btn" data-action="view" data-id="${esc(user.id)}" title="View account">
-            <i class="bi bi-eye"></i>View
-          </button>
-        </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
 
     setNotice(refs.usersListNotice, "small mt-2", users.length === 1 ? "1 BHW account available in this module." : `${users.length} BHW accounts available in this module.`);
   };
@@ -492,7 +490,7 @@
     if (!refs.activeUsersList) return;
     const rows = state.users.map((user) => {
       const session = state.sessions.find((entry) => entry.userId === user.id) || null;
-      const isOnline = Boolean(session) && text(user.status) === "Active";
+      const isOnline = text(session?.presence) === "Online" && text(user.status) === "Active";
       const roleText = text(user.role) === USER_ROLE_ADMIN
         ? "Admin"
         : "BHW";
@@ -601,6 +599,7 @@
     if (action.includes("created bhw account")) return "Create Account";
     if (action.includes("updated bhw profile")) return "Edit Account";
     if (action.includes("activated bhw account") || action.includes("deactivated bhw account")) return "Account Status";
+    if (action.includes("reset bhw credentials")) return "Reset Credentials";
     if (action.includes("reset bhw password")) return "Reset Password";
     if (action.includes("changed bhw password")) return "Change Password";
     if (action.includes("credential")) return "Credentials";
@@ -635,6 +634,7 @@
     if (action.includes("updated bhw profile")) return "Updated BHW account details";
     if (action.includes("activated bhw account")) return "Activated a BHW account";
     if (action.includes("deactivated bhw account")) return "Deactivated a BHW account";
+    if (action.includes("reset bhw credentials")) return "Reset temporary BHW username and password";
     if (action.includes("reset bhw password")) return "Issued a temporary password";
     if (action.includes("changed bhw password")) return "Updated account password";
     if (action.includes("credential")) return "Updated admin account details";
@@ -739,13 +739,6 @@
     renderLogs();
   };
 
-  const syncEditActionButtons = (user) => {
-    if (!user || !refs.editToggleStatusBtn) return;
-    const nextStatus = user.status === "Active" ? "Deactivate" : "Activate";
-    refs.editToggleStatusBtn.textContent = nextStatus;
-    refs.editToggleStatusBtn.className = `btn ${user.status === "Active" ? "btn-outline-danger" : "btn-outline-success"}`;
-  };
-
   const openEditModal = (userId) => {
     const user = findUser(userId);
     if (!user || !editUserModal) return;
@@ -756,7 +749,6 @@
     refs.editType.value = user.accountType;
     refs.editRole.value = user.role;
     if (refs.editRoleDisplay) refs.editRoleDisplay.value = roleLabel(user.role);
-    syncEditActionButtons(user);
     editUserModal.show();
   };
 
@@ -764,50 +756,125 @@
     const user = findUser(userId);
     if (!user || !changePasswordModal) return;
     refs.passwordUserId.value = user.id;
+    if (refs.resetFullName) refs.resetFullName.value = user.fullName || "";
+    if (refs.resetUsername) refs.resetUsername.value = user.username || "";
     refs.newPassword.value = "";
     refs.confirmNewPassword.value = "";
+    setNotice(refs.resetCredentialsNotice, "small text-muted mt-3", "Temporary credentials are never shown again after this reset.");
     changePasswordModal.show();
   };
 
-  const saveAndRender = () => {
-    saveState();
-    renderAll();
+  const resetAccountActionConfirmation = () => {
+    if (refs.confirmAccountActionTitle) refs.confirmAccountActionTitle.textContent = "Confirm Action";
+    if (refs.confirmAccountActionMessage) refs.confirmAccountActionMessage.textContent = "Are you sure you want to continue?";
+    if (refs.confirmAccountActionBtn) {
+      refs.confirmAccountActionBtn.textContent = "Continue";
+      refs.confirmAccountActionBtn.className = "btn btn-warning btn-modern";
+    }
   };
 
-  const toggleUserStatus = (userId) => {
+  const openAccountActionConfirmModal = (action, userId) => {
+    const user = findUser(userId);
+    if (!user) return;
+
+    if (!confirmAccountActionModal) {
+      if (action === "toggle") {
+        void toggleUserStatus(userId);
+      } else if (action === "reset") {
+        editUserModal?.hide();
+        openPasswordModal(userId);
+      } else if (action === "delete") {
+        void deleteUserAccount(userId);
+      }
+      return;
+    }
+
+    pendingAccountAction = { action, userId };
+
+    if (action === "toggle") {
+      const nextStatus = user.status === "Active" ? "Inactive" : "Active";
+      const isDeactivation = nextStatus !== "Active";
+      if (refs.confirmAccountActionTitle) refs.confirmAccountActionTitle.textContent = `Confirm ${isDeactivation ? "Deactivate" : "Activate"} Account`;
+      if (refs.confirmAccountActionMessage) refs.confirmAccountActionMessage.textContent = `Set account "${user.username}" to ${nextStatus}?`;
+      if (refs.confirmAccountActionBtn) {
+        refs.confirmAccountActionBtn.textContent = isDeactivation ? "Deactivate Account" : "Activate Account";
+        refs.confirmAccountActionBtn.className = `btn ${isDeactivation ? "btn-danger" : "btn-success"} btn-modern`;
+      }
+    } else if (action === "reset") {
+      if (refs.confirmAccountActionTitle) refs.confirmAccountActionTitle.textContent = "Confirm Reset Credentials";
+      if (refs.confirmAccountActionMessage) refs.confirmAccountActionMessage.textContent = `Reset credentials for "${user.fullName}"? You will assign a new temporary username and password in the next step.`;
+      if (refs.confirmAccountActionBtn) {
+        refs.confirmAccountActionBtn.textContent = "Continue to Reset";
+        refs.confirmAccountActionBtn.className = "btn btn-warning btn-modern";
+      }
+    } else if (action === "delete") {
+      if (refs.confirmAccountActionTitle) refs.confirmAccountActionTitle.textContent = "Confirm Delete Account";
+      if (refs.confirmAccountActionMessage) refs.confirmAccountActionMessage.textContent = `Delete BHW account "${user.fullName}"? This action cannot be undone.`;
+      if (refs.confirmAccountActionBtn) {
+        refs.confirmAccountActionBtn.textContent = "Delete Account";
+        refs.confirmAccountActionBtn.className = "btn btn-danger btn-modern";
+      }
+    }
+
+    confirmAccountActionModal.show();
+  };
+
+  const runConfirmedAccountAction = () => {
+    if (!pendingAccountAction) return;
+    const nextAction = pendingAccountAction;
+
+    if (nextAction.action === "toggle") {
+      pendingConfirmedAccountAction = () => {
+        void toggleUserStatus(nextAction.userId);
+      };
+    } else if (nextAction.action === "reset") {
+      pendingConfirmedAccountAction = () => {
+        editUserModal?.hide();
+        openPasswordModal(nextAction.userId);
+      };
+    } else if (nextAction.action === "delete") {
+      pendingConfirmedAccountAction = () => {
+        void deleteUserAccount(nextAction.userId);
+      };
+    } else {
+      pendingConfirmedAccountAction = null;
+    }
+
+    confirmAccountActionModal?.hide();
+  };
+
+  const saveAndRender = async () => {
+    await persistState();
+    renderAll();
+    syncNurseSettingsForm();
+  };
+
+  const toggleUserStatus = async (userId) => {
     const user = findUser(userId);
     if (!user) return;
     const nextStatus = user.status === "Active" ? "Inactive" : "Active";
-    if (!window.confirm(`Set account "${user.username}" to ${nextStatus}?`)) return;
     user.status = nextStatus;
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
-    if (nextStatus === "Active") {
-      upsertSession(user, { presence: "Online", location: "Settings Module", lastSeenAt: user.updatedAt });
-    } else {
+    if (nextStatus !== "Active") {
       removeSession(user.id);
     }
-    addLog({ action: `${nextStatus === "Active" ? "Activated" : "Deactivated"} BHW account`, target: user.fullName, details: `Account @${user.username} was marked as ${nextStatus.toLowerCase()}.`, category: "Access" });
-    saveAndRender();
-    syncEditActionButtons(user);
-    showNotice(`Account ${user.username} is now ${nextStatus}.`);
+    addLog({ action: `${nextStatus === "Active" ? "Activated" : "Deactivated"} BHW account`, actionType: "access", target: user.fullName, details: `Account @${user.username} was marked as ${nextStatus.toLowerCase()}.`, category: "Access" });
+    await saveAndRender();
   };
 
-  const resetUserPassword = (userId) => {
+  const deleteUserAccount = async (userId) => {
     const user = findUser(userId);
     if (!user) return;
-    if (!window.confirm(`Reset password for "${user.username}"?`)) return;
-    const temporaryPassword = `MSS-${Math.random().toString(36).slice(2, 8).toUpperCase()}!`;
-    user.password = temporaryPassword;
-    user.updatedAt = nowIso();
-    user.updatedBy = actorName();
-    upsertSession(user, { presence: "Online", location: "Security Controls", lastSeenAt: user.updatedAt });
-    addLog({ action: "Reset BHW password", target: user.fullName, details: `Temporary password issued for @${user.username}.`, category: "Security" });
-    saveAndRender();
-    showNotice(`Temporary password for ${user.username}: ${temporaryPassword}`, "warning");
+    state.users = state.users.filter((entry) => entry.id !== user.id);
+    removeSession(user.id);
+    addLog({ action: "Deleted BHW account", actionType: "deleted", target: user.fullName, details: `BHW account @${user.username} was deleted by admin.`, category: "BHW", resultLabel: "Deleted", resultTone: "neutral" });
+    await saveAndRender();
+    editUserModal?.hide();
+    changePasswordModal?.hide();
   };
 
-  const handleCreateAccount = (event) => {
+  const handleCreateAccount = async (event) => {
     event.preventDefault();
     const fullName = text(byId("accountFullName")?.value);
     const username = text(byId("accountUsername")?.value);
@@ -815,22 +882,29 @@
     const accountType = USER_ROLE_BHW;
     const role = normalizeUserRole(text(byId("accountRole")?.value) || USER_ROLE_BHW);
     const password = String(byId("accountPassword")?.value || "");
+    const confirmPassword = String(byId("accountConfirmPassword")?.value || "");
 
-    if (!fullName || !username || !contact || !password) return void showNotice("Please complete all account fields.", "danger");
-    if (password.length < 8) return void showNotice("Password must be at least 8 characters.", "danger");
+    if (!fullName || !username || !contact || !password || !confirmPassword) {
+      return void showNotice("Please complete all account fields.", "danger");
+    }
+    if (password.length < 8 || !hasSpecialCharacter(password)) {
+      return void showNotice("Temporary password must be at least 8 characters and include 1 special character.", "danger");
+    }
+    if (password !== confirmPassword) {
+      return void showNotice("Password and confirm password do not match.", "danger");
+    }
     if (usernameExists(username)) return void showNotice("Username already exists. Please use another username.", "danger");
 
     const timestamp = nowIso();
-    const user = { id: uid(), fullName, username, contact, accountType, role, status: "Active", password, createdAt: timestamp, createdBy: actorName(), updatedAt: timestamp, updatedBy: actorName() };
+    const user = { id: uid(), fullName, username, contact, accountType, role, status: "Active", password, credentialsUpdatedAt: timestamp, createdAt: timestamp, createdBy: actorName(), updatedAt: timestamp, updatedBy: actorName() };
     state.users.push(user);
-    upsertSession(user, { presence: "Online", location: "BHW Onboarding", deviceLabel: "Android Tablet", lastSeenAt: timestamp, signedInAt: timestamp });
-    addLog({ action: "Created BHW account", target: user.fullName, details: `BHW access was provisioned for @${user.username}.`, category: "BHW" });
-    saveAndRender();
+    addLog({ action: "Created BHW account", actionType: "created", target: user.fullName, details: `BHW access was provisioned for @${user.username}.`, category: "BHW" });
+    await saveAndRender();
     refs.createAccountForm?.reset();
     showNotice(`BHW account created successfully for ${user.fullName}.`);
   };
 
-  const handleEditAccount = (event) => {
+  const handleEditAccount = async (event) => {
     event.preventDefault();
     const user = findUser(text(refs.editUserId.value));
     if (!user) return;
@@ -850,17 +924,19 @@
     user.role = role;
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
-    upsertSession(user, { presence: "Online", lastSeenAt: user.updatedAt });
-    addLog({ action: "Updated BHW profile", target: user.fullName, details: `Profile details for @${user.username} were updated.`, category: "BHW" });
-    saveAndRender();
+    addLog({ action: "Updated BHW profile", actionType: "updated", target: user.fullName, details: `Profile details for @${user.username} were updated.`, category: "BHW" });
+    await saveAndRender();
     editUserModal?.hide();
-    showNotice(`Profile updated for ${user.fullName}.`);
   };
 
-  const handleNurseSettingsSave = (event) => {
+  const handleNurseSettingsSave = async (event) => {
     event.preventDefault();
     hideNotice();
-    const admin = ensureAdminUser();
+    const admin = getAdminUser();
+    if (!admin) {
+      setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account is not available right now.", "danger");
+      return;
+    }
     const previousName = admin.fullName;
     const fullName = text(refs.nurseFullName?.value);
     const username = text(refs.nurseUsername?.value);
@@ -911,30 +987,54 @@
     admin.status = "Active";
     admin.updatedAt = nowIso();
     admin.updatedBy = actorName();
-    upsertSession(admin, { presence: "Online", location: "Settings Module", deviceLabel: "Desktop Browser", ipAddress: "192.168.10.15", lastSeenAt: admin.updatedAt });
-    addLog({ actor: previousName || "Nurse-in-Charge", action: "Updated Nurse-in-Charge credentials", target: fullName, details: password ? "Primary admin profile and password were updated." : "Primary admin profile details were updated.", category: "Security" });
-    saveAndRender();
+    addLog({ actor: previousName || "Nurse-in-Charge", action: "Updated Nurse-in-Charge credentials", actionType: "security", target: fullName, details: password ? "Primary admin profile and password were updated." : "Primary admin profile details were updated.", category: "Security" });
+    try {
+      await saveAndRender();
+    } catch (error) {
+      setNotice(refs.nurseSettingsNotice, "account-helper", error instanceof Error ? error.message : "Unable to save admin credentials right now.", "danger");
+      return;
+    }
     syncNurseSettingsForm();
-    setNotice(refs.nurseSettingsNotice, "account-helper", "Credentials updated.", "success");
+    showNotice("Admin credentials updated successfully.");
   };
 
-  const handleChangePassword = (event) => {
+  const handleChangePassword = async (event) => {
     event.preventDefault();
     const user = findUser(text(refs.passwordUserId.value));
     if (!user) return;
+    const username = text(refs.resetUsername?.value);
     const password = String(refs.newPassword.value || "");
     const confirm = String(refs.confirmNewPassword.value || "");
-    if (!password || !confirm) return void showNotice("Please fill in both password fields.", "danger");
-    if (password.length < 8) return void showNotice("New password must be at least 8 characters.", "danger");
-    if (password !== confirm) return void showNotice("Password and confirmation do not match.", "danger");
+    if (!username || !password || !confirm) {
+      setNotice(refs.resetCredentialsNotice, "small mt-3", "Please fill in all reset fields.", "danger");
+      return;
+    }
+    if (usernameExists(username, user.id)) {
+      setNotice(refs.resetCredentialsNotice, "small mt-3", "Username already exists. Please use another username.", "danger");
+      return;
+    }
+    if (password.length < 8 || !hasSpecialCharacter(password)) {
+      setNotice(refs.resetCredentialsNotice, "small mt-3", "Temporary password must be at least 8 characters and include 1 special character.", "danger");
+      return;
+    }
+    if (password !== confirm) {
+      setNotice(refs.resetCredentialsNotice, "small mt-3", "Password and confirmation do not match.", "danger");
+      return;
+    }
+    user.username = username;
     user.password = password;
+    user.credentialsUpdatedAt = nowIso();
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
-    upsertSession(user, { presence: "Online", location: "Security Controls", lastSeenAt: user.updatedAt });
-    addLog({ action: "Changed BHW password", target: user.fullName, details: `Password was updated for @${user.username}.`, category: "Security" });
-    saveAndRender();
+    addLog({ action: "Reset BHW credentials", actionType: "security", target: user.fullName, details: `Username and password were reset for @${user.username}.`, category: "Security" });
+    setNotice(refs.resetCredentialsNotice, "small mt-3", "Credentials updated.", "success");
+    try {
+      await saveAndRender();
+    } catch (error) {
+      setNotice(refs.resetCredentialsNotice, "small mt-3", error instanceof Error ? error.message : "Unable to reset credentials right now.", "danger");
+      return;
+    }
     changePasswordModal?.hide();
-    showNotice(`Password changed for ${user.username}.`);
   };
 
   const scrollActivePanelIntoView = () => {
@@ -943,6 +1043,11 @@
     if (!activePanel) return;
     const y = activePanel.getBoundingClientRect().top + window.scrollY - 12;
     window.scrollTo({ top: y, behavior: "smooth" });
+  };
+
+  const releaseInitialSettingsPanelBootState = () => {
+    document.documentElement.classList.remove("settings-panel-booting");
+    document.documentElement.removeAttribute("data-settings-initial-panel");
   };
 
   const setActivePanel = (targetId) => {
@@ -958,6 +1063,8 @@
     settingsNavLinks.forEach((link) => {
       link.classList.toggle("active", link.getAttribute("href") === `#${nextId}`);
     });
+
+    releaseInitialSettingsPanelBootState();
   };
 
   const isMobile = () => window.matchMedia("(max-width: 992px)").matches;
@@ -981,21 +1088,30 @@
   refs.sidebarBackdrop?.addEventListener("click", closeMobileSidebar);
   window.addEventListener("resize", () => { if (!isMobile()) closeMobileSidebar(); });
   refs.logoutLink?.addEventListener("click", (event) => { event.preventDefault(); logoutModal?.show(); });
-  refs.createAccountForm?.addEventListener("submit", handleCreateAccount);
-  refs.editAccountForm?.addEventListener("submit", handleEditAccount);
-  refs.changePasswordForm?.addEventListener("submit", handleChangePassword);
-  refs.nurseSettingsForm?.addEventListener("submit", handleNurseSettingsSave);
+  refs.createAccountForm?.addEventListener("submit", (event) => { void handleCreateAccount(event); });
+  refs.editAccountForm?.addEventListener("submit", (event) => { void handleEditAccount(event); });
+  refs.changePasswordForm?.addEventListener("submit", (event) => { void handleChangePassword(event); });
+  refs.nurseSettingsForm?.addEventListener("submit", (event) => { void handleNurseSettingsSave(event); });
   refs.usersList?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action][data-id]");
-    if (!button) return;
-    if (text(button.dataset.action) === "view") openEditModal(text(button.dataset.id));
+    if (button) {
+      const action = text(button.dataset.action);
+      const userId = text(button.dataset.id);
+      if (action === "toggle") openAccountActionConfirmModal("toggle", userId);
+      if (action === "reset") openAccountActionConfirmModal("reset", userId);
+      if (action === "delete") openAccountActionConfirmModal("delete", userId);
+      return;
+    }
   });
-  refs.editToggleStatusBtn?.addEventListener("click", () => toggleUserStatus(text(refs.editUserId.value)));
-  refs.editResetPasswordBtn?.addEventListener("click", () => resetUserPassword(text(refs.editUserId.value)));
-  refs.editChangePasswordBtn?.addEventListener("click", () => openPasswordModal(text(refs.editUserId.value)));
+  refs.confirmAccountActionBtn?.addEventListener("click", runConfirmedAccountAction);
   refs.nurseCredentialsStartBtn?.addEventListener("click", () => {
     hideNotice();
-    syncNurseCredentialsVisibility({ forceOpen: true });
+    setNurseCredentialsEditorOpen(true);
+    window.setTimeout(() => refs.nurseUsername?.focus(), 120);
+  });
+  refs.nurseCredentialsCancelBtn?.addEventListener("click", () => {
+    hideNotice();
+    syncNurseSettingsForm();
   });
   refs.activityLogSearch?.addEventListener("input", renderLogs);
   activityLogFilterButtons.forEach((button) => {
@@ -1021,9 +1137,45 @@
     setActivePanel(text(window.location.hash).replace(/^#/, ""));
   });
 
-  loadState();
-  setActiveLogFilter("all");
-  renderAll();
-  syncNurseSettingsForm();
-  setActivePanel(text(window.location.hash).replace(/^#/, ""));
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      void refreshActiveUsers().catch(() => {});
+    }
+  });
+
+  confirmAccountActionModalElement?.addEventListener("hidden.bs.modal", () => {
+    const callback = pendingConfirmedAccountAction;
+    pendingConfirmedAccountAction = null;
+    pendingAccountAction = null;
+    resetAccountActionConfirmation();
+    if (typeof callback === "function") {
+      callback();
+    }
+  });
+
+  byId("changePasswordModal")?.addEventListener("hidden.bs.modal", () => {
+    if (refs.resetFullName) refs.resetFullName.value = "";
+    if (refs.resetUsername) refs.resetUsername.value = "";
+    if (refs.newPassword) refs.newPassword.value = "";
+    if (refs.confirmNewPassword) refs.confirmNewPassword.value = "";
+    setNotice(refs.resetCredentialsNotice, "small text-muted mt-3", "Temporary credentials are never shown again after this reset.");
+  });
+
+  const init = async () => {
+    try {
+      await loadState();
+      setActiveLogFilter("all");
+      renderAll();
+      syncNurseSettingsForm();
+      startActiveUsersPolling();
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Unable to load settings data right now.", "danger");
+      setActiveLogFilter("all");
+      renderAll();
+      startActiveUsersPolling();
+    }
+    setActivePanel(text(window.location.hash).replace(/^#/, ""));
+  };
+
+  void init();
 })();

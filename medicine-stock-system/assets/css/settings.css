@@ -22,8 +22,85 @@
 }
 
 #moduleAlert{
-  border-radius:12px;
-  margin-bottom:0;
+  position:fixed;
+  top:50%;
+  left:50%;
+  z-index:1200;
+  width:min(440px, calc(100vw - 32px));
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:18px 20px;
+  border:none;
+  border-radius:24px;
+  background:rgba(255, 255, 255, 0.98);
+  box-shadow:0 24px 50px rgba(31, 41, 55, 0.18);
+  transform:translate(-50%, -50%) scale(0.94);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .22s ease, transform .22s ease, visibility .22s ease;
+  backdrop-filter:blur(10px);
+}
+
+#moduleAlert.is-visible{
+  opacity:1;
+  visibility:visible;
+  transform:translate(-50%, -50%) scale(1);
+}
+
+#moduleAlert[data-tone="success"]{
+  box-shadow:0 24px 50px rgba(33, 111, 27, 0.16);
+}
+
+#moduleAlert[data-tone="warning"]{
+  box-shadow:0 24px 50px rgba(180, 125, 12, 0.16);
+}
+
+#moduleAlert[data-tone="danger"]{
+  box-shadow:0 24px 50px rgba(185, 61, 61, 0.18);
+}
+
+#moduleAlert[data-tone="info"]{
+  box-shadow:0 24px 50px rgba(37, 99, 235, 0.16);
+}
+
+.settings-floating-notice__icon{
+  width:52px;
+  height:52px;
+  flex:0 0 auto;
+  border-radius:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.35rem;
+}
+
+#moduleAlert[data-tone="success"] .settings-floating-notice__icon{
+  background:linear-gradient(180deg, #e7f6df 0%, #d9efcd 100%);
+  color:#216f1b;
+}
+
+#moduleAlert[data-tone="warning"] .settings-floating-notice__icon{
+  background:linear-gradient(180deg, #fff1cf 0%, #ffe6b4 100%);
+  color:#a86a00;
+}
+
+#moduleAlert[data-tone="danger"] .settings-floating-notice__icon{
+  background:linear-gradient(180deg, #ffe4e4 0%, #ffd6d6 100%);
+  color:#b93d3d;
+}
+
+#moduleAlert[data-tone="info"] .settings-floating-notice__icon{
+  background:linear-gradient(180deg, #e1ecff 0%, #d5e5ff 100%);
+  color:#2253b8;
+}
+
+.settings-floating-notice__message{
+  color:#223d24;
+  font-size:0.98rem;
+  font-weight:700;
+  line-height:1.45;
 }
 
 .card-shell{
@@ -95,6 +172,23 @@
   margin-top:10px;
 }
 
+.settings-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:12px;
+}
+
+.settings-form-grid .form-control,
+.settings-form-grid .form-select{
+  background:#f5f7fb;
+  border:1px solid #d8e0ea;
+  border-radius:12px;
+}
+
+.settings-form-full{
+  grid-column:1 / -1;
+}
+
 .account-form-actions{
   grid-column:1 / -1;
   display:flex;
@@ -112,6 +206,10 @@
 
 .settings-panel--credentials{
   padding:18px 18px 16px;
+}
+
+.nurse-credentials-summary{
+  min-height:72px;
 }
 
 .credentials-badge{
@@ -137,6 +235,10 @@
 
 .settings-panel--credentials .section-head h5{
   font-size:1rem;
+}
+
+.settings-panel--credentials .nurse-credentials-editor-head{
+  margin-bottom:10px;
 }
 
 .settings-panel--credentials .account-form-grid{
@@ -166,6 +268,30 @@
   justify-content:space-between;
   gap:10px;
   padding-top:12px;
+}
+
+.credentials-editor-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.credentials-cancel-btn{
+  border-radius:999px;
+  padding:9px 18px;
+  border:1px solid #d8e0ea;
+  color:#4b5563;
+  font-weight:700;
+  background:#ffffff;
+}
+
+.credentials-cancel-btn:hover,
+.credentials-cancel-btn:focus{
+  color:#374151;
+  background:#f8fafc;
+  border-color:#cbd5e1;
 }
 
 .settings-panel--credentials .account-field-right{
@@ -199,13 +325,13 @@
 
 .account-list-item{
   display:flex;
-  align-items:center;
+  align-items:stretch;
   justify-content:space-between;
   gap:14px;
   padding:18px 22px;
   border-radius:20px;
   border:1px solid #d8e0ea;
-  background:#f8fafc;
+  background:linear-gradient(180deg, #ffffff, #f8fafc);
   box-shadow:none;
 }
 
@@ -213,7 +339,7 @@
   min-width:0;
 }
 
-.account-card-main{
+.staff-account-main{
   flex:1;
   min-width:0;
   display:flex;
@@ -221,71 +347,131 @@
   gap:10px;
 }
 
-.account-card-head{
+.staff-account-head{
   display:flex;
   align-items:flex-start;
   gap:10px;
 }
 
-.account-card-name{
-  font-size:1rem;
+.staff-account-name{
+  font-size:1.2rem;
   font-weight:700;
   color:#18243d;
   line-height:1.2;
 }
 
-.account-card-meta{
+.staff-account-meta{
   margin-top:2px;
-  font-size:0.84rem;
+  font-size:0.86rem;
   color:#64748b;
 }
 
-.account-card-subline{
-  margin-top:2px;
-  font-size:0.82rem;
-  color:#64748b;
-}
-
-.account-card-actions{
+.staff-account-actions{
   display:flex;
+  flex-direction:row;
+  justify-content:center;
   align-items:center;
-  justify-content:flex-end;
-  gap:12px;
+  gap:8px;
   min-width:0;
 }
 
-.account-action-btn{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:6px;
-  border-radius:14px;
-  font-weight:600;
-  padding:8px 18px;
-  white-space:nowrap;
-  min-width:110px;
+.staff-account-actions .staff-account-status{
+  align-self:center;
+  margin:0;
 }
 
-.account-view-btn{
-  color:#2f7d24;
-  border-color:#9fcd8f;
-  background:#fff;
-}
-
-.account-view-btn:hover{
-  color:#216f1b;
-  border-color:#76b55f;
-  background:#eff8ea;
-}
-
-.status-badge{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  padding:0.45rem 0.8rem;
-  border-radius:999px;
+.staff-account-status{
   font-size:0.74rem;
   font-weight:700;
+  border-radius:999px;
+  padding:0.45rem 0.9rem;
+}
+
+.staff-action-menu{
+  flex:0 0 auto;
+  position:relative;
+}
+
+.staff-action-menu-toggle{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:48px;
+  min-width:48px;
+  height:44px;
+  padding:0;
+  border-radius:16px;
+  border:2px solid #a5b0bd;
+  background:#ffffff;
+  color:#1f2937;
+  box-shadow:0 10px 22px rgba(148, 163, 184, 0.18);
+}
+
+.staff-action-menu-toggle:hover,
+.staff-action-menu-toggle:focus,
+.staff-action-menu-toggle:active,
+.staff-action-menu-toggle.show{
+  border-color:#96a3b1;
+  background:#ffffff;
+  color:#111827;
+  box-shadow:0 12px 24px rgba(148, 163, 184, 0.2);
+}
+
+.staff-action-menu-toggle:focus-visible{
+  outline:3px solid rgba(148, 163, 184, 0.25);
+  outline-offset:2px;
+}
+
+.staff-action-menu-toggle i{
+  font-size:1.15rem;
+  line-height:1;
+}
+
+.staff-action-menu-list{
+  min-width:194px;
+  margin-top:10px;
+  border-radius:18px;
+  border:1px solid #d8e0ea;
+  background:#ffffff;
+  padding:12px 10px;
+  box-shadow:0 20px 40px rgba(148, 163, 184, 0.22);
+}
+
+.staff-action-menu-list .dropdown-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  border-radius:12px;
+  font-size:0.98rem;
+  font-weight:700;
+  padding:12px 14px;
+  color:#1f2937;
+}
+
+.staff-action-menu-list .dropdown-item:hover,
+.staff-action-menu-list .dropdown-item:focus{
+  background:#f8fafc;
+  color:#111827;
+}
+
+.staff-action-menu-list .dropdown-item.text-danger{
+  color:#ef4444 !important;
+}
+
+.staff-action-menu-list .dropdown-item.text-danger:hover,
+.staff-action-menu-list .dropdown-item.text-danger:focus{
+  background:#fff5f5;
+  color:#dc2626 !important;
+}
+
+.staff-action-menu-list .dropdown-item i{
+  font-size:1.05rem;
+}
+
+.staff-account-main .item-info .small{
+  margin-top:3px;
+  color:#62748c;
+  font-size:0.82rem;
 }
 
 .account-list-empty{
@@ -354,6 +540,19 @@
   color:#216f1b;
 }
 
+html.settings-panel-booting .settings-nav a.active{
+  background:none;
+  color:#17324a;
+}
+
+html.settings-panel-booting[data-settings-initial-panel="nurse-credentials"] .settings-nav a[href="#nurse-credentials"],
+html.settings-panel-booting[data-settings-initial-panel="manage-staff"] .settings-nav a[href="#manage-staff"],
+html.settings-panel-booting[data-settings-initial-panel="active-users"] .settings-nav a[href="#active-users"],
+html.settings-panel-booting[data-settings-initial-panel="activity-logs"] .settings-nav a[href="#activity-logs"]{
+  background:#dcefd0;
+  color:#216f1b;
+}
+
 .settings-content{
   display:flex;
   flex-direction:column;
@@ -370,10 +569,15 @@
   display:block;
 }
 
-.edit-actions{
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px;
+html.settings-panel-booting .settings-panel{
+  display:none;
+}
+
+html.settings-panel-booting[data-settings-initial-panel="nurse-credentials"] #nurse-credentials,
+html.settings-panel-booting[data-settings-initial-panel="manage-staff"] #manage-staff,
+html.settings-panel-booting[data-settings-initial-panel="active-users"] #active-users,
+html.settings-panel-booting[data-settings-initial-panel="activity-logs"] #activity-logs{
+  display:block;
 }
 
 .settings-list{
@@ -402,6 +606,20 @@
 }
 
 .settings-list-item .item-info .small{
+  margin-top:3px;
+  color:#62748c;
+  font-size:0.82rem;
+}
+
+.settings-list-item.staff-account-card{
+  align-items:stretch;
+  gap:14px;
+  padding:14px 16px;
+  border-radius:14px;
+  background:linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.settings-list-item.staff-account-card .item-info .small{
   margin-top:3px;
   color:#62748c;
   font-size:0.82rem;
@@ -818,6 +1036,10 @@
     grid-template-columns:1fr;
   }
 
+  .settings-form-grid{
+    grid-template-columns:1fr;
+  }
+
   .settings-panel--credentials .account-field-right{
     grid-column:auto;
   }
@@ -840,14 +1062,16 @@
     padding:10px 12px;
   }
 
-  .account-card-actions{
+  .staff-account-actions{
     justify-content:flex-start;
     min-width:0;
     width:100%;
+    flex-wrap:wrap;
   }
 
-  .account-action-btn{
-    min-width:0;
+  .account-list-item{
+    flex-direction:column;
+    align-items:flex-start;
   }
 
   .logs-search-pill{
@@ -856,5 +1080,21 @@
 
   .logs-table{
     min-width:1000px;
+  }
+}
+
+@media(max-width:520px){
+  .account-list-item{
+    flex-direction:column;
+  }
+
+  .staff-account-head{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .staff-account-actions{
+    width:100%;
+    justify-content:flex-start;
   }
 }

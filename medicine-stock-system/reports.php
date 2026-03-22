@@ -1,0 +1,220 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/auth.php';
+mss_page_require_auth(['admin']);
+$adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
+$reportsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/reports.css');
+$systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
+$reportsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/reports.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
+?><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reports - Ligao City Coastal RHU</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/reports.css?v=<?= urlencode($reportsCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
+</head>
+<body class="admin-dashboard-page">
+  <div id="wrapper">
+    <div id="content-area">
+      <aside id="sidebar">
+        <div class="brand d-flex align-items-center gap-2 mb-3">
+          <img src="assets/img/CityHealthOffice_LOGO.png" alt="Ligao City Coastal Rural Health Unit Logo">
+          <div class="brand-text-wrap">
+            <span class="brand-title">Ligao City Coastal RHU</span>
+            <span class="brand-sub">Cabarian, Ligao City</span>
+          </div>
+        </div>
+
+        <div class="menu">
+          <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
+          <a href="medicine-inventory.php"><i class="bi bi-capsule-pill"></i>Medicine Inventory</a>
+          <a href="cho-request-log.php"><i class="bi bi-clipboard2-plus"></i>CHO Request Log</a>
+          <a href="dispensing-records.php?role=admin"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
+          <a href="reports.php" class="active"><i class="bi bi-file-earmark-text"></i>Reports</a>
+          <a href="notifications.php"><i class="bi bi-bell"></i>Notifications</a>
+          <a href="settings.php"><i class="bi bi-gear"></i>Settings</a>
+          <a href="#" class="text-danger" id="logoutLink"><i class="bi bi-box-arrow-right"></i>Logout</a>
+        </div>
+      </aside>
+
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+      <main id="main" class="reports-main">
+        <div class="topbar">
+          <div class="d-flex align-items-center gap-3">
+            <button type="button" class="toggle-btn" id="sidebarToggle" aria-label="Toggle sidebar">
+              <i class="bi bi-list"></i>
+            </button>
+            <div class="page-intro">
+              <h4 class="mb-0 text-primary">Reports</h4>
+            </div>
+          </div>
+        </div>
+
+        <section class="report-panel reports-workspace">
+          <div class="report-workspace-top">
+            <div class="report-panel__head report-panel__head--compact">
+              <h5>Reports</h5>
+              <p>Select a report, generate the file, and review previous exports.</p>
+            </div>
+
+            <div class="report-actions-row">
+              <div class="report-type-select-wrap">
+                <select id="reportTypeSelect" class="form-select report-type-select" aria-label="Select report type">
+                  <option value="available-medicines">Available Medicines</option>
+                </select>
+              </div>
+
+              <div class="report-actions-side">
+                <span class="report-record-count" id="reportsCount">0 items</span>
+
+                <button type="button" class="btn btn-report-action btn-report-action--primary" id="generateReportBtn">
+                  <i class="bi bi-file-earmark-plus"></i>
+                  <span>Generate Report</span>
+                </button>
+
+                <button type="button" class="btn btn-report-action btn-report-action--outline" id="reportHistoryToggleBtn">
+                  <i class="bi bi-clock-history" id="reportHistoryToggleIcon"></i>
+                  <span id="reportHistoryToggleLabel">Report History</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-table-shell table-responsive" id="reportTableView">
+            <table class="table report-table align-middle mb-0">
+              <thead>
+                <tr id="reportTableHeadRow">
+                  <th scope="col">Loading columns...</th>
+                </tr>
+              </thead>
+              <tbody id="reportTableBody">
+                <tr>
+                  <td colspan="1" class="report-empty">Loading report data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <section class="report-history-section d-none" id="reportHistoryView">
+            <div class="report-history-head">
+              <div class="report-panel__head report-panel__head--compact">
+                <h6>Report History</h6>
+                <p>Previously generated reports saved on this device.</p>
+              </div>
+              <span class="report-history-count" id="reportHistoryCount">0 reports</span>
+            </div>
+
+            <div class="report-table-shell table-responsive">
+              <table class="table report-table report-history-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Report</th>
+                    <th scope="col">Format</th>
+                    <th scope="col">Generated On</th>
+                    <th scope="col">Prepared By</th>
+                    <th scope="col">Records</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="reportHistoryTableBody">
+                  <tr>
+                    <td colspan="6" class="report-empty">No reports generated yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="report-notice-popup" id="reportNoticePopup" role="status" aria-live="polite" aria-atomic="true">
+      <div class="report-notice-popup__inner">
+        <i class="bi bi-check-circle-fill report-notice-popup__icon" id="reportNoticeIcon" aria-hidden="true"></i>
+        <span class="report-notice-popup__text" id="reportNoticeText">Action completed.</span>
+      </div>
+    </div>
+
+    <footer class="footer text-muted">
+      &copy; <span id="year"></span> Ligao City Coastal RHU Medicine Stock Monitoring System. All rights reserved.
+    </footer>
+  </div>
+
+  <div class="modal fade" id="logoutModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning">
+          <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Logout Confirmation</h5>
+        <p class="mb-3">Are you sure you want to log out?</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <a href="logout.php" class="btn btn-danger btn-modern">Logout</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="reportFormatModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content report-format-modal">
+        <div class="modal-header border-0 pb-0">
+          <div>
+            <h5 class="modal-title mb-0">Generate Report</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body pt-3">
+          <div class="report-format-actions">
+            <button type="button" class="btn btn-report-format" id="generateExcelBtn">
+              <i class="bi bi-file-earmark-excel"></i>
+              <span>Generate Excel</span>
+              <small>Download spreadsheet file</small>
+            </button>
+            <button type="button" class="btn btn-report-format btn-report-format--pdf" id="generatePdfBtn">
+              <i class="bi bi-file-earmark-pdf"></i>
+              <span>Generate PDF</span>
+              <small>Download formal printable report</small>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="reportActionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning" id="reportActionModalIconWrap">
+          <i class="bi bi-question-circle-fill fs-1" id="reportActionModalIcon"></i>
+        </div>
+        <h5 class="modal-title mb-2" id="reportActionModalTitle">Confirm Action</h5>
+        <p class="mb-3" id="reportActionModalText">Please confirm this report action.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success btn-modern" id="reportActionConfirmBtn">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/reports.js?v=<?= urlencode($reportsJsVersion) ?>"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
+</body>
+</html>

@@ -1,4 +1,8 @@
 (() => {
+  const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
+    ? window.MSS_AUTH_USER
+    : null;
+  const STATE_ENDPOINT = "state-api.php";
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
     movements: "mss_inventory_movements_v1",
@@ -8,6 +12,7 @@
   const USERS_STORAGE = "mss_users_v1";
   const SESSIONS_STORAGE = "mss_active_sessions_v1";
   const NOTIFICATION_STORAGE = "mss_notifications_v2";
+  const STAFF_NOTIFICATION_HIDDEN_STORAGE_PREFIX = "mss_staff_hidden_notifications_v1";
 
   const HOUSEHOLD_RESIDENT_API = "../household-system/registration-sync.php";
 
@@ -40,6 +45,8 @@
     staffNotificationModalTitle: byId("staffNotificationModalTitle"),
     staffNotificationModalBody: byId("staffNotificationModalBody"),
     staffNotificationModalTime: byId("staffNotificationModalTime"),
+    staffNotificationRemoveMessage: byId("staffNotificationRemoveMessage"),
+    confirmStaffNotificationRemoveBtn: byId("confirmStaffNotificationRemoveBtn"),
     residentSearchInput: byId("residentSearchInput"),
     residentBarangayFilter: byId("residentBarangayFilter"),
     residentSortFilter: byId("residentSortFilter"),
@@ -99,6 +106,7 @@
     settingsForm: byId("settingsForm"),
     settingsStatusChip: byId("settingsStatusChip"),
     settingsChangeBtn: byId("settingsChangeBtn"),
+    settingsCancelBtn: byId("settingsCancelBtn"),
     settingsFullName: byId("settingsFullName"),
     settingsUsername: byId("settingsUsername"),
     settingsPassword: byId("settingsPassword"),
@@ -110,12 +118,18 @@
   };
   const staffNavLinks = Array.from(document.querySelectorAll("#sidebar .menu a[href^='#']"));
   const staffSections = Array.from(document.querySelectorAll("[data-staff-section]"));
+  const staffNotificationViewButtons = Array.from(document.querySelectorAll("[data-staff-notification-view]"));
+  const staffNotificationTypeButtons = Array.from(document.querySelectorAll("[data-staff-notification-type]"));
 
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
   const dispenseSuccessModal = refs.dispenseSuccessModal && window.bootstrap
     ? new window.bootstrap.Modal(refs.dispenseSuccessModal, { backdrop: false, keyboard: false })
     : null;
   const staffNotificationMessageModal = byId("staffNotificationMessageModal") && window.bootstrap ? new window.bootstrap.Modal(byId("staffNotificationMessageModal")) : null;
+  const staffNotificationRemoveModalElement = byId("staffNotificationRemoveModal");
+  const staffNotificationRemoveModal = staffNotificationRemoveModalElement && window.bootstrap
+    ? new window.bootstrap.Modal(staffNotificationRemoveModalElement)
+    : null;
   const residentFormModal = refs.residentFormModal && window.bootstrap ? new window.bootstrap.Modal(refs.residentFormModal) : null;
   const residentSummaryModal = refs.residentSummaryModal && window.bootstrap ? new window.bootstrap.Modal(refs.residentSummaryModal) : null;
 
@@ -125,6 +139,11 @@
     inventory: [],
     movements: [],
     residentAccounts: [],
+    users: [],
+    sessions: [],
+    activityLogs: [],
+    notifications: [],
+    notificationResolvedState: {},
     residentSearch: "",
     patientProfileSearch: "",
     dispenseResidentSearch: "",
@@ -138,9 +157,17 @@
     householdResidentsLoaded: false,
     householdResidentsSyncing: false
   };
+  const staffNotificationUiState = {
+    viewFilter: staffNotificationViewButtons.length ? "active" : "all",
+    typeFilter: "all"
+  };
 
   let alertTimer = 0;
   let dispenseSuccessTimer = 0;
+  let staffStateHydrationPromise = null;
+  let staffNotificationHiddenState = {};
+  let staffNotificationHiddenStorageKey = "";
+  let pendingStaffNotificationRemoveId = "";
 
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -195,14 +222,38 @@
     return Math.round((parsed.getTime() - today.getTime()) / 86400000);
   };
 
+  const cloneEntry = (entry) => (entry && typeof entry === "object" && !Array.isArray(entry) ? { ...entry } : entry);
+  const cloneEntries = (entries = []) => Array.isArray(entries) ? entries.map(cloneEntry) : [];
+  const stateBucketForKey = (key) => {
+    if (key === STORAGE.inventory) return "inventory";
+    if (key === STORAGE.movements) return "movements";
+    if (key === STORAGE.residents) return "residentAccounts";
+    if (key === USERS_STORAGE) return "users";
+    if (key === SESSIONS_STORAGE) return "sessions";
+    if (key === ACTIVITY_LOG_STORAGE) return "activityLogs";
+    if (key === NOTIFICATION_STORAGE) return "notifications";
+    return "";
+  };
+
   const readList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
+    const bucket = stateBucketForKey(key);
+    return bucket ? cloneEntries(state[bucket]) : [];
+  };
+
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(String(payload.message || "Unable to sync dispensing data right now."));
     }
+    return payload;
   };
 
   const relativeTime = (value) => {
@@ -227,6 +278,17 @@
   const badgeClass = (priority) => `notification-badge notification-badge--${
     priority === "critical" ? "critical" : priority === "high" ? "high" : priority === "medium" ? "medium" : "low"
   }`;
+  const resolvedTimestamp = (notification) => text(notification?.resolvedAt) || text(notification?.updatedAt) || text(notification?.createdAt) || nowIso();
+  const notificationTimelineText = (notification) => (
+    notification?.resolved
+      ? `${formatDateTime(notification.createdAt)} - Resolved ${formatDateTime(resolvedTimestamp(notification))}`
+      : formatDateTime(notification?.createdAt)
+  );
+  const notificationMessageText = (notification) => {
+    const baseBody = text(notification?.body) || "Review the medicine notification.";
+    if (!notification?.resolved) return baseBody;
+    return `${baseBody} Status update: Resolved automatically on ${formatDateTime(resolvedTimestamp(notification))} after the alert condition cleared.`;
+  };
 
   const normalizeNotification = (entry = {}) => {
     const priority = ["critical", "high", "medium", "low"].includes(keyOf(entry.priority)) ? keyOf(entry.priority) : "medium";
@@ -239,35 +301,214 @@
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
       read: Boolean(entry.read),
-      signature: text(entry.signature)
+      signature: text(entry.signature),
+      resolved: Boolean(entry.resolved),
+      resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
   };
+
+  const normalizeStaffNotificationHiddenState = (entry = {}) => {
+    const hiddenState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const notificationId = text(key);
+      const token = text(value);
+      if (!notificationId || !token) return;
+      hiddenState[notificationId] = token;
+    });
+    return hiddenState;
+  };
+
+  const staffNotificationHiddenToken = (notification) => {
+    const normalized = normalizeNotification(notification);
+    return [normalized.signature, text(normalized.resolvedAt) || text(normalized.updatedAt) || text(normalized.createdAt)].join("|");
+  };
+
+  const normalizeResolvedState = (entry = {}) => {
+    const resolvedState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const notificationId = text(key);
+      const resolvedEntry = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      const signature = text(resolvedEntry.signature ?? value);
+      if (!notificationId || !signature) return;
+      resolvedState[notificationId] = {
+        signature,
+        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso()
+      };
+    });
+    return resolvedState;
+  };
+
+  const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
+    const nextResolvedState = { ...normalizeResolvedState(currentResolvedState) };
+    notifications.forEach((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (!normalized.resolved || !normalized.id || !normalized.signature) return;
+      nextResolvedState[normalized.id] = {
+        signature: normalized.signature,
+        resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso()
+      };
+    });
+    return nextResolvedState;
+  };
+
+  const applyResolvedStateToNotifications = (notifications = [], resolvedState = {}) => (
+    notifications.map((notification) => {
+      const normalized = normalizeNotification(notification);
+      const resolvedEntry = resolvedState[normalized.id];
+      if (resolvedEntry && text(resolvedEntry.signature) === text(normalized.signature)) {
+        normalized.resolved = true;
+        normalized.resolvedAt = text(resolvedEntry.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso();
+      } else if (!normalized.resolved) {
+        normalized.resolvedAt = "";
+      }
+      return normalized;
+    })
+  );
 
   const getStoredNotifications = () => readList(NOTIFICATION_STORAGE)
     .map(normalizeNotification)
     .sort((left, right) => {
+      if (left.resolved !== right.resolved) return left.resolved ? 1 : -1;
       if (left.read !== right.read) return left.read ? 1 : -1;
       const priorityDelta = (notificationPriorityWeight[right.priority] || 0) - (notificationPriorityWeight[left.priority] || 0);
       if (priorityDelta) return priorityDelta;
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
     });
 
-  const updateStoredNotification = (id, updater) => {
-    let updatedNotification = null;
-    const nextItems = readList(NOTIFICATION_STORAGE).map((entry) => {
-      const normalized = normalizeNotification(entry);
-      if (text(normalized.id) !== text(id)) return entry;
+  const getStaffNotificationHiddenStorageKey = () => {
+    const authScope = text(currentAuthUser?.id) || keyOf(currentAuthUser?.username);
+    if (authScope) return `${STAFF_NOTIFICATION_HIDDEN_STORAGE_PREFIX}_${authScope}`;
 
-      const draft = { ...normalized };
-      updater(draft);
-      draft.updatedAt = nowIso();
-      updatedNotification = draft;
-      return { ...entry, ...draft };
+    const user = getCurrentBhwUser();
+    const userScope = text(state.currentUserId)
+      || text(user?.id)
+      || keyOf(user?.username)
+      || "default";
+    return `${STAFF_NOTIFICATION_HIDDEN_STORAGE_PREFIX}_${userScope}`;
+  };
+
+  const loadStaffNotificationHiddenState = () => {
+    const nextStorageKey = getStaffNotificationHiddenStorageKey();
+    if (nextStorageKey === staffNotificationHiddenStorageKey) return staffNotificationHiddenState;
+
+    staffNotificationHiddenStorageKey = nextStorageKey;
+    try {
+      const raw = window.localStorage.getItem(nextStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      staffNotificationHiddenState = normalizeStaffNotificationHiddenState(parsed);
+    } catch (error) {
+      console.error("Unable to load staff notification hidden state.", error);
+      staffNotificationHiddenState = {};
+    }
+    return staffNotificationHiddenState;
+  };
+
+  const saveStaffNotificationHiddenState = () => {
+    const nextStorageKey = getStaffNotificationHiddenStorageKey();
+    if (nextStorageKey !== staffNotificationHiddenStorageKey) {
+      staffNotificationHiddenStorageKey = nextStorageKey;
+    }
+
+    try {
+      if (Object.keys(staffNotificationHiddenState).length) {
+        window.localStorage.setItem(staffNotificationHiddenStorageKey, JSON.stringify(staffNotificationHiddenState));
+      } else {
+        window.localStorage.removeItem(staffNotificationHiddenStorageKey);
+      }
+    } catch (error) {
+      console.error("Unable to save staff notification hidden state.", error);
+    }
+  };
+
+  const pruneStaffNotificationHiddenState = (notifications = []) => {
+    const hiddenState = loadStaffNotificationHiddenState();
+    const resolvedNotificationsById = new Map();
+    notifications.forEach((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (normalized.resolved) {
+        resolvedNotificationsById.set(normalized.id, normalized);
+      }
+    });
+    const nextHiddenState = {};
+
+    Object.entries(hiddenState).forEach(([notificationId, token]) => {
+      const resolvedNotification = resolvedNotificationsById.get(notificationId);
+      if (!resolvedNotification) {
+        nextHiddenState[notificationId] = text(token);
+        return;
+      }
+
+      const hiddenToken = staffNotificationHiddenToken(resolvedNotification);
+      if (text(token) === hiddenToken) {
+        nextHiddenState[notificationId] = hiddenToken;
+      }
     });
 
-    if (!updatedNotification) return null;
-    localStorage.setItem(NOTIFICATION_STORAGE, JSON.stringify(nextItems));
-    return updatedNotification;
+    if (JSON.stringify(nextHiddenState) !== JSON.stringify(staffNotificationHiddenState)) {
+      staffNotificationHiddenState = nextHiddenState;
+      saveStaffNotificationHiddenState();
+    }
+
+    return staffNotificationHiddenState;
+  };
+
+  const isStaffNotificationRemoved = (notification) => {
+    const hiddenState = loadStaffNotificationHiddenState();
+    const normalized = normalizeNotification(notification);
+    return normalized.resolved && text(hiddenState[normalized.id]) === staffNotificationHiddenToken(normalized);
+  };
+
+  const canRemoveStaffNotification = (notification) => Boolean(notification?.resolved);
+
+  const getVisibleStaffNotifications = () => {
+    const notifications = getStoredNotifications();
+    pruneStaffNotificationHiddenState(notifications);
+    return notifications.filter((notification) => !isStaffNotificationRemoved(notification));
+  };
+
+  const matchesStaffNotificationView = (notification) => {
+    if (staffNotificationUiState.viewFilter === "active") return !notification.resolved;
+    if (staffNotificationUiState.viewFilter === "resolved") return notification.resolved;
+    return true;
+  };
+
+  const matchesStaffNotificationType = (notification) => {
+    const title = keyOf(notification.title);
+    if (staffNotificationUiState.typeFilter === "low-stock") {
+      return notification.category === "Medicine Status" && title.includes("low in stock");
+    }
+    if (staffNotificationUiState.typeFilter === "out-of-stock") {
+      return notification.category === "Medicine Status" && title.includes("out of stock");
+    }
+    if (staffNotificationUiState.typeFilter === "expiring-soon") return notification.category === "Expiring Soon";
+    if (staffNotificationUiState.typeFilter === "critical") return notification.priority === "critical";
+    return true;
+  };
+
+  const getFilteredStaffNotifications = () => getVisibleStaffNotifications().filter((notification) => (
+    matchesStaffNotificationView(notification) && matchesStaffNotificationType(notification)
+  ));
+
+  const syncStaffNotificationFilterButtons = (buttons, dataKey, activeValue) => {
+    buttons.forEach((button) => {
+      const isActive = text(button.dataset[dataKey]) === activeValue;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  };
+
+  const updateStoredNotification = (id, updater) => {
+    const nextItems = state.notifications.map((entry) => normalizeNotification(entry));
+    const targetIndex = nextItems.findIndex((entry) => text(entry.id) === text(id));
+    if (targetIndex < 0) return null;
+
+    const draft = { ...nextItems[targetIndex] };
+    updater(draft);
+    draft.updatedAt = nowIso();
+    nextItems[targetIndex] = normalizeNotification(draft);
+    state.notifications = nextItems;
+    void persistStaffState({ showSyncError: false });
+    return nextItems[targetIndex];
   };
 
   const openStaffNotificationCenter = () => {
@@ -281,16 +522,85 @@
       refs.staffNotificationModalPriority.className = badgeClass(notification.priority);
       refs.staffNotificationModalPriority.textContent = notification.priority;
     }
-    if (refs.staffNotificationModalCategory) refs.staffNotificationModalCategory.textContent = notification.category;
+    if (refs.staffNotificationModalCategory) {
+      refs.staffNotificationModalCategory.textContent = notification.resolved
+        ? `${notification.category} - Resolved`
+        : notification.category;
+    }
     if (refs.staffNotificationModalTitle) refs.staffNotificationModalTitle.textContent = notification.title;
-    if (refs.staffNotificationModalBody) refs.staffNotificationModalBody.textContent = notification.body;
-    if (refs.staffNotificationModalTime) refs.staffNotificationModalTime.textContent = formatDateTime(notification.createdAt);
+    if (refs.staffNotificationModalBody) refs.staffNotificationModalBody.textContent = notificationMessageText(notification);
+    if (refs.staffNotificationModalTime) refs.staffNotificationModalTime.textContent = notificationTimelineText(notification);
     staffNotificationMessageModal?.show();
   };
 
+  const removeStaffNotificationFromView = (notification) => {
+    if (!notification) return;
+    if (!canRemoveStaffNotification(notification)) {
+      showNotice("Only resolved notifications can be removed from your view.", "warning");
+      return;
+    }
+
+    loadStaffNotificationHiddenState();
+    staffNotificationHiddenState = {
+      ...staffNotificationHiddenState,
+      [notification.id]: staffNotificationHiddenToken(notification)
+    };
+    saveStaffNotificationHiddenState();
+    renderStaffNotifications();
+    staffNotificationRemoveModal?.hide();
+    staffNotificationMessageModal?.hide();
+  };
+
+  const openStaffNotificationRemoveModal = (notification) => {
+    if (!notification) return;
+    if (!canRemoveStaffNotification(notification)) {
+      showNotice("Only resolved notifications can be removed from your view.", "warning");
+      return;
+    }
+
+    pendingStaffNotificationRemoveId = notification.id;
+    if (refs.staffNotificationRemoveMessage) {
+      refs.staffNotificationRemoveMessage.textContent = `Remove "${notification.title}" from your view only? This will not affect admin or other BHW accounts.`;
+    }
+
+    if (!staffNotificationRemoveModal) {
+      removeStaffNotificationFromView(notification);
+      return;
+    }
+
+    staffNotificationRemoveModal.show();
+  };
+
+  const confirmStaffNotificationRemove = () => {
+    const notificationId = text(pendingStaffNotificationRemoveId);
+    if (!notificationId) {
+      staffNotificationRemoveModal?.hide();
+      return;
+    }
+
+    const notification = getVisibleStaffNotifications().find((entry) => text(entry.id) === notificationId)
+      || getStoredNotifications().find((entry) => text(entry.id) === notificationId)
+      || null;
+    if (!notification) {
+      staffNotificationRemoveModal?.hide();
+      return;
+    }
+
+    if (!canRemoveStaffNotification(notification)) {
+      staffNotificationRemoveModal?.hide();
+      showNotice("Only resolved notifications can be removed from your view.", "warning");
+      return;
+    }
+
+    removeStaffNotificationFromView(notification);
+  };
+
   const renderStaffNotifications = () => {
-    const notifications = getStoredNotifications();
-    const unreadCount = notifications.filter((entry) => !entry.read).length;
+    const allNotifications = getVisibleStaffNotifications();
+    const notifications = allNotifications.filter((notification) => (
+      matchesStaffNotificationView(notification) && matchesStaffNotificationType(notification)
+    ));
+    const unreadCount = allNotifications.filter((entry) => !entry.read && !entry.resolved).length;
 
     [refs.staffSidebarNotificationBadge].forEach((badge) => {
       if (!badge) return;
@@ -298,31 +608,74 @@
       badge.classList.toggle("d-none", unreadCount <= 0);
     });
 
+    syncStaffNotificationFilterButtons(staffNotificationViewButtons, "staffNotificationView", staffNotificationUiState.viewFilter);
+    syncStaffNotificationFilterButtons(staffNotificationTypeButtons, "staffNotificationType", staffNotificationUiState.typeFilter);
+
     if (refs.staffNotificationCount) {
-      refs.staffNotificationCount.textContent = `${formatNumber(notifications.length)} alert${notifications.length === 1 ? "" : "s"}`;
+      const noun = staffNotificationUiState.viewFilter === "resolved"
+        ? "resolved notification"
+        : staffNotificationUiState.viewFilter === "active"
+          ? "active alert"
+          : "notification";
+      refs.staffNotificationCount.textContent = `${formatNumber(notifications.length)} ${notifications.length === 1 ? noun : `${noun}s`}`;
     }
 
     if (!refs.staffNotificationFeed) return;
 
     if (!notifications.length) {
-      refs.staffNotificationFeed.innerHTML = '<div class="notification-empty">No notifications yet for this dashboard.</div>';
+      const emptyMessage = staffNotificationUiState.viewFilter === "resolved"
+        ? "No resolved notifications yet."
+        : staffNotificationUiState.viewFilter === "active"
+          ? "No active alerts right now."
+          : "No notifications yet.";
+      refs.staffNotificationFeed.innerHTML = `<div class="notification-empty">${esc(emptyMessage)}</div>`;
       return;
     }
 
     refs.staffNotificationFeed.innerHTML = notifications.map((notification) => {
+      const displayBody = notificationMessageText(notification);
       const unreadDot = !notification.read
         ? '<span class="notification-unread-dot" aria-hidden="true"></span>'
         : "";
       const unreadClass = notification.read ? "" : " is-unread";
+      const resolvedClass = notification.resolved ? " is-resolved" : "";
+      const resolvedBadge = notification.resolved
+        ? '<span class="notification-state-pill notification-state-pill--resolved">Resolved</span>'
+        : "";
+      const resolvedMeta = notification.resolved
+        ? `
+            <span class="notification-meta-separator" aria-hidden="true">|</span>
+            <span class="notification-meta-label notification-meta-label--resolved">Resolved</span>
+            <span>${esc(formatDateTime(resolvedTimestamp(notification)))}</span>
+          `
+        : "";
+      const removeButton = canRemoveStaffNotification(notification)
+        ? `
+            <button
+              type="button"
+              class="notification-delete-btn notification-delete-btn--local"
+              data-staff-notification-action="remove"
+              data-staff-notification-id="${esc(notification.id)}"
+              aria-label="Remove notification from your view"
+              title="Remove from your view"
+            >
+              <i class="bi bi-eye-slash"></i>
+            </button>
+          `
+        : "";
 
       return `
-        <article class="notification-card${unreadClass}" data-staff-notification-id="${esc(notification.id)}">
+        <article class="notification-card${unreadClass}${resolvedClass}" data-staff-notification-id="${esc(notification.id)}">
           <div class="notification-card__head">
-            <div>
+            <div class="notification-card__head-main">
               <div class="notification-card__title">${unreadDot}${esc(notification.title)}</div>
-              <p class="notification-card__body">${esc(notification.body)}</p>
+              <p class="notification-card__body">${esc(displayBody)}</p>
             </div>
-            <span class="${esc(badgeClass(notification.priority))}">${esc(notification.priority)}</span>
+            <div class="notification-card__head-actions">
+              ${resolvedBadge}
+              <span class="${esc(badgeClass(notification.priority))}">${esc(notification.priority)}</span>
+              ${removeButton}
+            </div>
           </div>
           <div class="notification-card__meta">
             <span class="notification-meta-label">${esc(notification.category)}</span>
@@ -330,6 +683,7 @@
             <span>${esc(formatDateTime(notification.createdAt))}</span>
             <span class="notification-meta-separator" aria-hidden="true">|</span>
             <span>${esc(relativeTime(notification.createdAt))}</span>
+            ${resolvedMeta}
           </div>
         </article>
       `;
@@ -393,8 +747,50 @@
   const getStoredUsers = () => readList(USERS_STORAGE).map(normalizeModuleUser);
   const getStoredSessions = () => readList(SESSIONS_STORAGE)
     .sort((left, right) => parseTimestamp(right.lastSeenAt) - parseTimestamp(left.lastSeenAt));
-  const writeStoredUsers = (users) => localStorage.setItem(USERS_STORAGE, JSON.stringify(users));
-  const writeStoredSessions = (sessions) => localStorage.setItem(SESSIONS_STORAGE, JSON.stringify(sessions));
+  const writeStoredUsers = (users) => {
+    state.users = Array.isArray(users) ? users.map(normalizeModuleUser) : [];
+    return state.users;
+  };
+  const writeStoredSessions = (sessions) => {
+    state.sessions = Array.isArray(sessions)
+      ? [...sessions].sort((left, right) => parseTimestamp(right.lastSeenAt) - parseTimestamp(left.lastSeenAt))
+      : [];
+    return state.sessions;
+  };
+  const syncSupportStateFromServer = (serverState = {}) => {
+    const incomingNotifications = Array.isArray(serverState.notifications)
+      ? serverState.notifications.map(normalizeNotification)
+      : null;
+    const nextResolvedState = mergeResolvedStateWithNotifications(
+      serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
+        ? normalizeResolvedState(serverState.notificationResolvedState)
+        : state.notificationResolvedState,
+      incomingNotifications || state.notifications
+    );
+    if (Array.isArray(serverState.users)) {
+      writeStoredUsers(serverState.users.map(normalizeModuleUser));
+    }
+    if (Array.isArray(serverState.sessions)) {
+      writeStoredSessions(
+          [...serverState.sessions].sort((left, right) => parseTimestamp(right.lastSeenAt) - parseTimestamp(left.lastSeenAt))
+      );
+    }
+    if (Array.isArray(serverState.logs)) {
+      state.activityLogs = serverState.logs
+        .sort((left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt))
+        .slice(0, 60);
+    }
+    if (incomingNotifications) {
+      state.notificationResolvedState = nextResolvedState;
+      state.notifications = applyResolvedStateToNotifications(
+        incomingNotifications,
+        state.notificationResolvedState
+      );
+    } else if (nextResolvedState && typeof nextResolvedState === "object") {
+      state.notificationResolvedState = nextResolvedState;
+      state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
+    }
+  };
   const roleName = (value) => keyOf(value) === "staff" ? "Staff" : "BHW";
   const defaultUsernameForRole = (role) => keyOf(role) === "staff" ? "staff.user" : "bhw.user";
   const defaultIpForRole = (role) => keyOf(role) === "staff" ? "192.168.10.24" : "192.168.10.31";
@@ -427,17 +823,29 @@
 
   const getCurrentBhwUser = () => {
     const users = getStoredUsers();
+    const authUser = currentAuthUser && keyOf(currentAuthUser.normalizedRole || currentAuthUser.role) === "staff"
+      ? normalizeModuleUser(currentAuthUser)
+      : null;
     const selected = users.find((user) => text(user.id) === text(state.currentUserId) && text(user.role) !== USER_ROLE_ADMIN);
     if (selected) return selected;
+
+    const authMatch = authUser
+      ? users.find((user) =>
+        text(user.id) === text(authUser.id)
+        || keyOf(user.username) === keyOf(authUser.username)
+      )
+      : null;
 
     const sessions = getStoredSessions();
     const fromSession = sessions
       .map((session) => users.find((user) => text(user.id) === text(session.userId)))
       .find((user) => user && text(user.role) !== USER_ROLE_ADMIN && text(user.status) === "Active");
 
-    const fallback = fromSession
+    const fallback = authMatch
+      || fromSession
       || users.find((user) => text(user.role) !== USER_ROLE_ADMIN && text(user.status) === "Active")
       || users.find((user) => text(user.role) !== USER_ROLE_ADMIN)
+      || authUser
       || null;
 
     state.currentUserId = fallback?.id || "";
@@ -489,15 +897,12 @@
       ipAddress,
       createdAt
     });
-    logs.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-    localStorage.setItem(ACTIVITY_LOG_STORAGE, JSON.stringify(logs.slice(0, 60)));
+    state.activityLogs = logs
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 60);
   };
 
-  const saveState = () => {
-    localStorage.setItem(STORAGE.inventory, JSON.stringify(state.inventory));
-    localStorage.setItem(STORAGE.movements, JSON.stringify(state.movements));
-    localStorage.setItem(STORAGE.residents, JSON.stringify(state.residentAccounts));
-  };
+  const saveState = () => {};
   const emitInventoryNotificationRefresh = () => {
     window.dispatchEvent(new CustomEvent("mss:inventory-updated"));
   };
@@ -564,6 +969,11 @@
     document.body.classList.remove("sidebar-open");
   };
 
+  const releaseInitialStaffSectionBootState = () => {
+    document.documentElement.classList.remove("staff-section-booting");
+    document.documentElement.removeAttribute("data-staff-initial-section");
+  };
+
   const setActiveSection = (sectionId) => {
     const fallbackId = staffSections[0]?.id || "";
     const nextId = staffSections.some((section) => section.id === sectionId) ? sectionId : fallbackId;
@@ -584,6 +994,8 @@
     staffNavLinks.forEach((link) => {
       link.classList.toggle("active", text(link.getAttribute("href")).replace(/^#/, "") === nextId);
     });
+
+    releaseInitialStaffSectionBootState();
   };
 
   const openSection = (sectionId) => {
@@ -612,6 +1024,7 @@
     const safeExpiry = Number.isNaN(parsedExpiry.getTime())
       ? new Date(Date.now() + (180 * 86400000)).toISOString().slice(0, 10)
       : parsedExpiry.toISOString().slice(0, 10);
+    const recordStatus = text(entry.recordStatus || entry.record_status).toLowerCase() === "archived" ? "archived" : "active";
 
     return {
       id: text(entry.id) || uid(),
@@ -628,6 +1041,7 @@
       supplier: text(entry.supplier) || "Ligao City Coastal RHU Supply",
       location: text(entry.location) || "Main Cabinet",
       unitCost: Number(numeric(entry.unitCost).toFixed(2)),
+      recordStatus,
       updatedBy: text(entry.updatedBy) || "Nurse-in-Charge",
       lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
     };
@@ -635,22 +1049,26 @@
 
   const normalizeMovement = (entry = {}) => ({
     id: text(entry.id) || uid(),
-    medicineId: text(entry.medicineId),
-    medicineName: text(entry.medicineName),
-    actionType: text(entry.actionType) || "adjusted",
+    medicineId: text(entry.medicineId || entry.medicine_id),
+    medicineName: text(entry.medicineName || entry.medicine_name),
+    actionType: text(entry.actionType || entry.action_type) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
-    diseaseCategory: text(entry.diseaseCategory),
+    diseaseCategory: text(entry.diseaseCategory || entry.disease_category),
     illness: text(entry.illness),
     note: text(entry.note) || "Inventory movement recorded.",
-    stockBefore: Math.max(0, Math.round(numeric(entry.stockBefore))),
-    stockAfter: Math.max(0, Math.round(numeric(entry.stockAfter))),
-    createdAt: text(entry.createdAt) || nowIso(),
-    user: text(entry.user) || "Nurse-in-Charge",
-    recipientId: text(entry.recipientId),
-    recipientName: text(entry.recipientName),
-    recipientBarangay: text(entry.recipientBarangay),
-    releasedByRole: text(entry.releasedByRole),
-    releasedByName: text(entry.releasedByName)
+    stockBefore: Math.max(0, Math.round(numeric(entry.stockBefore || entry.stock_before))),
+    stockAfter: Math.max(0, Math.round(numeric(entry.stockAfter || entry.stock_after))),
+    createdAt: text(entry.createdAt || entry.created_at) || nowIso(),
+    user: text(entry.user || entry.user_name) || "Nurse-in-Charge",
+    recipientId: text(entry.recipientId || entry.recipient_id),
+    recipientName: text(entry.recipientName || entry.recipient_name),
+    recipientBarangay: text(entry.recipientBarangay || entry.recipient_barangay),
+    releasedByRole: text(entry.releasedByRole || entry.released_by_role),
+    releasedByName: text(entry.releasedByName || entry.released_by_name),
+    linkedRequestId: text(entry.linkedRequestId || entry.linked_request_id),
+    linkedRequestItemId: text(entry.linkedRequestItemId || entry.linked_request_item_id),
+    linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.linked_request_group_id),
+    linkedRequestCode: text(entry.linkedRequestCode || entry.linked_request_code)
   });
 
   const normalizeResidentAccount = (entry = {}) => ({
@@ -667,6 +1085,136 @@
     lastDispensedAt: text(entry.lastDispensedAt),
     lastDispensedMedicine: text(entry.lastDispensedMedicine)
   });
+
+  const loadCachedState = () => ({
+    inventory: readList(STORAGE.inventory).map(normalizeMedicine),
+    movements: readList(STORAGE.movements).map(normalizeMovement),
+    residentAccounts: readList(STORAGE.residents).map(normalizeResidentAccount),
+    users: getStoredUsers(),
+    sessions: getStoredSessions(),
+    activityLogs: readList(ACTIVITY_LOG_STORAGE),
+    notifications: getStoredNotifications()
+  });
+
+  const syncStateFromServer = (serverState = {}) => {
+    if (Array.isArray(serverState.inventory)) {
+      state.inventory = serverState.inventory.map(normalizeMedicine);
+    }
+    if (Array.isArray(serverState.movements)) {
+      state.movements = serverState.movements.map(normalizeMovement);
+    }
+    if (Array.isArray(serverState.residentAccounts)) {
+      state.residentAccounts = serverState.residentAccounts.map(normalizeResidentAccount);
+    }
+    saveState();
+  };
+
+  const createStaffStateSnapshot = () => ({
+    inventory: cloneEntries(state.inventory),
+    movements: cloneEntries(state.movements),
+    residentAccounts: cloneEntries(state.residentAccounts),
+    users: cloneEntries(state.users),
+    sessions: cloneEntries(state.sessions),
+    activityLogs: cloneEntries(state.activityLogs),
+    notifications: cloneEntries(state.notifications),
+    notificationResolvedState: { ...state.notificationResolvedState }
+  });
+
+  const restoreStaffStateSnapshot = (snapshot) => {
+    if (!snapshot) return;
+    state.inventory = snapshot.inventory.map(normalizeMedicine);
+    state.movements = snapshot.movements.map(normalizeMovement);
+    state.residentAccounts = snapshot.residentAccounts.map(normalizeResidentAccount);
+    state.users = snapshot.users.map(normalizeModuleUser);
+    state.sessions = [...snapshot.sessions].sort((left, right) => parseTimestamp(right.lastSeenAt) - parseTimestamp(left.lastSeenAt));
+    state.activityLogs = cloneEntries(snapshot.activityLogs);
+    state.notificationResolvedState = mergeResolvedStateWithNotifications(
+      snapshot.notificationResolvedState,
+      snapshot.notifications
+    );
+    state.notifications = applyResolvedStateToNotifications(
+      snapshot.notifications.map(normalizeNotification),
+      state.notificationResolvedState
+    );
+    saveState();
+  };
+
+  const persistStaffState = async ({ showSyncError = true } = {}) => {
+    saveState();
+
+    try {
+      const payload = await requestJson(STATE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          state: {
+            inventory: state.inventory,
+            movements: state.movements,
+            residentAccounts: state.residentAccounts,
+            users: state.users,
+            sessions: state.sessions,
+            logs: state.activityLogs,
+            notifications: state.notifications
+          }
+        })
+      });
+      syncSupportStateFromServer(payload.state || {});
+      syncStateFromServer(payload.state || {});
+      return payload;
+    } catch (error) {
+      saveState();
+      if (showSyncError) throw error;
+      console.error("Unable to persist staff dispensing state.", error);
+      return null;
+    }
+  };
+
+  const hydrateStaffState = async () => {
+    if (staffStateHydrationPromise) {
+      await staffStateHydrationPromise;
+      return;
+    }
+
+    staffStateHydrationPromise = (async () => {
+      const cachedState = loadCachedState();
+
+      try {
+        const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+        const serverState = payload?.state || {};
+        syncSupportStateFromServer(serverState);
+        syncStateFromServer(serverState);
+      } catch (error) {
+        const hasCachedData = cachedState.inventory.length > 0
+          || cachedState.movements.length > 0
+          || cachedState.residentAccounts.length > 0
+          || cachedState.users.length > 0
+          || cachedState.sessions.length > 0
+          || cachedState.notifications.length > 0;
+        if (hasCachedData) {
+          state.inventory = cachedState.inventory;
+          state.movements = cachedState.movements;
+          state.residentAccounts = cachedState.residentAccounts;
+          state.users = cachedState.users;
+          state.sessions = cachedState.sessions;
+          state.activityLogs = cachedState.activityLogs;
+          state.notifications = cachedState.notifications;
+          saveState();
+          showNotice("Unable to refresh backend staff data right now. Showing the last synced records on this page.", "warning");
+          return;
+        }
+
+        console.error("Unable to load backend dispensing data right now.", error);
+      }
+    })();
+
+    try {
+      await staffStateHydrationPromise;
+    } finally {
+      staffStateHydrationPromise = null;
+    }
+  };
 
   const residentAddressLabel = (resident) => [
     text(resident.zone),
@@ -689,7 +1237,9 @@
     text(medicine.batchNumber),
     text(medicine.unit)
   ].join(" ").toLowerCase();
-  const getSortedMedicines = () => [...state.inventory].sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
+  const isActiveMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
+  const getActiveMedicines = () => state.inventory.filter(isActiveMedicine);
+  const getSortedMedicines = () => [...getActiveMedicines()].sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
   const movementConditionLabel = (movement) => {
     const diseaseCategory = text(movement?.diseaseCategory);
     const illness = text(movement?.illness);
@@ -1072,8 +1622,6 @@
     if (!state.movements.length) {
       state.movements = seedMovements(state.inventory);
     }
-
-    saveState();
   };
 
   const syncHouseholdResidents = async () => {
@@ -1136,6 +1684,7 @@
         renderPatientProfiles();
         renderCabarianResidentResults();
         renderDashboard();
+        void persistStaffState({ showSyncError: false });
       }
     } catch (error) {
       // Keep local resident lookup available even if sync fails.
@@ -1176,11 +1725,12 @@
   const renderDashboard = () => {
     const today = todayInputValue();
     const dispenseMovements = getDispenseMovements();
-    const lowStockItems = state.inventory.filter((medicine) => {
+    const inventory = getActiveMedicines();
+    const lowStockItems = inventory.filter((medicine) => {
       const statusKey = getStatus(medicine).key;
       return statusKey === "out-of-stock" || statusKey === "critical" || statusKey === "low-stock";
     });
-    const expiringItems = state.inventory.filter((medicine) => {
+    const expiringItems = inventory.filter((medicine) => {
       const remainingDays = daysUntil(medicine.expiryDate);
       return remainingDays >= 0 && remainingDays <= 30;
     });
@@ -1193,7 +1743,7 @@
     if (refs.dashboardResidentCount) refs.dashboardResidentCount.textContent = formatNumber(profilesWithHistory.length);
   };
 
-  const findMedicine = (id) => state.inventory.find((medicine) => medicine.id === id) || null;
+  const findMedicine = (id) => getActiveMedicines().find((medicine) => medicine.id === id) || null;
   const findResidentAccount = (id) => state.residentAccounts.find((resident) =>
     text(resident.id) === text(id) || text(resident.residentId) === text(id)
   ) || null;
@@ -1936,22 +2486,39 @@
     });
 
     mergeResidentAccounts([resident]);
-    saveState();
     clearResidentForm();
     renderResidentSearchResults();
     renderCabarianResidentResults();
     setSelectedResident(resident);
-    showNotice(`${resident.fullName} was added to resident accounts.`);
     return resident;
   };
 
-  const handleResidentFormSubmit = (event) => {
+  const handleResidentFormSubmit = async (event) => {
     event.preventDefault();
+    const snapshot = createStaffStateSnapshot();
     const resident = createResidentAccount();
-    if (resident) openSection("dispense-medicine");
+    if (!resident) return;
+
+    try {
+      await persistStaffState();
+    } catch (error) {
+      restoreStaffStateSnapshot(snapshot);
+      renderResidentSearchResults();
+      renderPatientProfiles();
+      renderCabarianResidentResults();
+      renderDashboard();
+      renderSelectedResident();
+      renderMedicineOptions();
+      renderHistory();
+      showNotice(error.message || "Unable to save the resident account right now.", "danger");
+      return;
+    }
+
+    showNotice(`${resident.fullName} was added to resident accounts.`);
+    openSection("dispense-medicine");
   };
 
-  const handleDispenseSubmit = (event) => {
+  const handleDispenseSubmit = async (event) => {
     event.preventDefault();
     const resident = findResidentAccount(state.selectedResidentId);
     const medicine = findMedicine(text(refs.dispenseMedicine?.value));
@@ -1996,6 +2563,7 @@
       return;
     }
 
+    const snapshot = createStaffStateSnapshot();
     const stockBefore = medicine.stockOnHand;
     const stockAfter = stockBefore - quantity;
     const createdAt = `${actionDate}T08:00:00`;
@@ -2053,11 +2621,26 @@
       ipAddress
     });
 
-    saveState();
+    try {
+      await persistStaffState();
+    } catch (error) {
+      restoreStaffStateSnapshot(snapshot);
+      renderSelectedResident();
+      renderResidentSearchResults();
+      renderPatientProfiles();
+      renderMedicineOptions();
+      renderHistory();
+      renderDashboard();
+      showNotice(error.message || "Unable to save the dispensing record right now.", "danger");
+      return;
+    }
+
     renderSelectedResident();
     renderResidentSearchResults();
+    renderPatientProfiles();
     renderMedicineOptions();
     renderHistory();
+    renderDashboard();
     emitInventoryNotificationRefresh();
 
     resetDispenseForm();
@@ -2072,7 +2655,7 @@
     });
   };
 
-  const handleSettingsSubmit = (event) => {
+  const handleSettingsSubmit = async (event) => {
     event.preventDefault();
     clearNotice();
 
@@ -2085,6 +2668,7 @@
     }
 
     const currentUser = users[userIndex];
+    const snapshot = createStaffStateSnapshot();
     const previousName = currentUser.fullName;
     const fullName = text(refs.settingsFullName?.value);
     const username = text(refs.settingsUsername?.value);
@@ -2139,6 +2723,7 @@
 
     if (passwordChanged) {
       nextUser.password = password;
+      nextUser.credentialsUpdatedAt = updatedAt;
     }
 
     users[userIndex] = nextUser;
@@ -2198,10 +2783,22 @@
       ipAddress: resolveSessionIp(nextUser.id, defaultIpForRole(nextUser.role))
     });
 
+    try {
+      await persistStaffState();
+    } catch (error) {
+      restoreStaffStateSnapshot(snapshot);
+      setSettingsNotice(error instanceof Error ? error.message : "Unable to save staff settings right now. Please try again.", "danger");
+      return;
+    }
+
     state.currentUserId = nextUser.id;
     renderSettings();
     setSettingsEditorOpen(false);
-    showNotice("Staff credentials updated successfully.");
+    showTransientSuccess({
+      title: "Credentials Updated",
+      body: "Staff credentials updated successfully.",
+      fallback: "Staff credentials updated successfully."
+    });
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -2217,7 +2814,34 @@
 
   window.MSSOpenNotificationCenter = openStaffNotificationCenter;
 
+  staffNotificationViewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      staffNotificationUiState.viewFilter = text(button.dataset.staffNotificationView) || "active";
+      renderStaffNotifications();
+    });
+  });
+
+  staffNotificationTypeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      staffNotificationUiState.typeFilter = text(button.dataset.staffNotificationType) || "all";
+      renderStaffNotifications();
+    });
+  });
+
   refs.staffNotificationFeed?.addEventListener("click", (event) => {
+    const removeButton = event.target.closest('[data-staff-notification-action="remove"][data-staff-notification-id]');
+    if (removeButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const notificationId = text(removeButton.getAttribute("data-staff-notification-id"));
+      const notification = getVisibleStaffNotifications().find((entry) => text(entry.id) === notificationId)
+        || getStoredNotifications().find((entry) => text(entry.id) === notificationId)
+        || null;
+      if (!notification) return;
+      openStaffNotificationRemoveModal(notification);
+      return;
+    }
+
     const card = event.target.closest("[data-staff-notification-id]");
     if (!card) return;
 
@@ -2235,17 +2859,28 @@
     openStaffNotificationDetail(notification);
   });
 
-  window.addEventListener("mss:notifications-synced", () => {
-    renderStaffNotifications();
-  });
-
-  window.addEventListener("storage", (event) => {
-    if (text(event.key) !== NOTIFICATION_STORAGE) return;
+  window.addEventListener("mss:notifications-synced", (event) => {
+    let nextNotifications = state.notifications;
+    if (Array.isArray(event.detail?.notifications)) {
+      nextNotifications = event.detail.notifications.map(normalizeNotification);
+    }
+    state.notificationResolvedState = mergeResolvedStateWithNotifications(
+      event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+        ? normalizeResolvedState(event.detail.notificationResolvedState)
+        : state.notificationResolvedState,
+      nextNotifications
+    );
+    state.notifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
     renderStaffNotifications();
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") renderStaffNotifications();
+    if (document.visibilityState !== "visible") return;
+    void hydrateStaffState().then(() => {
+      renderStaffNotifications();
+      renderTopbarAccount();
+      renderSettings();
+    }).catch(() => {});
   });
 
   refs.residentFormModal?.addEventListener("shown.bs.modal", () => {
@@ -2266,6 +2901,15 @@
 
   refs.dispenseSuccessModal?.addEventListener("hidden.bs.modal", () => {
     window.clearTimeout(dispenseSuccessTimer);
+  });
+
+  refs.confirmStaffNotificationRemoveBtn?.addEventListener("click", confirmStaffNotificationRemove);
+
+  staffNotificationRemoveModalElement?.addEventListener("hidden.bs.modal", () => {
+    pendingStaffNotificationRemoveId = "";
+    if (refs.staffNotificationRemoveMessage) {
+      refs.staffNotificationRemoveMessage.textContent = "Remove this resolved notification from your view only?";
+    }
   });
 
   refs.residentSearchInput?.addEventListener("input", (event) => {
@@ -2445,6 +3089,12 @@
     setSettingsEditorOpen(true);
     window.setTimeout(() => refs.settingsUsername?.focus(), 120);
   });
+  refs.settingsCancelBtn?.addEventListener("click", () => {
+    clearNotice();
+    renderSettings();
+    setSettingsEditorOpen(false);
+    window.setTimeout(() => refs.settingsChangeBtn?.focus(), 120);
+  });
   refs.staffAccountToggle?.addEventListener("click", () => {
     clearNotice();
     openSection("my-settings");
@@ -2469,15 +3119,19 @@
     setActiveSection(text(window.location.hash).replace(/^#/, ""));
   });
 
-  ensureSeedData();
-  renderMedicineOptions();
-  renderSettings();
-  renderTopbarAccount();
-  renderSelectedResident();
-  renderResidentSearchResults();
-  renderPatientProfiles();
-  renderHistory();
-  renderStaffNotifications();
-  setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
-  void syncHouseholdResidents();
+  const initializeStaffPage = async () => {
+    await hydrateStaffState();
+    renderMedicineOptions();
+    renderSettings();
+    renderTopbarAccount();
+    renderSelectedResident();
+    renderResidentSearchResults();
+    renderPatientProfiles();
+    renderHistory();
+    renderStaffNotifications();
+    setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
+    void syncHouseholdResidents();
+  };
+
+  void initializeStaffPage();
 })();

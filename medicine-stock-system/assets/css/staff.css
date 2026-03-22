@@ -697,6 +697,34 @@
   width:100%;
 }
 
+html.staff-section-booting .staff-content-panel{
+  display:none;
+}
+
+html.staff-section-booting[data-staff-initial-section="staff-dashboard"] #staff-dashboard,
+html.staff-section-booting[data-staff-initial-section="patient-profiles"] #patient-profiles,
+html.staff-section-booting[data-staff-initial-section="dispense-medicine"] #dispense-medicine,
+html.staff-section-booting[data-staff-initial-section="notifications"] #notifications,
+html.staff-section-booting[data-staff-initial-section="my-settings"] #my-settings{
+  display:block;
+  width:100%;
+}
+
+html.staff-section-booting .admin-dashboard-page .menu a.active{
+  background:none;
+  box-shadow:none;
+}
+
+html.staff-section-booting[data-staff-initial-section="staff-dashboard"] .admin-dashboard-page .menu a[href="#staff-dashboard"],
+html.staff-section-booting[data-staff-initial-section="patient-profiles"] .admin-dashboard-page .menu a[href="#patient-profiles"],
+html.staff-section-booting[data-staff-initial-section="notifications"] .admin-dashboard-page .menu a[href="#notifications"],
+html.staff-section-booting[data-staff-initial-section="my-settings"] .admin-dashboard-page .menu a[href="#my-settings"]{
+  background:linear-gradient(135deg, rgba(241, 178, 0, 0.48) 0%, rgba(255,255,255,0.18) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.2),
+    0 14px 28px rgba(10, 54, 33, 0.22);
+}
+
 
 .staff-panel__head{
   margin-bottom:14px;
@@ -2019,18 +2047,18 @@
 }
 
 .staff-credentials-panel{
-  min-height:72px;
+  min-height:0;
 }
 
-.staff-credentials-editor__head{
+.staff-credentials-editor-head{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
-  margin-bottom:18px;
+  margin-bottom:10px;
 }
 
-.staff-credentials-editor__head h5{
+.staff-credentials-editor-head h5{
   margin:0;
   color:var(--staff-ink);
   font-size:1rem;
@@ -2114,6 +2142,14 @@
   padding:18px 18px 16px;
 }
 
+.settings-panel--credentials .section-head{
+  margin-bottom:8px;
+}
+
+.settings-panel--credentials .section-head h5{
+  font-size:1rem;
+}
+
 .credentials-badge{
   padding:0.48rem 0.78rem;
   border-radius:12px;
@@ -2143,10 +2179,40 @@
   background:#f7f9fc;
 }
 
+.settings-panel--credentials #settingsRole{
+  background:#f1f5ef;
+  color:#3e4e3b;
+  font-weight:600;
+}
+
 .settings-panel--credentials .account-form-actions{
   justify-content:space-between;
   gap:10px;
   padding-top:12px;
+}
+
+.credentials-editor-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.credentials-cancel-btn{
+  border-radius:999px;
+  padding:9px 18px;
+  border:1px solid #d8e0ea;
+  color:#4b5563;
+  font-weight:700;
+  background:#ffffff;
+}
+
+.credentials-cancel-btn:hover,
+.credentials-cancel-btn:focus{
+  color:#374151;
+  background:#f8fafc;
+  border-color:#cbd5e1;
 }
 
 .settings-panel--credentials .account-field-right{
@@ -2185,9 +2251,9 @@
 }
 
 .settings-panel--credentials .form-control[readonly]{
-  min-height:52px;
+  min-height:0;
   border:1px solid #d6e0ea;
-  border-radius:18px;
+  border-radius:12px;
   background:#f9fbfe;
   color:#2e3f2f;
   font-weight:700;

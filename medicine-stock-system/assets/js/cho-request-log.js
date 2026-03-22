@@ -1,6 +1,10 @@
 (() => {
   const supplyMonitoring = window.MSSSupplyMonitoring;
   if (!supplyMonitoring) return;
+  const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
+    ? window.MSS_AUTH_USER
+    : null;
+  const STATE_ENDPOINT = "state-api.php";
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -41,6 +45,7 @@
 
   const state = {
     inventory: [],
+    movements: [],
     requests: []
   };
 
@@ -52,6 +57,7 @@
   };
 
   let alertTimer = 0;
+  let requestHydrationPromise = null;
 
   const text = supplyMonitoring.text;
   const numeric = supplyMonitoring.numeric;
@@ -76,8 +82,25 @@
     }).format(parsed);
   };
   const isMobile = () => window.matchMedia("(max-width: 992px)").matches;
+  const requesterName = () => text(currentAuthUser?.fullName) || "Nurse-in-Charge";
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
+
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(String(payload.message || "Unable to sync CHO request log right now."));
+    }
+    return payload;
+  };
 
   const showNotice = (message, type = "success") => {
     if (!refs.moduleAlert) return;
@@ -107,8 +130,10 @@
   };
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
+  const isActiveInventoryMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
+  const activeInventoryMedicines = () => state.inventory.filter(isActiveInventoryMedicine);
 
-  const requestGroups = () => supplyMonitoring.hydrateRequestGroups(state.requests, supplyMonitoring.readMovements());
+  const requestGroups = () => supplyMonitoring.hydrateRequestGroups(state.requests, state.movements);
 
   const findInventoryMedicine = (medicineId) => state.inventory.find((entry) => text(entry.id) === text(medicineId)) || null;
 
@@ -116,8 +141,14 @@
 
   const requestItemOptions = (selectedId = "") => [
     '<option value="">Select medicine</option>',
-    ...state.inventory
-      .slice()
+    ...(() => {
+      const medicines = activeInventoryMedicines().slice();
+      const selectedMedicine = findInventoryMedicine(selectedId);
+      if (selectedMedicine && !medicines.some((medicine) => text(medicine.id) === text(selectedMedicine.id))) {
+        medicines.push(selectedMedicine);
+      }
+      return medicines;
+    })()
       .sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)))
       .map((medicine) => `<option value="${esc(medicine.id)}" ${text(selectedId) === text(medicine.id) ? "selected" : ""}>${esc(medicineLabel(medicine))}</option>`)
   ].join("");
@@ -255,48 +286,117 @@
     });
   };
 
+  let activeActionMenu = null;
+
   const renderActionMenu = (row) => {
-    const menuItems = [
-      `
-        <button type="button" class="dropdown-item request-action-item" data-action="view" data-id="${esc(row.requestGroupId)}">
-          <i class="bi bi-eye"></i> View
-        </button>
-      `
-    ];
-
-    if (!row.hasDelivery) {
-      menuItems.push(`
-        <button type="button" class="dropdown-item request-action-item" data-action="edit" data-id="${esc(row.requestGroupId)}">
-          <i class="bi bi-pencil-square"></i> Edit
-        </button>
-      `);
-      menuItems.push(`
-        <button type="button" class="dropdown-item request-action-item text-danger" data-action="delete" data-id="${esc(row.requestGroupId)}">
-          <i class="bi bi-trash3"></i> Delete
-        </button>
-      `);
-    }
-
     return `
-      <div class="dropdown request-action-menu">
+      <div class="request-action-menu">
         <button
           type="button"
           class="btn btn-sm btn-light table-action-btn request-action-toggle"
-          data-bs-toggle="dropdown"
+          data-request-menu-toggle="true"
+          data-id="${esc(row.requestGroupId)}"
           aria-expanded="false"
           aria-label="Open request actions"
+          title="Open request actions"
         >
           <i class="bi bi-three-dots-vertical"></i>
         </button>
-        <div class="dropdown-menu dropdown-menu-end request-action-dropdown">
-          ${menuItems.join("")}
-        </div>
       </div>
     `;
   };
 
+  const buildActionMenuItems = (requestGroup) => {
+    if (!requestGroup) return "";
+
+    const menuItems = [
+      `
+        <button type="button" class="request-action-item" data-action="view" data-id="${esc(requestGroup.requestGroupId)}">
+          <i class="bi bi-eye"></i>
+          <span>View</span>
+        </button>
+      `
+    ];
+
+    if (!requestGroup.hasDelivery) {
+      menuItems.push(`
+        <button type="button" class="request-action-item" data-action="edit" data-id="${esc(requestGroup.requestGroupId)}">
+          <i class="bi bi-pencil-square"></i>
+          <span>Edit</span>
+        </button>
+      `);
+      menuItems.push(`
+        <button type="button" class="request-action-item text-danger" data-action="delete" data-id="${esc(requestGroup.requestGroupId)}">
+          <i class="bi bi-trash3"></i>
+          <span>Delete</span>
+        </button>
+      `);
+    }
+
+    return menuItems.join("");
+  };
+
+  const closeActionMenu = () => {
+    if (!activeActionMenu) return;
+    activeActionMenu.toggle?.setAttribute("aria-expanded", "false");
+    activeActionMenu.menu?.remove();
+    activeActionMenu = null;
+  };
+
+  const positionActionMenu = (toggleEl, menuEl) => {
+    if (!toggleEl || !menuEl) return;
+
+    const toggleRect = toggleEl.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const menuWidth = menuEl.offsetWidth || 168;
+    const menuHeight = menuEl.offsetHeight || 0;
+    const gap = 8;
+
+    let left = toggleRect.right - menuWidth;
+    let top = toggleRect.bottom + gap;
+
+    if (left < gap) left = gap;
+    if ((left + menuWidth) > (viewportWidth - gap)) {
+      left = Math.max(gap, viewportWidth - menuWidth - gap);
+    }
+
+    if ((top + menuHeight) > (viewportHeight - gap)) {
+      const upwardTop = toggleRect.top - menuHeight - gap;
+      top = upwardTop >= gap ? upwardTop : Math.max(gap, viewportHeight - menuHeight - gap);
+    }
+
+    menuEl.style.left = `${Math.round(left)}px`;
+    menuEl.style.top = `${Math.round(top)}px`;
+  };
+
+  const openActionMenu = (toggleEl, requestGroup) => {
+    if (!toggleEl || !requestGroup) return;
+
+    if (activeActionMenu?.toggle === toggleEl) {
+      closeActionMenu();
+      return;
+    }
+
+    closeActionMenu();
+
+    const menuEl = document.createElement("div");
+    menuEl.className = "request-action-dropdown";
+    menuEl.setAttribute("role", "menu");
+    menuEl.innerHTML = buildActionMenuItems(requestGroup);
+    document.body.appendChild(menuEl);
+
+    positionActionMenu(toggleEl, menuEl);
+    toggleEl.setAttribute("aria-expanded", "true");
+    activeActionMenu = {
+      toggle: toggleEl,
+      menu: menuEl
+    };
+  };
+
   const renderTable = () => {
     if (!refs.requestTableBody) return;
+    closeActionMenu();
 
     const rows = filteredRows();
     if (refs.requestCount) {
@@ -437,9 +537,98 @@
     renderTable();
   };
 
+  const saveState = () => {
+    state.requests = supplyMonitoring.prepareRequests(state.requests)
+      .sort((left, right) => new Date(right.requestDate).getTime() - new Date(left.requestDate).getTime());
+    supplyMonitoring.setState({
+      inventory: state.inventory,
+      movements: state.movements,
+      requests: state.requests
+    });
+  };
+
+  const syncStateFromServer = (serverState = {}) => {
+    if (Array.isArray(serverState.inventory)) {
+      state.inventory = serverState.inventory.map((entry) => ({ ...entry }));
+    }
+    if (Array.isArray(serverState.movements)) {
+      state.movements = serverState.movements.map((entry) => ({ ...entry }));
+    }
+    if (Array.isArray(serverState.requests)) {
+      state.requests = serverState.requests.map((entry) => supplyMonitoring.normalizeRequest(entry));
+    }
+    saveState();
+  };
+
   const loadState = () => {
-    state.inventory = supplyMonitoring.readList(supplyMonitoring.STORAGE.inventory);
+    const supplyState = supplyMonitoring.getState();
+    state.inventory = Array.isArray(supplyState.inventory) ? supplyState.inventory.map((entry) => ({ ...entry })) : [];
+    state.movements = Array.isArray(supplyState.movements) ? supplyState.movements.map((entry) => ({ ...entry })) : [];
     state.requests = supplyMonitoring.readRequests();
+  };
+
+  const cloneEntries = (entries = []) => entries.map((entry) => ({ ...entry }));
+  const createRequestStateSnapshot = () => ({
+    requests: cloneEntries(state.requests)
+  });
+  const restoreRequestStateSnapshot = (snapshot) => {
+    if (!snapshot) return;
+    state.requests = snapshot.requests.map((entry) => supplyMonitoring.normalizeRequest(entry));
+    saveState();
+  };
+
+  const persistRequestState = async ({ showSyncError = true } = {}) => {
+    saveState();
+
+    try {
+      const payload = await requestJson(STATE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          state: {
+            requests: state.requests
+          }
+        })
+      });
+      syncStateFromServer(payload.state || {});
+      return payload;
+    } catch (error) {
+      saveState();
+      if (showSyncError) throw error;
+      console.error("Unable to persist CHO request log state.", error);
+      return null;
+    }
+  };
+
+  const hydrateRequestState = async () => {
+    if (requestHydrationPromise) {
+      await requestHydrationPromise;
+      return;
+    }
+
+    requestHydrationPromise = (async () => {
+      try {
+        const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+        syncStateFromServer(payload?.state || {});
+      } catch (error) {
+        loadState();
+
+        if (state.requests.length || state.inventory.length || state.movements.length) {
+          showNotice("Unable to refresh CHO request data right now. Showing the last synced records on this page.", "warning");
+          return;
+        }
+
+        showNotice("Unable to load backend CHO request data right now.", "danger");
+      }
+    })();
+
+    try {
+      await requestHydrationPromise;
+    } finally {
+      requestHydrationPromise = null;
+    }
   };
 
   const setRequestFormReadOnly = (readOnly) => {
@@ -462,6 +651,7 @@
 
   const openRequestModal = (requestGroup = null, mode = "edit") => {
     if (!refs.requestForm) return;
+    closeActionMenu();
     uiState.requestModalMode = mode;
     refs.requestForm.reset();
     refs.requestId.value = requestGroup?.requestGroupId || "";
@@ -490,12 +680,7 @@
     requestModal?.show();
   };
 
-  const saveRequests = () => {
-    state.requests = supplyMonitoring.writeRequests(state.requests)
-      .sort((left, right) => new Date(right.requestDate).getTime() - new Date(left.requestDate).getTime());
-  };
-
-  const handleRequestSubmit = (event) => {
+  const handleRequestSubmit = async (event) => {
     event.preventDefault();
     if (uiState.requestModalMode === "view") return;
 
@@ -544,26 +729,35 @@
         requestDate,
         expectedDate,
         source,
-        requestedBy: existingGroup?.requestedBy || "Nurse-in-Charge",
+        requestedBy: existingGroup?.requestedBy || requesterName(),
         notes,
         createdAt: existingItem?.createdAt || createdAt,
         updatedAt: supplyMonitoring.nowIso()
       });
     });
 
+    const snapshot = createRequestStateSnapshot();
     state.requests = state.requests.filter((entry) => {
       const normalized = supplyMonitoring.normalizeRequest(entry);
       return text(normalized.requestGroupId) !== text(requestGroupId);
     });
     state.requests.unshift(...replacementRows);
 
-    saveRequests();
+    try {
+      await persistRequestState();
+    } catch (error) {
+      restoreRequestStateSnapshot(snapshot);
+      renderAll();
+      showNotice(error.message || "Unable to save the CHO request right now.", "danger");
+      return;
+    }
+
     renderAll();
     requestModal?.hide();
-    showNotice(existingGroup ? `${requestCode} updated successfully.` : `${requestCode} logged successfully.`);
   };
 
   const handleDeleteRequest = (requestGroupId) => {
+    closeActionMenu();
     const row = findRequestGroup(requestGroupId);
     if (!row) return;
 
@@ -579,19 +773,28 @@
     requestDeleteModal?.show();
   };
 
-  const confirmDeleteRequest = () => {
+  const confirmDeleteRequest = async () => {
     const requestGroupId = text(uiState.pendingDeleteGroupId);
     if (!requestGroupId) return;
 
+    const snapshot = createRequestStateSnapshot();
     state.requests = state.requests.filter((entry) => {
       const normalized = supplyMonitoring.normalizeRequest(entry);
       return text(normalized.requestGroupId) !== text(requestGroupId);
     });
-    saveRequests();
+
+    try {
+      await persistRequestState();
+    } catch (error) {
+      restoreRequestStateSnapshot(snapshot);
+      renderAll();
+      showNotice(error.message || "Unable to delete the CHO request right now.", "danger");
+      return;
+    }
+
     renderAll();
     uiState.pendingDeleteGroupId = "";
     requestDeleteModal?.hide();
-    showNotice("CHO request deleted.");
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -614,8 +817,12 @@
   });
 
   refs.addRequestItemBtn?.addEventListener("click", () => appendRequestItemRow({}));
-  refs.confirmDeleteRequestBtn?.addEventListener("click", confirmDeleteRequest);
-  refs.requestForm?.addEventListener("submit", handleRequestSubmit);
+  refs.confirmDeleteRequestBtn?.addEventListener("click", () => {
+    void confirmDeleteRequest();
+  });
+  refs.requestForm?.addEventListener("submit", (event) => {
+    void handleRequestSubmit(event);
+  });
   refs.requestDate?.addEventListener("change", () => {
     const requestDate = supplyMonitoring.normalizeInputDate(refs.requestDate?.value);
     const expectedDate = supplyMonitoring.normalizeInputDate(refs.requestExpectedDate?.value, "");
@@ -659,38 +866,72 @@
     renderTable();
   });
 
-  refs.requestTableBody?.addEventListener("click", (event) => {
-    const actionButton = event.target.closest("[data-action][data-id]");
-    if (!actionButton) return;
+  document.addEventListener("click", (event) => {
+    const toggleButton = event.target.closest("[data-request-menu-toggle][data-id]");
+    if (toggleButton) {
+      const requestGroupId = text(toggleButton.getAttribute("data-id"));
+      const requestGroup = findRequestGroup(requestGroupId);
+      if (!requestGroup) {
+        closeActionMenu();
+        return;
+      }
 
-    const requestGroupId = text(actionButton.getAttribute("data-id"));
-    const action = text(actionButton.getAttribute("data-action"));
-    const requestGroup = findRequestGroup(requestGroupId);
-    if (!requestGroup) return;
-
-    if (action === "delete") {
-      handleDeleteRequest(requestGroupId);
+      openActionMenu(toggleButton, requestGroup);
       return;
     }
 
-    if (action === "view") {
-      openRequestModal(requestGroup, "view");
+    const actionButton = event.target.closest(".request-action-item[data-action][data-id]");
+    if (actionButton && activeActionMenu?.menu?.contains(actionButton)) {
+      closeActionMenu();
+
+      const requestGroupId = text(actionButton.getAttribute("data-id"));
+      const action = text(actionButton.getAttribute("data-action"));
+      const requestGroup = findRequestGroup(requestGroupId);
+      if (!requestGroup) return;
+
+      if (action === "delete") {
+        handleDeleteRequest(requestGroupId);
+        return;
+      }
+
+      if (action === "view") {
+        openRequestModal(requestGroup, "view");
+        return;
+      }
+
+      openRequestModal(requestGroup, "edit");
       return;
     }
 
-    openRequestModal(requestGroup, "edit");
+    if (activeActionMenu && !activeActionMenu.menu?.contains(event.target)) {
+      closeActionMenu();
+    }
   });
 
-  window.addEventListener("storage", (event) => {
-    if (![supplyMonitoring.STORAGE.requests, supplyMonitoring.STORAGE.movements, supplyMonitoring.STORAGE.inventory].includes(event.key)) return;
+  window.addEventListener("resize", closeActionMenu);
+  window.addEventListener("scroll", closeActionMenu, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeActionMenu();
+  });
+
+  window.addEventListener("mss:supply-state-updated", () => {
     loadState();
     renderAll();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    void hydrateRequestState().then(renderAll).catch(() => {});
   });
 
   byId("requestDeleteModal")?.addEventListener("hidden.bs.modal", () => {
     uiState.pendingDeleteGroupId = "";
   });
 
-  loadState();
-  renderAll();
+  const initializeRequestLog = async () => {
+    await hydrateRequestState();
+    renderAll();
+  };
+
+  void initializeRequestLog();
 })();

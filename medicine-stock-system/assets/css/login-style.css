@@ -48,7 +48,7 @@ body::after{
 .page{
   flex:1;
   display:flex;
-  align-items:center;
+  align-items:stretch;
   justify-content:center;
   padding:32px 20px;
   position:relative;
@@ -60,11 +60,17 @@ body::after{
   max-width:980px;
   display:grid;
   grid-template-columns:1.05fr 0.95fr;
+  grid-template-rows:minmax(0, 1fr) auto;
+  grid-template-areas:
+    'brand form'
+    'footer footer';
   gap:24px;
   min-width:0;
+  min-height:calc(100vh - 64px);
 }
 
 .brand-panel{
+  grid-area:brand;
   background:linear-gradient(135deg, #145718 0%, #2f8525 100%);
   color:#f8fafc;
   padding:32px;
@@ -75,6 +81,7 @@ body::after{
   display:flex;
   flex-direction:column;
   gap:18px;
+  align-self:center;
 }
 .brand-panel::after{
   content:'';
@@ -153,6 +160,7 @@ body::after{
 }
 
 .form-panel{
+  grid-area:form;
   background:var(--panel);
   border-radius:var(--radius);
   padding:32px;
@@ -161,6 +169,7 @@ body::after{
   display:flex;
   flex-direction:column;
   gap:24px;
+  align-self:center;
 }
 
 .form-head h2{
@@ -252,7 +261,7 @@ body::after{
 }
 
 .login-footer{
-  grid-column:1 / -1;
+  grid-area:footer;
   text-align:center;
   padding:4px 12px 0;
   font-size:0.85rem;

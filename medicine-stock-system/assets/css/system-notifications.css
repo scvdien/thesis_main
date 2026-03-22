@@ -10,8 +10,7 @@
   pointer-events:none;
 }
 
-.mss-system-sound-toggle,
-.mss-system-browser-toggle{
+.mss-system-sound-toggle{
   pointer-events:auto;
   border:1px solid #d5e2ca;
   border-radius:999px;
@@ -28,14 +27,12 @@
   letter-spacing:0.02em;
 }
 
-.mss-system-sound-toggle:hover,
-.mss-system-browser-toggle:hover{
+.mss-system-sound-toggle:hover{
   background:#f2f7ec;
   color:#214821;
 }
 
-.mss-system-sound-toggle.is-muted,
-.mss-system-browser-toggle.is-muted{
+.mss-system-sound-toggle.is-muted{
   color:#7a8476;
 }
 

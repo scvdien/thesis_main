@@ -12,19 +12,82 @@
   };
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const syncContextId = uid();
+  const cloneEntry = (entry) => (entry && typeof entry === "object" && !Array.isArray(entry) ? { ...entry } : entry);
+  const cloneEntries = (items = []) => Array.isArray(items) ? items.map(cloneEntry) : [];
+  const stateBucketForKey = (key) => {
+    if (key === STORAGE.inventory) return "inventory";
+    if (key === STORAGE.movements) return "movements";
+    if (key === STORAGE.requests) return "requests";
+    return "";
+  };
+  const backendState = {
+    inventory: [],
+    movements: [],
+    requests: []
+  };
+  const stateChannel = typeof window.BroadcastChannel === "function"
+    ? new window.BroadcastChannel("mss_supply_state_sync")
+    : null;
+
+  const getState = () => ({
+    inventory: cloneEntries(backendState.inventory),
+    movements: cloneEntries(backendState.movements),
+    requests: cloneEntries(backendState.requests)
+  });
+
+  const emitStateUpdate = (keys = []) => {
+    window.dispatchEvent(new CustomEvent("mss:supply-state-updated", {
+      detail: {
+        keys: Array.isArray(keys) ? [...keys] : [],
+        state: getState()
+      }
+    }));
+  };
+
+  const applyStatePatch = ({
+    inventory,
+    movements,
+    requests
+  } = {}, { broadcast = true, keys = [] } = {}) => {
+    const changedKeys = Array.isArray(keys) ? [...keys] : [];
+
+    if (Array.isArray(inventory)) {
+      backendState.inventory = cloneEntries(inventory);
+      if (!changedKeys.includes(STORAGE.inventory)) changedKeys.push(STORAGE.inventory);
+    }
+    if (Array.isArray(movements)) {
+      backendState.movements = cloneEntries(movements);
+      if (!changedKeys.includes(STORAGE.movements)) changedKeys.push(STORAGE.movements);
+    }
+    if (Array.isArray(requests)) {
+      backendState.requests = cloneEntries(requests);
+      if (!changedKeys.includes(STORAGE.requests)) changedKeys.push(STORAGE.requests);
+    }
+
+    emitStateUpdate(changedKeys);
+
+    if (broadcast && stateChannel && changedKeys.length) {
+      stateChannel.postMessage({
+        contextId: syncContextId,
+        keys: changedKeys,
+        state: getState()
+      });
+    }
+
+    return getState();
+  };
 
   const readList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
+    const bucket = stateBucketForKey(key);
+    return bucket ? cloneEntries(backendState[bucket]) : [];
   };
 
   const writeList = (key, items) => {
-    localStorage.setItem(key, JSON.stringify(Array.isArray(items) ? items : []));
+    const bucket = stateBucketForKey(key);
+    if (!bucket) return [];
+    applyStatePatch({ [bucket]: Array.isArray(items) ? items : [] }, { keys: [key] });
+    return readList(key);
   };
 
   const todayInputValue = () => {
@@ -132,7 +195,7 @@
     return normalized;
   };
 
-  const writeRequests = (requests = []) => {
+  const prepareRequests = (requests = []) => {
     const normalized = requests.map(normalizeRequest);
     const year = new Date().getFullYear();
     let nextCodeValue = normalized
@@ -167,8 +230,12 @@
       };
     });
 
-    writeList(STORAGE.requests, withCodes);
-    return withCodes;
+    return withCodes.map(normalizeRequest);
+  };
+
+  const writeRequests = (requests = []) => {
+    const prepared = prepareRequests(requests);
+    return writeList(STORAGE.requests, prepared).map(normalizeRequest);
   };
 
   const normalizeMovementLink = (entry = {}) => ({
@@ -485,6 +552,24 @@
     return sameMedicine && !row.isComplete;
   });
 
+  const setState = ({
+    inventory,
+    movements,
+    requests
+  } = {}, options = {}) => applyStatePatch({ inventory, movements, requests }, options);
+
+  if (stateChannel) {
+    stateChannel.addEventListener("message", (event) => {
+      const payload = event?.data;
+      if (!payload || payload.contextId === syncContextId) return;
+
+      applyStatePatch(payload.state || {}, {
+        broadcast: false,
+        keys: Array.isArray(payload.keys) ? payload.keys : []
+      });
+    });
+  }
+
   window.MSSSupplyMonitoring = {
     STORAGE,
     text,
@@ -498,7 +583,10 @@
     normalizeInputDate,
     diffDays,
     normalizeRequest,
+    prepareRequests,
     nextRequestCode,
+    getState,
+    setState,
     readRequests,
     writeRequests,
     readMovements,

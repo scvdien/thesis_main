@@ -3,11 +3,11 @@
 
   const STORAGE_KEY = "mss_notifications_v2";
   const POPUP_STATE_KEY = "mss_notification_popup_seen_v1";
-  const MONITORING_SNAPSHOT_KEY = "mss_monitoring_snapshot_v1";
+  const DISMISSED_STATE_KEY = "mss_notification_dismissed_v1";
   const SOUND_PREF_KEY = "mss_notification_sound_enabled_v1";
-  const BROWSER_ALERT_PREF_KEY = "mss_browser_notification_enabled_v1";
   const INVENTORY_STORAGE = "mss_inventory_records_v1";
   const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
+  const STATE_ENDPOINT = "state-api.php";
   const MAX_POPUPS = 3;
   const AUTO_DISMISS_BY_PRIORITY = {
     critical: 12000,
@@ -59,52 +59,74 @@
   };
   const pluralize = (value, singular, plural = `${singular}s`) => `${formatNumber(value)} ${value === 1 ? singular : plural}`;
   const quantityLabel = (value, unit) => `${formatNumber(value)} ${text(unit) || "units"}`;
+  let notificationHydrationPromise = null;
+  const cloneEntry = (entry) => (entry && typeof entry === "object" && !Array.isArray(entry) ? { ...entry } : entry);
+  const cloneEntries = (entries = []) => Array.isArray(entries) ? entries.map(cloneEntry) : [];
+  const state = {
+    inventory: [],
+    movements: [],
+    notifications: [],
+    monitoringSnapshot: null,
+    notificationPreferences: {
+      soundEnabled: true
+    },
+    notificationPopupState: {},
+    notificationDismissedState: {},
+    notificationReadState: {},
+    notificationResolvedState: {}
+  };
 
   const readList = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
+    if (key === STORAGE_KEY) return cloneEntries(state.notifications);
+    if (key === INVENTORY_STORAGE) return cloneEntries(state.inventory);
+    if (key === MOVEMENTS_STORAGE) return cloneEntries(state.movements);
+    return [];
+  };
+
+  const requestJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      const message = String(payload.message || "Unable to sync system notifications right now.");
+      throw new Error(message);
     }
+    return payload;
   };
 
   const readMap = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-    } catch (error) {
-      return {};
-    }
+    if (key === POPUP_STATE_KEY) return { ...state.notificationPopupState };
+    if (key === DISMISSED_STATE_KEY) return { ...state.notificationDismissedState };
+    return {};
   };
 
   const writeMap = (key, value) => {
-    localStorage.setItem(key, JSON.stringify(value));
-  };
-  const readSoundEnabled = () => {
-    try {
-      const raw = localStorage.getItem(SOUND_PREF_KEY);
-      return raw === null ? true : raw !== "false";
-    } catch (error) {
-      return true;
+    if (key === POPUP_STATE_KEY) {
+      state.notificationPopupState = value && typeof value === "object" && !Array.isArray(value)
+        ? { ...value }
+        : {};
+      return;
+    }
+
+    if (key === DISMISSED_STATE_KEY) {
+      state.notificationDismissedState = value && typeof value === "object" && !Array.isArray(value)
+        ? { ...value }
+        : {};
     }
   };
+  const readSoundEnabled = () => state.notificationPreferences.soundEnabled !== false;
   const saveSoundEnabled = (enabled) => {
-    localStorage.setItem(SOUND_PREF_KEY, enabled ? "true" : "false");
-  };
-  const supportsBrowserNotifications = () => typeof window.Notification !== "undefined";
-  const readBrowserAlertsEnabled = () => {
-    try {
-      const raw = localStorage.getItem(BROWSER_ALERT_PREF_KEY);
-      return raw === "true";
-    } catch (error) {
-      return false;
-    }
-  };
-  const saveBrowserAlertsEnabled = (enabled) => {
-    localStorage.setItem(BROWSER_ALERT_PREF_KEY, enabled ? "true" : "false");
+    state.notificationPreferences = {
+      ...state.notificationPreferences,
+      soundEnabled: enabled !== false
+    };
+    void persistNotificationPreferencesToServer({ keepalive: true });
   };
 
   const normalizeMedicine = (entry = {}, index = 0) => ({
@@ -115,6 +137,7 @@
     reorderLevel: Math.max(1, Math.round(numeric(entry.reorderLevel) || 1)),
     unit: text(entry.unit) || "units",
     expiryDate: text(entry.expiryDate),
+    recordStatus: text(entry.recordStatus || entry.record_status).toLowerCase() === "archived" ? "archived" : "active",
     updatedAt: text(entry.lastUpdatedAt) || nowIso()
   });
 
@@ -140,18 +163,21 @@
     { medicineId: "fallback_amoxicillin", medicineName: "Amoxicillin", actionType: "dispense", quantity: 32, createdAt: new Date(Date.now() - (30 * 3600000)).toISOString() }
   ].map(normalizeMovement);
 
+  const isActiveMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
+
   const readInventory = () => {
     const records = readList(INVENTORY_STORAGE)
       .map((entry, index) => normalizeMedicine(entry, index))
       .filter((entry) => text(entry.name));
-    return records.length ? records : fallbackInventory;
+    const activeRecords = records.filter(isActiveMedicine);
+    return activeRecords.length ? activeRecords : records;
   };
 
   const readMovements = () => {
     const records = readList(MOVEMENTS_STORAGE)
       .map(normalizeMovement)
       .filter((entry) => text(entry.medicineId) || text(entry.medicineName));
-    return records.length ? records : fallbackMovements;
+    return records;
   };
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
@@ -204,8 +230,196 @@
       signature: text(entry.signature) || [category, priority, title, body].join("|"),
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
-      read: Boolean(entry.read)
+      read: Boolean(entry.read),
+      resolved: Boolean(entry.resolved),
+      resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
+  };
+
+  const normalizeNotificationPreferences = (entry = {}) => ({
+    soundEnabled: entry?.soundEnabled !== false
+  });
+
+  const normalizePopupState = (entry = {}) => {
+    const popupState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const normalizedKey = text(key);
+      const signature = text(value);
+      if (!normalizedKey || !signature) return;
+      popupState[normalizedKey] = signature;
+    });
+    return popupState;
+  };
+
+  const normalizeDismissedState = (entry = {}) => {
+    const dismissedState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const normalizedKey = text(key);
+      const signature = text(value);
+      if (!normalizedKey || !signature) return;
+      dismissedState[normalizedKey] = signature;
+    });
+    return dismissedState;
+  };
+
+  const normalizeReadState = (entry = {}) => {
+    const readState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const normalizedKey = text(key);
+      const signature = text(value);
+      if (!normalizedKey || !signature) return;
+      readState[normalizedKey] = signature;
+    });
+    return readState;
+  };
+
+  const normalizeResolvedState = (entry = {}) => {
+    const resolvedState = {};
+    Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
+      const normalizedKey = text(key);
+      const resolvedEntry = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      const signature = text(resolvedEntry.signature ?? value);
+      if (!normalizedKey || !signature) return;
+      resolvedState[normalizedKey] = {
+        signature,
+        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso()
+      };
+    });
+    return resolvedState;
+  };
+
+  const mergeReadStateWithNotifications = (currentReadState = {}, notifications = []) => {
+    const nextReadState = { ...currentReadState };
+    notifications.forEach((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (!normalized.resolved && normalized.read && normalized.id && normalized.signature) {
+        nextReadState[normalized.id] = normalized.signature;
+      }
+    });
+    return nextReadState;
+  };
+
+  const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
+    const nextResolvedState = { ...currentResolvedState };
+    notifications.forEach((notification) => {
+      const normalized = normalizeNotification(notification);
+      if (normalized.resolved && normalized.id && normalized.signature) {
+        nextResolvedState[normalized.id] = {
+          signature: normalized.signature,
+          resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso()
+        };
+      }
+    });
+    return nextResolvedState;
+  };
+
+  const applyResolvedStateToNotifications = (notifications = [], resolvedState = {}) => (
+    notifications.map((notification) => {
+      const normalized = normalizeNotification(notification);
+      const resolvedEntry = resolvedState[normalized.id];
+      if (resolvedEntry && text(resolvedEntry.signature) === text(normalized.signature)) {
+        normalized.resolved = true;
+        normalized.resolvedAt = text(resolvedEntry.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso();
+      } else {
+        normalized.resolved = false;
+        normalized.resolvedAt = "";
+      }
+      return normalized;
+    })
+  );
+
+  const syncStateFromServer = (serverState = {}) => {
+    const nextNotifications = Array.isArray(serverState.notifications)
+      ? serverState.notifications.map(normalizeNotification)
+      : state.notifications;
+    if (Array.isArray(serverState.inventory)) {
+      state.inventory = serverState.inventory.map((entry, index) => normalizeMedicine(entry, index));
+    }
+    if (Array.isArray(serverState.movements)) {
+      state.movements = serverState.movements.map(normalizeMovement);
+    }
+    if (serverState.notificationPreferences && typeof serverState.notificationPreferences === "object") {
+      state.notificationPreferences = normalizeNotificationPreferences(serverState.notificationPreferences);
+    }
+    if (serverState.notificationPopupState && typeof serverState.notificationPopupState === "object") {
+      state.notificationPopupState = normalizePopupState(serverState.notificationPopupState);
+    }
+    if (serverState.notificationDismissedState && typeof serverState.notificationDismissedState === "object") {
+      state.notificationDismissedState = normalizeDismissedState(serverState.notificationDismissedState);
+    }
+    state.notificationResolvedState = mergeResolvedStateWithNotifications(
+      serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
+        ? normalizeResolvedState(serverState.notificationResolvedState)
+        : state.notificationResolvedState,
+      nextNotifications
+    );
+    const hydratedNotifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
+    state.notificationReadState = mergeReadStateWithNotifications(
+      serverState.notificationReadState && typeof serverState.notificationReadState === "object"
+        ? normalizeReadState(serverState.notificationReadState)
+        : state.notificationReadState,
+      hydratedNotifications
+    );
+    state.notifications = hydratedNotifications;
+  };
+
+  const persistStateToServer = async (nextState, { keepalive = false } = {}) => {
+    try {
+      const payload = await requestJson(STATE_ENDPOINT, {
+        method: "POST",
+        keepalive,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          state: nextState
+        })
+      });
+      syncStateFromServer(payload?.state || {});
+    } catch (error) {
+      console.error("Unable to persist system notifications.", error);
+    }
+  };
+
+  const persistNotificationsToServer = async (notifications, options = {}) => (
+    persistStateToServer({
+      notifications,
+      notificationPreferences: state.notificationPreferences,
+      notificationPopupState: state.notificationPopupState,
+      notificationDismissedState: state.notificationDismissedState,
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    }, options)
+  );
+
+  const persistNotificationPreferencesToServer = async (options = {}) => (
+    persistStateToServer({
+      notificationPreferences: state.notificationPreferences
+    }, options)
+  );
+
+  const hydrateNotificationsFromServer = async () => {
+    if (notificationHydrationPromise) {
+      await notificationHydrationPromise;
+      return;
+    }
+
+    notificationHydrationPromise = (async () => {
+      try {
+        const payload = await requestJson(`${STATE_ENDPOINT}?t=${Date.now()}`);
+        syncStateFromServer(payload?.state || {});
+        toastState.soundEnabled = readSoundEnabled();
+        updateSoundToggle();
+      } catch (error) {
+        console.error("Unable to hydrate notifications from server.", error);
+      }
+    })();
+
+    try {
+      await notificationHydrationPromise;
+    } finally {
+      notificationHydrationPromise = null;
+    }
   };
 
   const buildDerivedNotifications = (previous = []) => {
@@ -233,16 +447,27 @@
     });
 
     const notifications = [];
+    const activeIds = new Set();
+    const nextResolvedState = normalizeResolvedState(state.notificationResolvedState);
+    const nextReadState = { ...state.notificationReadState };
     const pushNotification = (raw) => {
       const nextNotification = normalizeNotification(raw);
+      if (text(state.notificationDismissedState[nextNotification.id]) === text(nextNotification.signature)) {
+        return;
+      }
       const previousEntry = previousMap.get(nextNotification.id);
-      const preserveRead = Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature);
+      delete nextResolvedState[nextNotification.id];
+      activeIds.add(nextNotification.id);
+      const preserveRead = text(nextReadState[nextNotification.id]) === text(nextNotification.signature)
+        || (Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature) && previousEntry.read && !previousEntry.resolved);
 
       notifications.push(normalizeNotification({
         ...nextNotification,
-        createdAt: preserveRead ? previousEntry.createdAt : nextNotification.createdAt,
+        createdAt: preserveRead && previousEntry ? previousEntry.createdAt : nextNotification.createdAt,
         updatedAt: nowIso(),
-        read: preserveRead ? previousEntry.read : false
+        read: preserveRead ? (previousEntry?.read || text(nextReadState[nextNotification.id]) === text(nextNotification.signature)) : false,
+        resolved: false,
+        resolvedAt: ""
       }));
     };
 
@@ -311,17 +536,56 @@
       }
     });
 
+    previousMap.forEach((previousEntry, notificationId) => {
+      if (activeIds.has(notificationId)) return;
+      if (!notificationId || !text(previousEntry.signature)) return;
+      if (text(state.notificationDismissedState[notificationId]) === text(previousEntry.signature)) return;
+
+      const resolvedEntry = nextResolvedState[notificationId];
+      const resolvedAt = text(resolvedEntry?.signature) === text(previousEntry.signature)
+        ? (text(resolvedEntry.resolvedAt) || text(previousEntry.resolvedAt) || previousEntry.updatedAt || nowIso())
+        : nowIso();
+
+      nextResolvedState[notificationId] = {
+        signature: previousEntry.signature,
+        resolvedAt
+      };
+
+      notifications.push(normalizeNotification({
+        ...previousEntry,
+        resolved: true,
+        resolvedAt,
+        updatedAt: resolvedAt
+      }));
+
+      if (text(nextReadState[notificationId]) === text(previousEntry.signature)) {
+        delete nextReadState[notificationId];
+      }
+    });
+
+    Object.keys(nextResolvedState).forEach((notificationId) => {
+      if (activeIds.has(notificationId)) {
+        delete nextResolvedState[notificationId];
+      }
+    });
+
     const priorityWeight = { critical: 4, high: 3, medium: 2, low: 1 };
     notifications.sort((left, right) => {
+      if (left.resolved !== right.resolved) return left.resolved ? 1 : -1;
       if (left.read !== right.read) return left.read ? 1 : -1;
       const priorityDelta = (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
       if (priorityDelta) return priorityDelta;
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
     });
 
-    return notifications;
+    return {
+      notifications,
+      notificationResolvedState: nextResolvedState,
+      notificationReadState: nextReadState
+    };
   };
   const buildMonitoringSnapshot = (notifications) => {
+    const activeNotifications = notifications.filter((notification) => !normalizeNotification(notification).resolved);
     const inventory = readInventory();
     const movements = readMovements();
     const usageMap = buildUsageMap(movements, 30);
@@ -437,11 +701,11 @@
     return {
       generatedAt: nowIso(),
       notifications: {
-        total: notifications.length,
-        urgent: notifications.filter((item) => item.priority === "critical" || item.priority === "high").length,
-        lowStock: notifications.filter((item) => text(item.id).startsWith("status-")).length,
-        trend: notifications.filter((item) => text(item.id).startsWith("trend-")).length,
-        expiry: notifications.filter((item) => text(item.id).startsWith("expiry-")).length
+        total: activeNotifications.length,
+        urgent: activeNotifications.filter((item) => item.priority === "critical" || item.priority === "high").length,
+        lowStock: activeNotifications.filter((item) => text(item.id).startsWith("status-")).length,
+        trend: activeNotifications.filter((item) => text(item.id).startsWith("trend-")).length,
+        expiry: activeNotifications.filter((item) => text(item.id).startsWith("expiry-")).length
       },
       movement: {
         fast: fastMovement,
@@ -473,10 +737,8 @@
   const toastState = {
     container: null,
     soundToggle: null,
-    browserToggle: null,
     activeKeys: new Set(),
     soundEnabled: readSoundEnabled(),
-    browserAlertsEnabled: readBrowserAlertsEnabled(),
     audioContext: null
   };
   const priorityWeight = {
@@ -514,55 +776,6 @@
     `;
     toastState.soundToggle.setAttribute("aria-pressed", toastState.soundEnabled ? "true" : "false");
   };
-  const browserPermissionState = () => (
-    supportsBrowserNotifications() ? text(window.Notification.permission || "default") : "unsupported"
-  );
-  const canSendBrowserAlerts = () => (
-    supportsBrowserNotifications()
-      && browserPermissionState() === "granted"
-      && toastState.browserAlertsEnabled
-  );
-  const updateBrowserToggle = () => {
-    if (!toastState.browserToggle) return;
-
-    const permission = browserPermissionState();
-    const isEnabled = canSendBrowserAlerts();
-    let icon = "bi-display";
-    let label = "Device alerts off";
-    let muted = !isEnabled;
-
-    if (permission === "unsupported") {
-      icon = "bi-display";
-      label = "Device alerts unsupported";
-      muted = true;
-      toastState.browserToggle.disabled = true;
-    } else if (permission === "denied") {
-      icon = "bi-app-indicator";
-      label = "Device alerts blocked";
-      muted = true;
-      toastState.browserToggle.disabled = false;
-    } else if (permission === "granted" && toastState.browserAlertsEnabled) {
-      icon = "bi-phone-vibrate";
-      label = "Device alerts on";
-      muted = false;
-      toastState.browserToggle.disabled = false;
-    } else {
-      icon = "bi-phone";
-      label = "Device alerts off";
-      muted = true;
-      toastState.browserToggle.disabled = false;
-    }
-
-    toastState.browserToggle.classList.toggle("is-muted", muted);
-    toastState.browserToggle.innerHTML = `
-      <i class="bi ${icon}" aria-hidden="true"></i>
-      <span>${label}</span>
-    `;
-    toastState.browserToggle.setAttribute("aria-pressed", isEnabled ? "true" : "false");
-    toastState.browserToggle.title = permission === "denied"
-      ? "Browser notifications are blocked for this site. Allow them in browser settings to use device alerts."
-      : label;
-  };
   const ensureSoundToggle = () => {
     const host = notificationControlsHost();
     if (!host) return null;
@@ -590,63 +803,6 @@
     updateSoundToggle();
     return button;
   };
-  const ensureBrowserToggle = () => {
-    const host = notificationControlsHost();
-    if (!host) return null;
-
-    if (toastState.browserToggle && document.body.contains(toastState.browserToggle)) {
-      if (toastState.browserToggle.parentElement !== host) host.appendChild(toastState.browserToggle);
-      updateBrowserToggle();
-      return toastState.browserToggle;
-    }
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "mss-system-browser-toggle";
-    button.setAttribute("aria-label", "Toggle device notifications");
-    button.addEventListener("click", async () => {
-      if (!supportsBrowserNotifications()) {
-        updateBrowserToggle();
-        return;
-      }
-
-      const permission = browserPermissionState();
-      if (permission === "granted" && toastState.browserAlertsEnabled) {
-        toastState.browserAlertsEnabled = false;
-        saveBrowserAlertsEnabled(false);
-        updateBrowserToggle();
-        return;
-      }
-
-      if (permission === "granted") {
-        toastState.browserAlertsEnabled = true;
-        saveBrowserAlertsEnabled(true);
-        updateBrowserToggle();
-        return;
-      }
-
-      if (permission === "default") {
-        try {
-          const nextPermission = await window.Notification.requestPermission();
-          toastState.browserAlertsEnabled = nextPermission === "granted";
-          saveBrowserAlertsEnabled(toastState.browserAlertsEnabled);
-        } catch (error) {
-          toastState.browserAlertsEnabled = false;
-          saveBrowserAlertsEnabled(false);
-        }
-        updateBrowserToggle();
-        return;
-      }
-
-      toastState.browserAlertsEnabled = false;
-      saveBrowserAlertsEnabled(false);
-      updateBrowserToggle();
-    });
-    host.appendChild(button);
-    toastState.browserToggle = button;
-    updateBrowserToggle();
-    return button;
-  };
   const openNotificationCenter = () => {
     if (typeof window.MSSOpenNotificationCenter === "function") {
       try {
@@ -657,37 +813,7 @@
       }
     }
 
-    window.location.href = "notifications.html";
-  };
-  const showBrowserNotification = (notification, extraCount = 0) => {
-    if (!canSendBrowserAlerts()) return;
-
-    const title = extraCount > 0
-      ? `${formatNumber(extraCount + 1)} medicine alerts need attention`
-      : notification.title;
-    const body = extraCount > 0
-      ? `${notification.title}. Open the notification center for ${formatNumber(extraCount)} more alert${extraCount === 1 ? "" : "s"}.`
-      : notification.body;
-
-    try {
-      const browserNotice = new window.Notification(title, {
-        body,
-        tag: extraCount > 0 ? "mss-alert-summary" : `mss-${notification.id}`,
-        renotify: true,
-        requireInteraction: text(notification.priority) === "critical",
-        icon: new URL("assets/img/CityHealthOffice_LOGO.png", window.location.href).href
-      });
-
-      browserNotice.onclick = () => {
-        window.focus();
-        openNotificationCenter();
-        browserNotice.close();
-      };
-    } catch (error) {
-      toastState.browserAlertsEnabled = false;
-      saveBrowserAlertsEnabled(false);
-      updateBrowserToggle();
-    }
+    window.location.href = "notifications.php";
   };
   const registerAudioUnlock = () => {
     const unlock = () => {
@@ -811,55 +937,87 @@
     return false;
   };
 
-  const syncNotifications = ({ showToasts = false } = {}) => {
-    const previous = readList(STORAGE_KEY).map(normalizeNotification);
-    const notifications = buildDerivedNotifications(previous);
+  const syncNotifications = async ({ showToasts = false } = {}) => {
+    await hydrateNotificationsFromServer();
+    const previous = state.notifications.map(normalizeNotification);
+    const derivedState = buildDerivedNotifications(previous);
+    const notifications = derivedState.notifications;
+    state.notificationResolvedState = derivedState.notificationResolvedState;
+    state.notificationReadState = derivedState.notificationReadState;
     const monitoringSnapshot = buildMonitoringSnapshot(notifications);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
-    localStorage.setItem(MONITORING_SNAPSHOT_KEY, JSON.stringify(monitoringSnapshot));
-    window.dispatchEvent(new CustomEvent("mss:notifications-synced", { detail: monitoringSnapshot }));
-
-    if (!showToasts) return notifications;
-
+    state.notifications = notifications;
+    state.monitoringSnapshot = monitoringSnapshot;
     const popupState = readMap(POPUP_STATE_KEY);
-    const unseen = notifications
-      .filter((notification) => shouldPopup(notification) && text(popupState[notification.id]) !== text(notification.signature))
-      .slice(0, MAX_POPUPS);
-
-    if (!unseen.length) return notifications;
-
-    const loudestAlert = unseen.reduce((current, item) => (
-      !current || (priorityWeight[item.priority] || 0) > (priorityWeight[current.priority] || 0) ? item : current
-    ), null);
-    if (loudestAlert) playAlertTone(loudestAlert.priority);
-    if (loudestAlert) showBrowserNotification(loudestAlert, Math.max(0, unseen.length - 1));
-
-    unseen.forEach((notification) => {
-      popupState[notification.id] = notification.signature;
-      showToast(notification);
+    const activeNotifications = notifications.filter((notification) => !notification.resolved);
+    const activeNotificationMap = new Map(activeNotifications.map((notification) => [notification.id, notification]));
+    Object.keys(popupState).forEach((notificationId) => {
+      const activeEntry = activeNotificationMap.get(notificationId);
+      if (!activeEntry || text(popupState[notificationId]) !== text(activeEntry.signature)) {
+        delete popupState[notificationId];
+      }
     });
+    const unseen = showToasts
+      ? activeNotifications
+        .filter((notification) => !notification.read && shouldPopup(notification) && text(popupState[notification.id]) !== text(notification.signature))
+        .slice(0, MAX_POPUPS)
+      : [];
+
+    if (unseen.length) {
+      const loudestAlert = unseen.reduce((current, item) => (
+        !current || (priorityWeight[item.priority] || 0) > (priorityWeight[current.priority] || 0) ? item : current
+      ), null);
+      if (loudestAlert) playAlertTone(loudestAlert.priority);
+
+      unseen.forEach((notification) => {
+        popupState[notification.id] = notification.signature;
+        showToast(notification);
+      });
+    }
 
     writeMap(POPUP_STATE_KEY, popupState);
+    void persistNotificationsToServer(notifications);
+    window.dispatchEvent(new CustomEvent("mss:notifications-synced", {
+      detail: {
+        monitoringSnapshot,
+        notifications,
+        notificationDismissedState: state.notificationDismissedState,
+        notificationReadState: state.notificationReadState,
+        notificationResolvedState: state.notificationResolvedState
+      }
+    }));
     return notifications;
   };
 
   let refreshTimer = 0;
   const queueRefresh = ({ showToasts = true } = {}) => {
     window.clearTimeout(refreshTimer);
-    refreshTimer = window.setTimeout(() => syncNotifications({ showToasts }), 120);
+    refreshTimer = window.setTimeout(() => {
+      void syncNotifications({ showToasts });
+    }, 120);
   };
-
-  window.addEventListener("storage", (event) => {
-    if (![INVENTORY_STORAGE, MOVEMENTS_STORAGE].includes(text(event.key))) return;
-    queueRefresh({ showToasts: true });
-  });
-
-  window.addEventListener("focus", () => {
-    updateBrowserToggle();
-  });
 
   window.addEventListener("mss:inventory-updated", () => {
     queueRefresh({ showToasts: true });
+  });
+
+  window.addEventListener("mss:notifications-state-updated", (event) => {
+    if (Array.isArray(event.detail?.notifications)) {
+      state.notifications = event.detail.notifications.map(normalizeNotification);
+      state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
+    }
+    if (event.detail?.notificationDismissedState && typeof event.detail.notificationDismissedState === "object") {
+      state.notificationDismissedState = normalizeDismissedState(event.detail.notificationDismissedState);
+    }
+    if (event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object") {
+      state.notificationReadState = normalizeReadState(event.detail.notificationReadState);
+    } else {
+      state.notificationReadState = mergeReadStateWithNotifications(state.notificationReadState, state.notifications);
+    }
+    if (event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object") {
+      state.notificationResolvedState = normalizeResolvedState(event.detail.notificationResolvedState);
+      state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
+      state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
+    }
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -880,12 +1038,10 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       ensureSoundToggle();
-      ensureBrowserToggle();
-      syncNotifications({ showToasts: true });
+      void syncNotifications({ showToasts: true });
     }, { once: true });
   } else {
     ensureSoundToggle();
-    ensureBrowserToggle();
-    syncNotifications({ showToasts: true });
+    void syncNotifications({ showToasts: true });
   }
 })();
