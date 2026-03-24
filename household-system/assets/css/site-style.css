@@ -1537,7 +1537,9 @@ body.role-can-edit .role-secretary-only{
 }
 .audit-module .module-table .table{
   margin:0;
-  width:max(100%, 1220px);
+  width:100%;
+  min-width:1100px;
+  table-layout:fixed;
 }
 .audit-module .module-table::-webkit-scrollbar{
   height:16px;
@@ -1570,11 +1572,48 @@ body.role-can-edit .role-secretary-only{
 .audit-module .module-table td{
   padding:11px 12px;
   font-size:0.86rem;
+  vertical-align:top;
+}
+.audit-module .module-table th:nth-child(1),
+.audit-module .module-table td:nth-child(1){
+  width:11rem;
+}
+.audit-module .module-table th:nth-child(2),
+.audit-module .module-table td:nth-child(2){
+  width:12rem;
+}
+.audit-module .module-table th:nth-child(3),
+.audit-module .module-table td:nth-child(3),
+.audit-module .module-table th:nth-child(4),
+.audit-module .module-table td:nth-child(4){
+  width:7.5rem;
+}
+.audit-module .module-table th:nth-child(5),
+.audit-module .module-table td:nth-child(5){
+  width:11rem;
+}
+.audit-module .module-table th:nth-child(6),
+.audit-module .module-table td:nth-child(6){
+  width:18rem;
+}
+.audit-module .module-table th:nth-child(7),
+.audit-module .module-table td:nth-child(7){
+  width:10rem;
+}
+.audit-module .module-table th:nth-child(8),
+.audit-module .module-table td:nth-child(8){
+  width:13rem;
 }
 .audit-module .module-table .audit-record-id-cell,
 .audit-module .module-table .audit-ip-cell{
   white-space:nowrap;
   font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.audit-module .module-table td:nth-child(2),
+.audit-module .module-table .audit-details-cell,
+.audit-module .module-table .audit-device-cell{
+  white-space:normal;
+  word-break:break-word;
 }
 .audit-module .module-table .audit-record-id-text,
 .audit-module .module-table .audit-ip-text{
@@ -1582,16 +1621,16 @@ body.role-can-edit .role-secretary-only{
   white-space:nowrap;
 }
 .audit-module .module-table .audit-device-cell{
-  min-width:12rem;
+  min-width:0;
 }
 .audit-module .module-table .audit-device-text{
   display:inline-block;
-  min-width:12rem;
+  min-width:0;
   line-height:1.35;
   white-space:normal;
 }
 .audit-module .module-table .audit-details-cell{
-  min-width:14rem;
+  min-width:0;
 }
 .audit-module .module-table tbody tr:nth-child(even){
   background:#fbfdff;
