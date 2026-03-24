@@ -2,6 +2,7 @@
   const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
     ? window.MSS_AUTH_USER
     : null;
+  const NOTIFICATION_RUNTIME_STORAGE_PREFIX = "mss_notification_runtime_state_v1";
   const STATE_ENDPOINT = "state-api.php";
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
@@ -168,6 +169,8 @@
   let alertTimer = 0;
   let dispenseSuccessTimer = 0;
   let staffStateHydrationPromise = null;
+  let staffPersistQueue = Promise.resolve();
+  let lastQueuedStaffPersistId = 0;
   let staffNotificationHiddenState = {};
   let staffNotificationHiddenStorageKey = "";
   let pendingStaffNotificationRemoveId = "";
@@ -351,6 +354,71 @@
     });
     return readState;
   };
+
+  const notificationRuntimeStorageKey = () => {
+    const identity = keyOf(
+      currentAuthUser?.id
+      || currentAuthUser?.userId
+      || currentAuthUser?.username
+      || currentAuthUser?.role
+      || "shared"
+    ) || "shared";
+    return `${NOTIFICATION_RUNTIME_STORAGE_PREFIX}:${identity}`;
+  };
+
+  const readNotificationRuntimeCache = () => {
+    try {
+      const raw = window.localStorage.getItem(notificationRuntimeStorageKey());
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  };
+
+  const syncNotificationRuntimeCache = (nextState = {}) => {
+    const cached = readNotificationRuntimeCache();
+    const payload = {
+      ...cached
+    };
+
+    if (nextState.notificationReadState && typeof nextState.notificationReadState === "object" && !Array.isArray(nextState.notificationReadState)) {
+      payload.notificationReadState = normalizeReadState(nextState.notificationReadState);
+    }
+    if (nextState.notificationResolvedState && typeof nextState.notificationResolvedState === "object" && !Array.isArray(nextState.notificationResolvedState)) {
+      payload.notificationResolvedState = normalizeResolvedState(nextState.notificationResolvedState);
+    }
+
+    try {
+      window.localStorage.setItem(notificationRuntimeStorageKey(), JSON.stringify(payload));
+    } catch (error) {
+      // Ignore storage write failures and continue with in-memory state.
+    }
+  };
+
+  const hydrateNotificationRuntimeCache = () => {
+    const cached = readNotificationRuntimeCache();
+
+    if (cached.notificationReadState && typeof cached.notificationReadState === "object" && !Array.isArray(cached.notificationReadState)) {
+      state.notificationReadState = normalizeReadState(cached.notificationReadState);
+    }
+    if (cached.notificationResolvedState && typeof cached.notificationResolvedState === "object" && !Array.isArray(cached.notificationResolvedState)) {
+      state.notificationResolvedState = normalizeResolvedState(cached.notificationResolvedState);
+    }
+  };
+
+  const createStaffPersistSnapshot = () => ({
+    inventory: cloneEntries(state.inventory),
+    movements: cloneEntries(state.movements),
+    residentAccounts: cloneEntries(state.residentAccounts),
+    users: cloneEntries(state.users),
+    sessions: cloneEntries(state.sessions),
+    logs: cloneEntries(state.activityLogs),
+    notifications: state.notifications.map((entry) => normalizeNotification(entry)),
+    notificationReadState: normalizeReadState(state.notificationReadState),
+    notificationResolvedState: normalizeResolvedState(state.notificationResolvedState)
+  });
 
   const mergeReadStateWithNotifications = (currentReadState = {}, notifications = []) => {
     const nextReadState = { ...normalizeReadState(currentReadState) };
@@ -573,6 +641,10 @@
       };
     }
     state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
+    syncNotificationRuntimeCache({
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
     dispatchStaffNotificationStateUpdate();
     void persistStaffState({ showSyncError: false });
     return state.notifications.find((entry) => text(entry.id) === text(updated.id)) || updated;
@@ -829,15 +901,21 @@
       ? serverState.notifications.map(normalizeNotification)
       : null;
     const nextReadState = mergeReadStateWithNotifications(
-      serverState.notificationReadState && typeof serverState.notificationReadState === "object"
-        ? normalizeReadState(serverState.notificationReadState)
-        : state.notificationReadState,
+      {
+        ...(serverState.notificationReadState && typeof serverState.notificationReadState === "object"
+          ? normalizeReadState(serverState.notificationReadState)
+          : {}),
+        ...state.notificationReadState
+      },
       incomingNotifications || state.notifications
     );
     const nextResolvedState = mergeResolvedStateWithNotifications(
-      serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
-        ? normalizeResolvedState(serverState.notificationResolvedState)
-        : state.notificationResolvedState,
+      {
+        ...(serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
+          ? normalizeResolvedState(serverState.notificationResolvedState)
+          : {}),
+        ...state.notificationResolvedState
+      },
       incomingNotifications || state.notifications
     );
     if (Array.isArray(serverState.users)) {
@@ -871,6 +949,10 @@
         state.notificationReadState
       );
     }
+    syncNotificationRuntimeCache({
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
   };
   const roleName = (value) => keyOf(value) === "staff" ? "Staff" : "BHW";
   const defaultUsernameForRole = (role) => keyOf(role) === "staff" ? "staff.user" : "bhw.user";
@@ -1231,36 +1313,40 @@
 
   const persistStaffState = async ({ showSyncError = true } = {}) => {
     saveState();
+    syncNotificationRuntimeCache({
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
+    const requestId = ++lastQueuedStaffPersistId;
+    const snapshot = createStaffPersistSnapshot();
 
-    try {
-      const payload = await requestJson(STATE_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          state: {
-            inventory: state.inventory,
-            movements: state.movements,
-            residentAccounts: state.residentAccounts,
-            users: state.users,
-            sessions: state.sessions,
-            logs: state.activityLogs,
-            notifications: state.notifications,
-            notificationReadState: state.notificationReadState,
-            notificationResolvedState: state.notificationResolvedState
+    staffPersistQueue = staffPersistQueue
+      .catch(() => null)
+      .then(async () => {
+        try {
+          const payload = await requestJson(STATE_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              state: snapshot
+            })
+          });
+          if (requestId === lastQueuedStaffPersistId) {
+            syncSupportStateFromServer(payload.state || {});
+            syncStateFromServer(payload.state || {});
           }
-        })
+          return payload;
+        } catch (error) {
+          saveState();
+          if (showSyncError) throw error;
+          console.error("Unable to persist staff dispensing state.", error);
+          return null;
+        }
       });
-      syncSupportStateFromServer(payload.state || {});
-      syncStateFromServer(payload.state || {});
-      return payload;
-    } catch (error) {
-      saveState();
-      if (showSyncError) throw error;
-      console.error("Unable to persist staff dispensing state.", error);
-      return null;
-    }
+
+    return staffPersistQueue;
   };
 
   const hydrateStaffState = async () => {
@@ -3042,21 +3128,31 @@
       nextNotifications = event.detail.notifications.map(normalizeNotification);
     }
     state.notificationReadState = mergeReadStateWithNotifications(
-      event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
-        ? normalizeReadState(event.detail.notificationReadState)
-        : state.notificationReadState,
+      {
+        ...(event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+          ? normalizeReadState(event.detail.notificationReadState)
+          : {}),
+        ...state.notificationReadState
+      },
       nextNotifications
     );
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
-        ? normalizeResolvedState(event.detail.notificationResolvedState)
-        : state.notificationResolvedState,
+      {
+        ...(event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+          ? normalizeResolvedState(event.detail.notificationResolvedState)
+          : {}),
+        ...state.notificationResolvedState
+      },
       nextNotifications
     );
     state.notifications = applyReadStateToNotifications(
       applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState),
       state.notificationReadState
     );
+    syncNotificationRuntimeCache({
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
     renderStaffNotifications();
   });
 
@@ -3337,5 +3433,6 @@
     setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
   };
 
+  hydrateNotificationRuntimeCache();
   void initializeStaffPage();
 })();

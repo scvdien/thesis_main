@@ -3,6 +3,7 @@
   const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
     ? window.MSS_AUTH_USER
     : null;
+  const NOTIFICATION_RUNTIME_STORAGE_PREFIX = "mss_notification_runtime_state_v1";
   const ADMIN_NOTIFICATION_HIDDEN_STORAGE_PREFIX = "mss_admin_hidden_notifications_v1";
 
   const byId = (id) => document.getElementById(id);
@@ -52,6 +53,14 @@
 
   let alertTimer = 0;
   let notificationsHydrationPromise = null;
+  let notificationStateSaveQueue = Promise.resolve();
+  let lastQueuedNotificationStateSyncId = 0;
+  let refreshNotificationsPromise = null;
+  let refreshNotificationsQueued = false;
+  let queuedRefreshOptions = {
+    notify: false,
+    logAction: false
+  };
   let pendingDeleteNotificationId = "";
   let adminNotificationHiddenState = {};
   let adminNotificationHiddenStorageKey = "";
@@ -160,27 +169,32 @@
     }));
   };
 
-  const syncNotificationStateToServer = async ({ keepalive = false } = {}) => {
-    try {
-      const payload = await requestJson(STATE_ENDPOINT, {
-        method: "POST",
-        keepalive,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          state: {
-            notifications: state.notifications,
-            notificationDismissedState: state.notificationDismissedState,
-            notificationReadState: state.notificationReadState,
-            notificationResolvedState: state.notificationResolvedState
+  const syncNotificationStateToServer = ({ keepalive = false, snapshot = createNotificationStateSnapshot() } = {}) => {
+    const requestId = ++lastQueuedNotificationStateSyncId;
+    notificationStateSaveQueue = notificationStateSaveQueue
+      .catch(() => null)
+      .then(async () => {
+        try {
+          const payload = await requestJson(STATE_ENDPOINT, {
+            method: "POST",
+            keepalive,
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              state: snapshot
+            })
+          });
+          if (requestId === lastQueuedNotificationStateSyncId) {
+            syncStateFromServer(payload?.state || {});
           }
-        })
+          return payload;
+        } catch (error) {
+          console.error("Unable to persist notifications.", error);
+          return null;
+        }
       });
-      syncStateFromServer(payload?.state || {});
-    } catch (error) {
-      console.error("Unable to persist notifications.", error);
-    }
+    return notificationStateSaveQueue;
   };
 
   const syncActivityLogsToServer = async ({ keepalive = false } = {}) => {
@@ -207,7 +221,15 @@
 
   const saveState = (options = {}) => {
     dispatchNotificationStateUpdate();
-    return syncNotificationStateToServer(options);
+    syncNotificationRuntimeCache({
+      notificationDismissedState: state.notificationDismissedState,
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
+    return syncNotificationStateToServer({
+      ...options,
+      snapshot: createNotificationStateSnapshot()
+    });
   };
 
   const saveLogs = (options = {}) => syncActivityLogsToServer(options);
@@ -237,6 +259,13 @@
     });
     return resolvedState;
   };
+
+  const createNotificationStateSnapshot = () => ({
+    notifications: state.notifications.map((entry) => normalizeNotification(entry)),
+    notificationDismissedState: { ...state.notificationDismissedState },
+    notificationReadState: normalizeReadState(state.notificationReadState),
+    notificationResolvedState: normalizeResolvedState(state.notificationResolvedState)
+  });
 
   const mergeReadStateWithNotifications = (currentReadState = {}, notifications = []) => {
     const nextReadState = { ...currentReadState };
@@ -295,17 +324,27 @@
     state.notificationDismissedState = serverState.notificationDismissedState && typeof serverState.notificationDismissedState === "object"
       ? normalizeDismissedState(serverState.notificationDismissedState)
       : state.notificationDismissedState;
+    const incomingResolvedState = serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
+      ? normalizeResolvedState(serverState.notificationResolvedState)
+      : {};
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
-        ? normalizeResolvedState(serverState.notificationResolvedState)
-        : state.notificationResolvedState,
+      {
+        ...incomingResolvedState,
+        ...state.notificationResolvedState
+      },
       nextNotifications
     );
     const hydratedNotifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
-    const nextReadState = serverState.notificationReadState && typeof serverState.notificationReadState === "object"
+    const incomingReadState = serverState.notificationReadState && typeof serverState.notificationReadState === "object"
       ? normalizeReadState(serverState.notificationReadState)
-      : state.notificationReadState;
-    state.notificationReadState = mergeReadStateWithNotifications(nextReadState, hydratedNotifications);
+      : {};
+    state.notificationReadState = mergeReadStateWithNotifications(
+      {
+        ...incomingReadState,
+        ...state.notificationReadState
+      },
+      hydratedNotifications
+    );
     state.notifications = applyReadStateToNotifications(hydratedNotifications, state.notificationReadState);
     state.inventory = Array.isArray(serverState.inventory)
       ? serverState.inventory.map((entry, index) => normalizeMedicine(entry, index))
@@ -316,6 +355,11 @@
     state.users = Array.isArray(serverState.users) ? serverState.users : state.users;
     state.sessions = Array.isArray(serverState.sessions) ? serverState.sessions : state.sessions;
     state.activityLogs = Array.isArray(serverState.logs) ? serverState.logs : state.activityLogs;
+    syncNotificationRuntimeCache({
+      notificationDismissedState: state.notificationDismissedState,
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
   };
 
   const hydrateNotifications = async () => {
@@ -640,6 +684,65 @@
     return dismissedState;
   };
 
+  const notificationRuntimeStorageKey = () => {
+    const identity = keyOf(
+      currentAuthUser?.id
+      || currentAuthUser?.userId
+      || currentAuthUser?.username
+      || currentAuthUser?.role
+      || "shared"
+    ) || "shared";
+    return `${NOTIFICATION_RUNTIME_STORAGE_PREFIX}:${identity}`;
+  };
+
+  const readNotificationRuntimeCache = () => {
+    try {
+      const raw = window.localStorage.getItem(notificationRuntimeStorageKey());
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  };
+
+  const syncNotificationRuntimeCache = (nextState = {}) => {
+    const cached = readNotificationRuntimeCache();
+    const payload = {
+      ...cached
+    };
+
+    if (nextState.notificationDismissedState && typeof nextState.notificationDismissedState === "object" && !Array.isArray(nextState.notificationDismissedState)) {
+      payload.notificationDismissedState = normalizeDismissedState(nextState.notificationDismissedState);
+    }
+    if (nextState.notificationReadState && typeof nextState.notificationReadState === "object" && !Array.isArray(nextState.notificationReadState)) {
+      payload.notificationReadState = normalizeReadState(nextState.notificationReadState);
+    }
+    if (nextState.notificationResolvedState && typeof nextState.notificationResolvedState === "object" && !Array.isArray(nextState.notificationResolvedState)) {
+      payload.notificationResolvedState = normalizeResolvedState(nextState.notificationResolvedState);
+    }
+
+    try {
+      window.localStorage.setItem(notificationRuntimeStorageKey(), JSON.stringify(payload));
+    } catch (error) {
+      // Ignore storage write failures and continue with in-memory state.
+    }
+  };
+
+  const hydrateNotificationRuntimeCache = () => {
+    const cached = readNotificationRuntimeCache();
+
+    if (cached.notificationDismissedState && typeof cached.notificationDismissedState === "object" && !Array.isArray(cached.notificationDismissedState)) {
+      state.notificationDismissedState = normalizeDismissedState(cached.notificationDismissedState);
+    }
+    if (cached.notificationReadState && typeof cached.notificationReadState === "object" && !Array.isArray(cached.notificationReadState)) {
+      state.notificationReadState = normalizeReadState(cached.notificationReadState);
+    }
+    if (cached.notificationResolvedState && typeof cached.notificationResolvedState === "object" && !Array.isArray(cached.notificationResolvedState)) {
+      state.notificationResolvedState = normalizeResolvedState(cached.notificationResolvedState);
+    }
+  };
+
   const normalizeAdminNotificationHiddenState = (entry = {}) => {
     const hiddenState = {};
     Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
@@ -839,7 +942,6 @@
     previousMap.forEach((previousEntry, notificationId) => {
       if (activeIds.has(notificationId)) return;
       if (!notificationId || !text(previousEntry.signature)) return;
-      if (text(state.notificationDismissedState[notificationId]) === text(previousEntry.signature)) return;
 
       const resolvedEntry = nextResolvedState[notificationId];
       const resolvedAt = text(resolvedEntry?.signature) === text(previousEntry.signature)
@@ -1107,7 +1209,7 @@
 
     pendingDeleteNotificationId = notification.id;
     if (refs.deleteNotificationMessage) {
-      refs.deleteNotificationMessage.textContent = `Remove "${notification.title}" from your view only? This will not affect staff accounts, and resolved notifications older than 90 days are cleaned up automatically.`;
+      refs.deleteNotificationMessage.textContent = `Remove "${notification.title}" from your view only? Resolved notifications older than 90 days are cleaned up automatically.`;
     }
     deleteNotificationModal?.show();
   };
@@ -1134,36 +1236,61 @@
   };
 
   const refreshNotifications = async ({ notify = false, logAction = false } = {}) => {
-    await hydrateNotifications();
-    const previous = state.notifications.length ? state.notifications : [];
-    const previousActiveIds = new Set(previous.filter((entry) => !entry.resolved).map((entry) => entry.id));
-    const derivedState = buildDerivedNotifications(previous);
-    state.notifications = derivedState.notifications;
-    state.notificationResolvedState = derivedState.notificationResolvedState;
-    state.notificationReadState = derivedState.notificationReadState;
-    void saveState();
-    renderAll();
+    queuedRefreshOptions = {
+      notify: Boolean(queuedRefreshOptions.notify || notify),
+      logAction: Boolean(queuedRefreshOptions.logAction || logAction)
+    };
+    refreshNotificationsQueued = true;
 
-    if (notify) {
-      const newCount = state.notifications.filter((entry) => !entry.resolved && !previousActiveIds.has(entry.id)).length;
-      showNotice(newCount ? `${pluralize(newCount, "alert")} refreshed.` : "Notifications updated.", newCount ? "success" : "info");
-    }
+    if (refreshNotificationsPromise) return refreshNotificationsPromise;
 
-    if (logAction) {
-      const audit = currentAuditActor();
-      appendActivityLog({
-        ...audit,
-        action: "Refreshed notifications",
-        actionType: "updated",
-        target: "Notification Center",
-        details: `${pluralize(state.notifications.filter((entry) => !entry.resolved).length, "active notification")} were refreshed from inventory analytics and expiry checks.`,
-        category: "Notifications",
-        resultLabel: "Updated",
-        resultTone: "success",
-        createdAt: nowIso()
-      });
-      void saveLogs();
-    }
+    refreshNotificationsPromise = (async () => {
+      try {
+        while (refreshNotificationsQueued) {
+          const nextOptions = { ...queuedRefreshOptions };
+          refreshNotificationsQueued = false;
+          queuedRefreshOptions = {
+            notify: false,
+            logAction: false
+          };
+
+          await hydrateNotifications();
+          const previous = state.notifications.length ? state.notifications.map((entry) => normalizeNotification(entry)) : [];
+          const previousActiveIds = new Set(previous.filter((entry) => !entry.resolved).map((entry) => entry.id));
+          const derivedState = buildDerivedNotifications(previous);
+          state.notifications = derivedState.notifications;
+          state.notificationResolvedState = derivedState.notificationResolvedState;
+          state.notificationReadState = derivedState.notificationReadState;
+          renderAll();
+          await saveState();
+
+          if (nextOptions.notify) {
+            const newCount = state.notifications.filter((entry) => !entry.resolved && !previousActiveIds.has(entry.id)).length;
+            showNotice(newCount ? `${pluralize(newCount, "alert")} refreshed.` : "Notifications updated.", newCount ? "success" : "info");
+          }
+
+          if (nextOptions.logAction) {
+            const audit = currentAuditActor();
+            appendActivityLog({
+              ...audit,
+              action: "Refreshed notifications",
+              actionType: "updated",
+              target: "Notification Center",
+              details: `${pluralize(state.notifications.filter((entry) => !entry.resolved).length, "active notification")} were refreshed from inventory analytics and expiry checks.`,
+              category: "Notifications",
+              resultLabel: "Updated",
+              resultTone: "success",
+              createdAt: nowIso()
+            });
+            void saveLogs();
+          }
+        }
+      } finally {
+        refreshNotificationsPromise = null;
+      }
+    })();
+
+    return refreshNotificationsPromise;
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1183,20 +1310,37 @@
 
   window.addEventListener("mss:notifications-synced", (event) => {
     if (Array.isArray(event.detail?.notifications)) {
-      state.notifications = event.detail.notifications.map(normalizeNotification);
+      const nextNotifications = event.detail.notifications.map(normalizeNotification);
       if (event.detail?.notificationDismissedState && typeof event.detail.notificationDismissedState === "object") {
         state.notificationDismissedState = normalizeDismissedState(event.detail.notificationDismissedState);
       }
-      if (event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object") {
-        state.notificationReadState = normalizeReadState(event.detail.notificationReadState);
-      } else {
-        state.notificationReadState = mergeReadStateWithNotifications(state.notificationReadState, state.notifications);
-      }
-      if (event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object") {
-        state.notificationResolvedState = normalizeResolvedState(event.detail.notificationResolvedState);
-        state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
-      }
-      state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
+      state.notificationReadState = mergeReadStateWithNotifications(
+        {
+          ...(event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+            ? normalizeReadState(event.detail.notificationReadState)
+            : {}),
+          ...state.notificationReadState
+        },
+        nextNotifications
+      );
+      state.notificationResolvedState = mergeResolvedStateWithNotifications(
+        {
+          ...(event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+            ? normalizeResolvedState(event.detail.notificationResolvedState)
+            : {}),
+          ...state.notificationResolvedState
+        },
+        nextNotifications
+      );
+      state.notifications = applyReadStateToNotifications(
+        applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState),
+        state.notificationReadState
+      );
+      syncNotificationRuntimeCache({
+        notificationDismissedState: state.notificationDismissedState,
+        notificationReadState: state.notificationReadState,
+        notificationResolvedState: state.notificationResolvedState
+      });
       renderAll();
       return;
     }
@@ -1253,5 +1397,6 @@
     }
   });
 
+  hydrateNotificationRuntimeCache();
   void refreshNotifications();
 })();

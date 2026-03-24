@@ -1,7 +1,11 @@
 (() => {
   if (window.MSSSystemNotifications) return;
 
+  const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
+    ? window.MSS_AUTH_USER
+    : null;
   const STORAGE_KEY = "mss_notifications_v2";
+  const NOTIFICATION_RUNTIME_STORAGE_PREFIX = "mss_notification_runtime_state_v1";
   const POPUP_STATE_KEY = "mss_notification_popup_seen_v1";
   const DISMISSED_STATE_KEY = "mss_notification_dismissed_v1";
   const SOUND_PREF_KEY = "mss_notification_sound_enabled_v1";
@@ -60,6 +64,13 @@
   const pluralize = (value, singular, plural = `${singular}s`) => `${formatNumber(value)} ${value === 1 ? singular : plural}`;
   const quantityLabel = (value, unit) => `${formatNumber(value)} ${text(unit) || "units"}`;
   let notificationHydrationPromise = null;
+  let notificationPersistQueue = Promise.resolve();
+  let lastQueuedNotificationPersistId = 0;
+  let syncNotificationsPromise = null;
+  let syncNotificationsQueued = false;
+  let queuedSyncOptions = {
+    showToasts: false
+  };
   const cloneEntry = (entry) => (entry && typeof entry === "object" && !Array.isArray(entry) ? { ...entry } : entry);
   const cloneEntries = (entries = []) => Array.isArray(entries) ? entries.map(cloneEntry) : [];
   const state = {
@@ -111,6 +122,12 @@
       state.notificationPopupState = value && typeof value === "object" && !Array.isArray(value)
         ? { ...value }
         : {};
+      syncNotificationRuntimeCache({
+        notificationPopupState: state.notificationPopupState,
+        notificationDismissedState: state.notificationDismissedState,
+        notificationReadState: state.notificationReadState,
+        notificationResolvedState: state.notificationResolvedState
+      });
       return;
     }
 
@@ -118,6 +135,12 @@
       state.notificationDismissedState = value && typeof value === "object" && !Array.isArray(value)
         ? { ...value }
         : {};
+      syncNotificationRuntimeCache({
+        notificationPopupState: state.notificationPopupState,
+        notificationDismissedState: state.notificationDismissedState,
+        notificationReadState: state.notificationReadState,
+        notificationResolvedState: state.notificationResolvedState
+      });
     }
   };
   const readSoundEnabled = () => state.notificationPreferences.soundEnabled !== false;
@@ -347,6 +370,96 @@
     return resolvedState;
   };
 
+  const notificationRuntimeStorageKey = () => {
+    const identity = keyOf(
+      currentAuthUser?.id
+      || currentAuthUser?.userId
+      || currentAuthUser?.username
+      || currentAuthUser?.role
+      || "shared"
+    ) || "shared";
+    return `${NOTIFICATION_RUNTIME_STORAGE_PREFIX}:${identity}`;
+  };
+
+  const readNotificationRuntimeCache = () => {
+    try {
+      const raw = window.localStorage.getItem(notificationRuntimeStorageKey());
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  };
+
+  const syncNotificationRuntimeCache = (nextState = {}) => {
+    const cached = readNotificationRuntimeCache();
+    const payload = {
+      ...cached
+    };
+
+    if (nextState.notificationPopupState && typeof nextState.notificationPopupState === "object" && !Array.isArray(nextState.notificationPopupState)) {
+      payload.notificationPopupState = normalizePopupState(nextState.notificationPopupState);
+    }
+    if (nextState.notificationDismissedState && typeof nextState.notificationDismissedState === "object" && !Array.isArray(nextState.notificationDismissedState)) {
+      payload.notificationDismissedState = normalizeDismissedState(nextState.notificationDismissedState);
+    }
+    if (nextState.notificationReadState && typeof nextState.notificationReadState === "object" && !Array.isArray(nextState.notificationReadState)) {
+      payload.notificationReadState = normalizeReadState(nextState.notificationReadState);
+    }
+    if (nextState.notificationResolvedState && typeof nextState.notificationResolvedState === "object" && !Array.isArray(nextState.notificationResolvedState)) {
+      payload.notificationResolvedState = normalizeResolvedState(nextState.notificationResolvedState);
+    }
+
+    try {
+      window.localStorage.setItem(notificationRuntimeStorageKey(), JSON.stringify(payload));
+    } catch (error) {
+      // Ignore storage write failures and continue with in-memory state.
+    }
+  };
+
+  const hydrateNotificationRuntimeCache = () => {
+    const cached = readNotificationRuntimeCache();
+
+    if (cached.notificationPopupState && typeof cached.notificationPopupState === "object" && !Array.isArray(cached.notificationPopupState)) {
+      state.notificationPopupState = normalizePopupState(cached.notificationPopupState);
+    }
+    if (cached.notificationDismissedState && typeof cached.notificationDismissedState === "object" && !Array.isArray(cached.notificationDismissedState)) {
+      state.notificationDismissedState = normalizeDismissedState(cached.notificationDismissedState);
+    }
+    if (cached.notificationReadState && typeof cached.notificationReadState === "object" && !Array.isArray(cached.notificationReadState)) {
+      state.notificationReadState = normalizeReadState(cached.notificationReadState);
+    }
+    if (cached.notificationResolvedState && typeof cached.notificationResolvedState === "object" && !Array.isArray(cached.notificationResolvedState)) {
+      state.notificationResolvedState = normalizeResolvedState(cached.notificationResolvedState);
+    }
+  };
+
+  const createNotificationPersistSnapshot = (nextState = {}) => {
+    const snapshot = {};
+
+    if (Array.isArray(nextState.notifications)) {
+      snapshot.notifications = nextState.notifications.map((notification) => normalizeNotification(notification));
+    }
+    if (nextState.notificationPreferences && typeof nextState.notificationPreferences === "object" && !Array.isArray(nextState.notificationPreferences)) {
+      snapshot.notificationPreferences = { ...nextState.notificationPreferences };
+    }
+    if (nextState.notificationPopupState && typeof nextState.notificationPopupState === "object" && !Array.isArray(nextState.notificationPopupState)) {
+      snapshot.notificationPopupState = { ...nextState.notificationPopupState };
+    }
+    if (nextState.notificationDismissedState && typeof nextState.notificationDismissedState === "object" && !Array.isArray(nextState.notificationDismissedState)) {
+      snapshot.notificationDismissedState = { ...nextState.notificationDismissedState };
+    }
+    if (nextState.notificationReadState && typeof nextState.notificationReadState === "object" && !Array.isArray(nextState.notificationReadState)) {
+      snapshot.notificationReadState = normalizeReadState(nextState.notificationReadState);
+    }
+    if (nextState.notificationResolvedState && typeof nextState.notificationResolvedState === "object" && !Array.isArray(nextState.notificationResolvedState)) {
+      snapshot.notificationResolvedState = normalizeResolvedState(nextState.notificationResolvedState);
+    }
+
+    return snapshot;
+  };
+
   const mergeReadStateWithNotifications = (currentReadState = {}, notifications = []) => {
     const nextReadState = { ...currentReadState };
     notifications.forEach((notification) => {
@@ -416,38 +529,63 @@
     if (serverState.notificationDismissedState && typeof serverState.notificationDismissedState === "object") {
       state.notificationDismissedState = normalizeDismissedState(serverState.notificationDismissedState);
     }
+    const incomingResolvedState = serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
+      ? normalizeResolvedState(serverState.notificationResolvedState)
+      : {};
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      serverState.notificationResolvedState && typeof serverState.notificationResolvedState === "object"
-        ? normalizeResolvedState(serverState.notificationResolvedState)
-        : state.notificationResolvedState,
+      {
+        ...incomingResolvedState,
+        ...state.notificationResolvedState
+      },
       nextNotifications
     );
     const hydratedNotifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
+    const incomingReadState = serverState.notificationReadState && typeof serverState.notificationReadState === "object"
+      ? normalizeReadState(serverState.notificationReadState)
+      : {};
     state.notificationReadState = mergeReadStateWithNotifications(
-      serverState.notificationReadState && typeof serverState.notificationReadState === "object"
-        ? normalizeReadState(serverState.notificationReadState)
-        : state.notificationReadState,
+      {
+        ...incomingReadState,
+        ...state.notificationReadState
+      },
       hydratedNotifications
     );
     state.notifications = applyReadStateToNotifications(hydratedNotifications, state.notificationReadState);
+    syncNotificationRuntimeCache({
+      notificationPopupState: state.notificationPopupState,
+      notificationDismissedState: state.notificationDismissedState,
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
   };
 
-  const persistStateToServer = async (nextState, { keepalive = false } = {}) => {
-    try {
-      const payload = await requestJson(STATE_ENDPOINT, {
-        method: "POST",
-        keepalive,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          state: nextState
-        })
+  const persistStateToServer = (nextState, { keepalive = false } = {}) => {
+    const requestId = ++lastQueuedNotificationPersistId;
+    const snapshot = createNotificationPersistSnapshot(nextState);
+    notificationPersistQueue = notificationPersistQueue
+      .catch(() => null)
+      .then(async () => {
+        try {
+          const payload = await requestJson(STATE_ENDPOINT, {
+            method: "POST",
+            keepalive,
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              state: snapshot
+            })
+          });
+          if (requestId === lastQueuedNotificationPersistId) {
+            syncStateFromServer(payload?.state || {});
+          }
+          return payload;
+        } catch (error) {
+          console.error("Unable to persist system notifications.", error);
+          return null;
+        }
       });
-      syncStateFromServer(payload?.state || {});
-    } catch (error) {
-      console.error("Unable to persist system notifications.", error);
-    }
+    return notificationPersistQueue;
   };
 
   const persistNotificationsToServer = async (notifications, options = {}) => (
@@ -592,7 +730,6 @@
     previousMap.forEach((previousEntry, notificationId) => {
       if (activeIds.has(notificationId)) return;
       if (!notificationId || !text(previousEntry.signature)) return;
-      if (text(state.notificationDismissedState[notificationId]) === text(previousEntry.signature)) return;
 
       const resolvedEntry = nextResolvedState[notificationId];
       const resolvedAt = text(resolvedEntry?.signature) === text(previousEntry.signature)
@@ -991,54 +1128,81 @@
   };
 
   const syncNotifications = async ({ showToasts = false } = {}) => {
-    await hydrateNotificationsFromServer();
-    const previous = state.notifications.map(normalizeNotification);
-    const derivedState = buildDerivedNotifications(previous);
-    const notifications = derivedState.notifications;
-    state.notificationResolvedState = derivedState.notificationResolvedState;
-    state.notificationReadState = derivedState.notificationReadState;
-    const monitoringSnapshot = buildMonitoringSnapshot(notifications);
-    state.notifications = notifications;
-    state.monitoringSnapshot = monitoringSnapshot;
-    const popupState = readMap(POPUP_STATE_KEY);
-    const activeNotifications = notifications.filter((notification) => !notification.resolved);
-    const activeNotificationMap = new Map(activeNotifications.map((notification) => [notification.id, notification]));
-    Object.keys(popupState).forEach((notificationId) => {
-      const activeEntry = activeNotificationMap.get(notificationId);
-      if (!activeEntry || text(popupState[notificationId]) !== text(activeEntry.signature)) {
-        delete popupState[notificationId];
+    queuedSyncOptions = {
+      showToasts: Boolean(queuedSyncOptions.showToasts || showToasts)
+    };
+    syncNotificationsQueued = true;
+
+    if (syncNotificationsPromise) return syncNotificationsPromise;
+
+    syncNotificationsPromise = (async () => {
+      try {
+        let latestNotifications = state.notifications;
+
+        while (syncNotificationsQueued) {
+          const nextOptions = { ...queuedSyncOptions };
+          syncNotificationsQueued = false;
+          queuedSyncOptions = {
+            showToasts: false
+          };
+
+          await hydrateNotificationsFromServer();
+          const previous = state.notifications.map((notification) => normalizeNotification(notification));
+          const derivedState = buildDerivedNotifications(previous);
+          const notifications = derivedState.notifications;
+          state.notificationResolvedState = derivedState.notificationResolvedState;
+          state.notificationReadState = derivedState.notificationReadState;
+          const monitoringSnapshot = buildMonitoringSnapshot(notifications);
+          state.notifications = notifications;
+          state.monitoringSnapshot = monitoringSnapshot;
+          const popupState = readMap(POPUP_STATE_KEY);
+          const activeNotifications = notifications.filter((notification) => !notification.resolved);
+          const activeNotificationMap = new Map(activeNotifications.map((notification) => [notification.id, notification]));
+          Object.keys(popupState).forEach((notificationId) => {
+            const activeEntry = activeNotificationMap.get(notificationId);
+            if (!activeEntry || text(popupState[notificationId]) !== text(activeEntry.signature)) {
+              delete popupState[notificationId];
+            }
+          });
+          const unseen = nextOptions.showToasts
+            ? activeNotifications
+              .filter((notification) => !notification.read && shouldPopup(notification) && text(popupState[notification.id]) !== text(notification.signature))
+              .slice(0, MAX_POPUPS)
+            : [];
+
+          if (unseen.length) {
+            const loudestAlert = unseen.reduce((current, item) => (
+              !current || (priorityWeight[item.priority] || 0) > (priorityWeight[current.priority] || 0) ? item : current
+            ), null);
+            if (loudestAlert) playAlertTone(loudestAlert.priority);
+
+            unseen.forEach((notification) => {
+              popupState[notification.id] = notification.signature;
+              showToast(notification);
+            });
+          }
+
+          writeMap(POPUP_STATE_KEY, popupState);
+          await persistNotificationsToServer(notifications);
+          window.dispatchEvent(new CustomEvent("mss:notifications-synced", {
+            detail: {
+              monitoringSnapshot,
+              notifications,
+              notificationDismissedState: state.notificationDismissedState,
+              notificationReadState: state.notificationReadState,
+              notificationResolvedState: state.notificationResolvedState
+            }
+          }));
+          latestNotifications = notifications;
+        }
+
+        return latestNotifications;
+      } finally {
+        syncNotificationsPromise = null;
       }
-    });
-    const unseen = showToasts
-      ? activeNotifications
-        .filter((notification) => !notification.read && shouldPopup(notification) && text(popupState[notification.id]) !== text(notification.signature))
-        .slice(0, MAX_POPUPS)
-      : [];
+    })();
 
-    if (unseen.length) {
-      const loudestAlert = unseen.reduce((current, item) => (
-        !current || (priorityWeight[item.priority] || 0) > (priorityWeight[current.priority] || 0) ? item : current
-      ), null);
-      if (loudestAlert) playAlertTone(loudestAlert.priority);
-
-      unseen.forEach((notification) => {
-        popupState[notification.id] = notification.signature;
-        showToast(notification);
-      });
-    }
-
-    writeMap(POPUP_STATE_KEY, popupState);
-    void persistNotificationsToServer(notifications);
-    window.dispatchEvent(new CustomEvent("mss:notifications-synced", {
-      detail: {
-        monitoringSnapshot,
-        notifications,
-        notificationDismissedState: state.notificationDismissedState,
-        notificationReadState: state.notificationReadState,
-        notificationResolvedState: state.notificationResolvedState
-      }
-    }));
-    return notifications;
+    return syncNotificationsPromise;
   };
 
   let refreshTimer = 0;
@@ -1054,24 +1218,41 @@
   });
 
   window.addEventListener("mss:notifications-state-updated", (event) => {
-    if (Array.isArray(event.detail?.notifications)) {
-      state.notifications = event.detail.notifications.map(normalizeNotification);
-      state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
-    }
+    const nextNotifications = Array.isArray(event.detail?.notifications)
+      ? event.detail.notifications.map(normalizeNotification)
+      : state.notifications;
     if (event.detail?.notificationDismissedState && typeof event.detail.notificationDismissedState === "object") {
       state.notificationDismissedState = normalizeDismissedState(event.detail.notificationDismissedState);
     }
-    if (event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object") {
-      state.notificationReadState = normalizeReadState(event.detail.notificationReadState);
-    } else {
-      state.notificationReadState = mergeReadStateWithNotifications(state.notificationReadState, state.notifications);
-    }
-    if (event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object") {
-      state.notificationResolvedState = normalizeResolvedState(event.detail.notificationResolvedState);
-      state.notifications = applyResolvedStateToNotifications(state.notifications, state.notificationResolvedState);
-      state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
-    }
-    state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
+    state.notificationReadState = mergeReadStateWithNotifications(
+      {
+        ...(event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+          ? normalizeReadState(event.detail.notificationReadState)
+          : {}),
+        ...state.notificationReadState
+      },
+      nextNotifications
+    );
+    state.notificationResolvedState = mergeResolvedStateWithNotifications(
+      {
+        ...(event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+          ? normalizeResolvedState(event.detail.notificationResolvedState)
+          : {}),
+        ...state.notificationResolvedState
+      },
+      nextNotifications
+    );
+    state.notifications = applyReadStateToNotifications(
+      applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState),
+      state.notificationReadState
+    );
+    state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
+    syncNotificationRuntimeCache({
+      notificationPopupState: state.notificationPopupState,
+      notificationDismissedState: state.notificationDismissedState,
+      notificationReadState: state.notificationReadState,
+      notificationResolvedState: state.notificationResolvedState
+    });
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -1087,6 +1268,7 @@
     sync: syncNotifications
   };
 
+  hydrateNotificationRuntimeCache();
   registerAudioUnlock();
 
   if (document.readyState === "loading") {
