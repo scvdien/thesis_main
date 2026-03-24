@@ -14,6 +14,7 @@
   const STATE_ENDPOINT = "state-api.php";
   const NOTIFICATION_OCCURRENCE_SEPARATOR = "::";
   const MAX_POPUPS = 3;
+  const NOTIFICATION_SYNC_POLL_INTERVAL_MS = 10000;
   const AUTO_DISMISS_BY_PRIORITY = {
     critical: 12000,
     high: 8000,
@@ -455,6 +456,56 @@
     return resolvedState;
   };
 
+  const mergeReadStates = (...entries) => {
+    const nextReadState = {};
+    entries.forEach((entry) => {
+      Object.entries(normalizeReadState(entry)).forEach(([notificationId, value]) => {
+        nextReadState[notificationId] = value;
+      });
+    });
+    return nextReadState;
+  };
+
+  const resolvedStateTimestamp = (value) => {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  };
+
+  const mergeResolvedStateEntry = (currentEntry = {}, incomingEntry = {}) => {
+    const current = currentEntry && typeof currentEntry === "object" && !Array.isArray(currentEntry) ? currentEntry : {};
+    const incoming = incomingEntry && typeof incomingEntry === "object" && !Array.isArray(incomingEntry) ? incomingEntry : {};
+    const currentResolvedAt = text(current.resolvedAt ?? current.resolved_at);
+    const incomingResolvedAt = text(incoming.resolvedAt ?? incoming.resolved_at);
+    const useIncoming = resolvedStateTimestamp(incomingResolvedAt) >= resolvedStateTimestamp(currentResolvedAt);
+    const preferredEntry = useIncoming ? incoming : current;
+    const fallbackEntry = useIncoming ? current : incoming;
+
+    return {
+      signature: text(preferredEntry.signature) || text(fallbackEntry.signature),
+      resolvedAt: text(preferredEntry.resolvedAt ?? preferredEntry.resolved_at)
+        || text(fallbackEntry.resolvedAt ?? fallbackEntry.resolved_at)
+        || nowIso(),
+      read: Boolean(
+        current.read === true
+        || current.isRead === true
+        || current.is_read === true
+        || incoming.read === true
+        || incoming.isRead === true
+        || incoming.is_read === true
+      )
+    };
+  };
+
+  const mergeResolvedStates = (...entries) => {
+    const nextResolvedState = {};
+    entries.forEach((entry) => {
+      Object.entries(normalizeResolvedState(entry)).forEach(([notificationId, resolvedEntry]) => {
+        nextResolvedState[notificationId] = mergeResolvedStateEntry(nextResolvedState[notificationId], resolvedEntry);
+      });
+    });
+    return nextResolvedState;
+  };
+
   const notificationRuntimeStorageKey = () => {
     const identity = keyOf(
       currentAuthUser?.id
@@ -569,15 +620,15 @@
   );
 
   const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
-    const nextResolvedState = { ...currentResolvedState };
+    const nextResolvedState = normalizeResolvedState(currentResolvedState);
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
       if (normalized.resolved && normalized.id && normalized.signature) {
-        nextResolvedState[normalized.id] = {
+        nextResolvedState[normalized.id] = mergeResolvedStateEntry(nextResolvedState[normalized.id], {
           signature: normalized.signature,
           resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso(),
           read: Boolean(normalized.read)
-        };
+        });
       }
     });
     return nextResolvedState;
@@ -622,10 +673,7 @@
       ? normalizeResolvedState(serverState.notificationResolvedState)
       : {};
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      {
-        ...incomingResolvedState,
-        ...state.notificationResolvedState
-      },
+      mergeResolvedStates(state.notificationResolvedState, incomingResolvedState),
       nextNotifications
     );
     const hydratedNotifications = applyResolvedStateToNotifications(nextNotifications, state.notificationResolvedState);
@@ -633,10 +681,7 @@
       ? normalizeReadState(serverState.notificationReadState)
       : {};
     state.notificationReadState = mergeReadStateWithNotifications(
-      {
-        ...incomingReadState,
-        ...state.notificationReadState
-      },
+      mergeReadStates(state.notificationReadState, incomingReadState),
       hydratedNotifications
     );
     state.notifications = applyReadStateToNotifications(hydratedNotifications, state.notificationReadState);
@@ -849,7 +894,11 @@
       const resolvedAt = matchesNotificationSignature(previousEntry, resolvedEntry?.signature)
         ? (text(resolvedEntry.resolvedAt) || text(previousEntry.resolvedAt) || previousEntry.updatedAt || nowIso())
         : nowIso();
-      const resolvedWasRead = Boolean(previousEntry.read || matchesNotificationReadState(previousEntry, nextReadState[notificationId]));
+      const resolvedWasRead = Boolean(
+        resolvedEntry?.read
+        || previousEntry.read
+        || matchesNotificationReadState(previousEntry, nextReadState[notificationId])
+      );
 
       nextResolvedState[notificationId] = {
         signature: previousEntry.signature,
@@ -1128,9 +1177,19 @@
     document.addEventListener("pointerdown", unlock, { once: true, passive: true });
     document.addEventListener("keydown", unlock, { once: true });
   };
-  const playAlertTone = (priority) => {
+  const supportsAlertTone = (notification) => {
+    if (!notification) return false;
+    const priority = text(notification.priority);
+    const category = text(notification.category);
+    return ["critical", "high"].includes(priority) || category === "Expiring Soon";
+  };
+
+  const playAlertTone = (notification) => {
     if (!toastState.soundEnabled) return;
-    if (!["critical", "high"].includes(text(priority))) return;
+    if (!supportsAlertTone(notification)) return;
+
+    const priority = text(notification?.priority);
+    const category = text(notification?.category);
 
     void resumeAudioContext().then((context) => {
       if (!context) return;
@@ -1140,6 +1199,11 @@
             { frequency: 880, duration: 0.12, delay: 0 },
             { frequency: 660, duration: 0.18, delay: 0.16 }
           ]
+        : category === "Expiring Soon"
+          ? [
+              { frequency: 620, duration: 0.1, delay: 0 },
+              { frequency: 784, duration: 0.12, delay: 0.13 }
+            ]
         : [
             { frequency: 740, duration: 0.1, delay: 0 },
             { frequency: 880, duration: 0.12, delay: 0.12 }
@@ -1295,7 +1359,8 @@
             const loudestAlert = unseen.reduce((current, item) => (
               !current || (priorityWeight[item.priority] || 0) > (priorityWeight[current.priority] || 0) ? item : current
             ), null);
-            if (loudestAlert) playAlertTone(loudestAlert.priority);
+            const audibleAlert = unseen.find((notification) => supportsAlertTone(notification)) || loudestAlert;
+            if (audibleAlert) playAlertTone(audibleAlert);
 
             unseen.forEach((notification) => {
               popupState[notification.id] = notification.signature;
@@ -1346,21 +1411,21 @@
       state.notificationDismissedState = normalizeDismissedState(event.detail.notificationDismissedState);
     }
     state.notificationReadState = mergeReadStateWithNotifications(
-      {
-        ...(event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+      mergeReadStates(
+        state.notificationReadState,
+        event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
           ? normalizeReadState(event.detail.notificationReadState)
-          : {}),
-        ...state.notificationReadState
-      },
+          : {}
+      ),
       nextNotifications
     );
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      {
-        ...(event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+      mergeResolvedStates(
+        state.notificationResolvedState,
+        event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
           ? normalizeResolvedState(event.detail.notificationResolvedState)
-          : {}),
-        ...state.notificationResolvedState
-      },
+          : {}
+      ),
       nextNotifications
     );
     state.notifications = applyReadStateToNotifications(
@@ -1381,8 +1446,9 @@
   });
 
   window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     queueRefresh({ showToasts: true });
-  }, 300000);
+  }, NOTIFICATION_SYNC_POLL_INTERVAL_MS);
 
   window.MSSSystemNotifications = {
     refresh: queueRefresh,

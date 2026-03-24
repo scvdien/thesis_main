@@ -1346,7 +1346,13 @@ function mss_state_replace_notification_dismissed_state(PDO $pdo, array $value):
     mss_state_replace_client_state_value($pdo, 'notification_dismissed_state', $dismissedState, true);
 }
 
-function mss_state_replace_notification_read_state(PDO $pdo, array $value): void
+function mss_state_notification_flag(mixed $value, bool $default = false): bool
+{
+    $parsed = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+    return $parsed === null ? $default : $parsed;
+}
+
+function mss_state_normalize_notification_read_state(array $value): array
 {
     $readState = [];
 
@@ -1360,10 +1366,10 @@ function mss_state_replace_notification_read_state(PDO $pdo, array $value): void
         $readState[$stateKey] = $stateSignature;
     }
 
-    mss_state_replace_client_state_value($pdo, 'notification_read_state', $readState, true);
+    return $readState;
 }
 
-function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): void
+function mss_state_normalize_notification_resolved_state(array $value): array
 {
     $resolvedState = [];
 
@@ -1376,7 +1382,6 @@ function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): 
         }
 
         $resolvedAt = mss_state_text($stateEntry['resolvedAt'] ?? $stateEntry['resolved_at'] ?? '');
-        $isRead = filter_var($stateEntry['read'] ?? false, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
         $resolvedState[$stateKey] = [
             'signature' => $signature,
             'resolvedAt' => str_replace(
@@ -1384,8 +1389,79 @@ function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): 
                 'T',
                 mss_state_datetime($resolvedAt, date('Y-m-d H:i:s'))
             ),
-            'read' => $isRead === null ? false : $isRead,
+            'read' => mss_state_notification_flag($stateEntry['read'] ?? false),
         ];
+    }
+
+    return $resolvedState;
+}
+
+function mss_state_notification_resolved_timestamp(array $entry): int
+{
+    $resolvedAt = mss_state_text($entry['resolvedAt'] ?? $entry['resolved_at'] ?? '');
+    if ($resolvedAt === '') {
+        return 0;
+    }
+
+    $timestamp = strtotime(str_replace('T', ' ', $resolvedAt));
+    return $timestamp === false ? 0 : $timestamp;
+}
+
+function mss_state_merge_notification_resolved_entry(array $currentEntry, array $incomingEntry): array
+{
+    $useIncoming = mss_state_notification_resolved_timestamp($incomingEntry) >= mss_state_notification_resolved_timestamp($currentEntry);
+    $preferredEntry = $useIncoming ? $incomingEntry : $currentEntry;
+    $fallbackEntry = $useIncoming ? $currentEntry : $incomingEntry;
+    $preferredResolvedAt = mss_state_text($preferredEntry['resolvedAt'] ?? $preferredEntry['resolved_at'] ?? '');
+    $fallbackResolvedAt = mss_state_text($fallbackEntry['resolvedAt'] ?? $fallbackEntry['resolved_at'] ?? '');
+
+    return [
+        'signature' => mss_state_text($preferredEntry['signature'] ?? '') ?: mss_state_text($fallbackEntry['signature'] ?? ''),
+        'resolvedAt' => $preferredResolvedAt !== ''
+            ? $preferredResolvedAt
+            : ($fallbackResolvedAt !== '' ? $fallbackResolvedAt : str_replace(' ', 'T', date('Y-m-d H:i:s'))),
+        'read' => mss_state_notification_flag($currentEntry['read'] ?? false)
+            || mss_state_notification_flag($incomingEntry['read'] ?? false),
+    ];
+}
+
+function mss_state_replace_notification_read_state(PDO $pdo, array $value): void
+{
+    mss_state_replace_client_state_value(
+        $pdo,
+        'notification_read_state',
+        mss_state_normalize_notification_read_state($value),
+        true
+    );
+}
+
+function mss_state_merge_notification_read_state(PDO $pdo, array $value): void
+{
+    $readState = array_merge(
+        mss_state_fetch_notification_read_state($pdo),
+        mss_state_normalize_notification_read_state($value)
+    );
+
+    mss_state_replace_client_state_value($pdo, 'notification_read_state', $readState, true);
+}
+
+function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): void
+{
+    mss_state_replace_client_state_value(
+        $pdo,
+        'notification_resolved_state',
+        mss_state_normalize_notification_resolved_state($value)
+    );
+}
+
+function mss_state_merge_notification_resolved_state(PDO $pdo, array $value): void
+{
+    $resolvedState = mss_state_fetch_notification_resolved_state($pdo);
+
+    foreach (mss_state_normalize_notification_resolved_state($value) as $stateKey => $entry) {
+        $resolvedState[$stateKey] = isset($resolvedState[$stateKey]) && is_array($resolvedState[$stateKey])
+            ? mss_state_merge_notification_resolved_entry($resolvedState[$stateKey], $entry)
+            : $entry;
     }
 
     mss_state_replace_client_state_value($pdo, 'notification_resolved_state', $resolvedState);
@@ -1473,10 +1549,10 @@ try {
         mss_state_replace_notification_dismissed_state($pdo, mss_state_collection($payload, 'notificationDismissedState', ['notification_dismissed_state']));
     }
     if (mss_state_has_collection($payload, 'notificationReadState', ['notification_read_state'])) {
-        mss_state_replace_notification_read_state($pdo, mss_state_collection($payload, 'notificationReadState', ['notification_read_state']));
+        mss_state_merge_notification_read_state($pdo, mss_state_collection($payload, 'notificationReadState', ['notification_read_state']));
     }
     if (mss_state_has_collection($payload, 'notificationResolvedState', ['notification_resolved_state'])) {
-        mss_state_replace_notification_resolved_state($pdo, mss_state_collection($payload, 'notificationResolvedState', ['notification_resolved_state']));
+        mss_state_merge_notification_resolved_state($pdo, mss_state_collection($payload, 'notificationResolvedState', ['notification_resolved_state']));
     }
     if (mss_state_has_collection($payload, 'reportHistory', ['report_history'])) {
         mss_state_replace_report_history($pdo, mss_state_collection($payload, 'reportHistory', ['report_history']));

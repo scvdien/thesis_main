@@ -423,6 +423,56 @@
     return readState;
   };
 
+  const mergeReadStates = (...entries) => {
+    const nextReadState = {};
+    entries.forEach((entry) => {
+      Object.entries(normalizeReadState(entry)).forEach(([notificationId, value]) => {
+        nextReadState[notificationId] = value;
+      });
+    });
+    return nextReadState;
+  };
+
+  const resolvedStateTimestamp = (value) => {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  };
+
+  const mergeResolvedStateEntry = (currentEntry = {}, incomingEntry = {}) => {
+    const current = currentEntry && typeof currentEntry === "object" && !Array.isArray(currentEntry) ? currentEntry : {};
+    const incoming = incomingEntry && typeof incomingEntry === "object" && !Array.isArray(incomingEntry) ? incomingEntry : {};
+    const currentResolvedAt = text(current.resolvedAt ?? current.resolved_at);
+    const incomingResolvedAt = text(incoming.resolvedAt ?? incoming.resolved_at);
+    const useIncoming = resolvedStateTimestamp(incomingResolvedAt) >= resolvedStateTimestamp(currentResolvedAt);
+    const preferredEntry = useIncoming ? incoming : current;
+    const fallbackEntry = useIncoming ? current : incoming;
+
+    return {
+      signature: text(preferredEntry.signature) || text(fallbackEntry.signature),
+      resolvedAt: text(preferredEntry.resolvedAt ?? preferredEntry.resolved_at)
+        || text(fallbackEntry.resolvedAt ?? fallbackEntry.resolved_at)
+        || nowIso(),
+      read: Boolean(
+        current.read === true
+        || current.isRead === true
+        || current.is_read === true
+        || incoming.read === true
+        || incoming.isRead === true
+        || incoming.is_read === true
+      )
+    };
+  };
+
+  const mergeResolvedStates = (...entries) => {
+    const nextResolvedState = {};
+    entries.forEach((entry) => {
+      Object.entries(normalizeResolvedState(entry)).forEach(([notificationId, resolvedEntry]) => {
+        nextResolvedState[notificationId] = mergeResolvedStateEntry(nextResolvedState[notificationId], resolvedEntry);
+      });
+    });
+    return nextResolvedState;
+  };
+
   const notificationRuntimeStorageKey = () => {
     const identity = keyOf(
       currentAuthUser?.id
@@ -502,15 +552,15 @@
   };
 
   const mergeResolvedStateWithNotifications = (currentResolvedState = {}, notifications = []) => {
-    const nextResolvedState = { ...normalizeResolvedState(currentResolvedState) };
+    const nextResolvedState = normalizeResolvedState(currentResolvedState);
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
       if (!normalized.resolved || !normalized.id || !normalized.signature) return;
-      nextResolvedState[normalized.id] = {
+      nextResolvedState[normalized.id] = mergeResolvedStateEntry(nextResolvedState[normalized.id], {
         signature: normalized.signature,
         resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso(),
         read: Boolean(normalized.read)
-      };
+      });
     });
     return nextResolvedState;
   };
@@ -703,6 +753,14 @@
         ...state.notificationReadState,
         [updated.id]: updated.id
       };
+    } else {
+      state.notificationResolvedState = mergeResolvedStates(state.notificationResolvedState, {
+        [updated.id]: {
+          signature: updated.signature,
+          resolvedAt: text(updated.resolvedAt) || updated.updatedAt || updated.createdAt || nowIso(),
+          read: true
+        }
+      });
     }
     state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
     syncNotificationRuntimeCache({
@@ -3176,21 +3234,21 @@
       nextNotifications = event.detail.notifications.map(normalizeNotification);
     }
     state.notificationReadState = mergeReadStateWithNotifications(
-      {
-        ...(event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
+      mergeReadStates(
+        state.notificationReadState,
+        event.detail?.notificationReadState && typeof event.detail.notificationReadState === "object"
           ? normalizeReadState(event.detail.notificationReadState)
-          : {}),
-        ...state.notificationReadState
-      },
+          : {}
+      ),
       nextNotifications
     );
     state.notificationResolvedState = mergeResolvedStateWithNotifications(
-      {
-        ...(event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
+      mergeResolvedStates(
+        state.notificationResolvedState,
+        event.detail?.notificationResolvedState && typeof event.detail.notificationResolvedState === "object"
           ? normalizeResolvedState(event.detail.notificationResolvedState)
-          : {}),
-        ...state.notificationResolvedState
-      },
+          : {}
+      ),
       nextNotifications
     );
     state.notifications = applyReadStateToNotifications(
