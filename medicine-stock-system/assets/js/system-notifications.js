@@ -12,6 +12,7 @@
   const INVENTORY_STORAGE = "mss_inventory_records_v1";
   const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
   const STATE_ENDPOINT = "state-api.php";
+  const NOTIFICATION_OCCURRENCE_SEPARATOR = "::";
   const MAX_POPUPS = 3;
   const AUTO_DISMISS_BY_PRIORITY = {
     critical: 12000,
@@ -19,9 +20,43 @@
     medium: 6000,
     low: 5000
   };
+  const DEFAULT_NOTIFICATION_MESSAGE = "Review the medicine notification.";
 
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  const parseNotificationOccurrenceId = (value) => {
+    const notificationId = text(value);
+    if (!notificationId) return { alertKey: "", occurrenceIndex: 0 };
+
+    const separatorIndex = notificationId.lastIndexOf(NOTIFICATION_OCCURRENCE_SEPARATOR);
+    if (separatorIndex <= 0) {
+      return {
+        alertKey: notificationId,
+        occurrenceIndex: 0
+      };
+    }
+
+    const alertKey = text(notificationId.slice(0, separatorIndex));
+    const occurrenceIndex = Number.parseInt(notificationId.slice(separatorIndex + NOTIFICATION_OCCURRENCE_SEPARATOR.length), 10);
+    if (!alertKey || !Number.isInteger(occurrenceIndex) || occurrenceIndex < 1) {
+      return {
+        alertKey: notificationId,
+        occurrenceIndex: 0
+      };
+    }
+
+    return {
+      alertKey,
+      occurrenceIndex
+    };
+  };
+  const composeNotificationOccurrenceId = (alertKey, occurrenceIndex = 0) => {
+    const normalizedAlertKey = text(alertKey);
+    if (!normalizedAlertKey) return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    return occurrenceIndex > 0
+      ? `${normalizedAlertKey}${NOTIFICATION_OCCURRENCE_SEPARATOR}${occurrenceIndex}`
+      : normalizedAlertKey;
+  };
   const numeric = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -152,8 +187,17 @@
     void persistNotificationPreferencesToServer({ keepalive: true });
   };
 
+  const fallbackMedicineId = (entry = {}, index = 0) => {
+    const identity = [
+      keyOf(text(entry.name || entry.medicineName)).replace(/[^a-z0-9]+/g, "_"),
+      keyOf(text(entry.strength)).replace(/[^a-z0-9]+/g, "_"),
+      keyOf(text(entry.unit)).replace(/[^a-z0-9]+/g, "_")
+    ].filter(Boolean).join("_").replace(/^_+|_+$/g, "");
+    return identity ? `medicine_${identity}` : `medicine_${index + 1}`;
+  };
+
   const normalizeMedicine = (entry = {}, index = 0) => ({
-    id: text(entry.id) || `medicine_${index + 1}`,
+    id: text(entry.id) || fallbackMedicineId(entry, index),
     name: text(entry.name) || "Medicine",
     strength: text(entry.strength),
     stockOnHand: Math.max(0, Math.round(numeric(entry.stockOnHand))),
@@ -299,23 +343,63 @@
     const category = text(entry.category) || "Medicine Status";
     const priority = ["critical", "high", "medium", "low"].includes(keyOf(entry.priority)) ? keyOf(entry.priority) : "medium";
     const title = text(entry.title) || "Medicine alert";
-    const body = text(entry.body) || "Review the medicine notification.";
+    const body = text(entry.body) || DEFAULT_NOTIFICATION_MESSAGE;
+    const notificationId = text(entry.id) || `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const parsedOccurrence = parseNotificationOccurrenceId(notificationId);
+    const occurrenceCandidate = Number.parseInt(text(entry.occurrenceIndex || entry.occurrence_index), 10);
+    const occurrenceIndex = Number.isInteger(occurrenceCandidate) && occurrenceCandidate > 0
+      ? occurrenceCandidate
+      : parsedOccurrence.occurrenceIndex;
+    const alertKey = text(entry.alertKey || entry.alert_key) || parsedOccurrence.alertKey || notificationId;
 
     return {
-      id: text(entry.id) || `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      id: notificationId,
+      alertKey,
+      occurrenceIndex,
       category,
       priority,
       title,
       body,
       source: text(entry.source) || "Inventory Analytics",
-      recommendation: text(entry.recommendation) || "Review the medicine notification.",
-      signature: text(entry.signature) || [category, priority, title, body].join("|"),
+      recommendation: text(entry.recommendation) || DEFAULT_NOTIFICATION_MESSAGE,
+      signature: [category, priority, title].join("|"),
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
       read: Boolean(entry.read),
       resolved: Boolean(entry.resolved),
       resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
+  };
+
+  const matchesNotificationSignature = (notification, signature) => {
+    const normalized = normalizeNotification(notification);
+    const candidate = text(signature);
+    if (!candidate) return false;
+
+    const legacySignature = [normalized.category, normalized.priority, normalized.title, normalized.body].join("|");
+    return candidate === normalized.signature || candidate === legacySignature;
+  };
+
+  const matchesNotificationReadState = (notification, value) => {
+    const normalized = normalizeNotification(notification);
+    const candidate = text(value);
+    if (!candidate) return false;
+
+    return candidate === normalized.id || matchesNotificationSignature(normalized, candidate);
+  };
+
+  const hasActionableRecommendation = (notification) => {
+    const recommendation = text(notification?.recommendation);
+    return Boolean(recommendation) && recommendation !== DEFAULT_NOTIFICATION_MESSAGE;
+  };
+
+  const toastMessageText = (notification) => {
+    const baseBody = text(notification?.body) || DEFAULT_NOTIFICATION_MESSAGE;
+    if (!hasActionableRecommendation(notification)) return baseBody;
+
+    const recommendation = text(notification?.recommendation);
+    if (!recommendation || recommendation === baseBody) return baseBody;
+    return `${baseBody} Recommendation: ${recommendation}`;
   };
 
   const normalizeNotificationPreferences = (entry = {}) => ({
@@ -364,7 +448,8 @@
       if (!normalizedKey || !signature) return;
       resolvedState[normalizedKey] = {
         signature,
-        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso()
+        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso(),
+        read: resolvedEntry.read === true || resolvedEntry.isRead === true || resolvedEntry.is_read === true
       };
     });
     return resolvedState;
@@ -464,8 +549,10 @@
     const nextReadState = { ...currentReadState };
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
-      if (!normalized.resolved && normalized.read && normalized.id && normalized.signature) {
-        nextReadState[normalized.id] = normalized.signature;
+      if (!normalized.resolved && normalized.id && normalized.signature && (
+        normalized.read || matchesNotificationReadState(normalized, nextReadState[normalized.id])
+      )) {
+        nextReadState[normalized.id] = normalized.id;
       }
     });
     return nextReadState;
@@ -474,9 +561,9 @@
   const applyReadStateToNotifications = (notifications = [], readState = {}) => (
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
-      if (!normalized.resolved) {
-        normalized.read = text(readState[normalized.id]) === text(normalized.signature);
-      }
+      normalized.read = normalized.resolved
+        ? Boolean(normalized.read) || matchesNotificationReadState(normalized, readState[normalized.id])
+        : matchesNotificationReadState(normalized, readState[normalized.id]);
       return normalized;
     })
   );
@@ -488,7 +575,8 @@
       if (normalized.resolved && normalized.id && normalized.signature) {
         nextResolvedState[normalized.id] = {
           signature: normalized.signature,
-          resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso()
+          resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso(),
+          read: Boolean(normalized.read)
         };
       }
     });
@@ -499,9 +587,10 @@
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
       const resolvedEntry = resolvedState[normalized.id];
-      if (resolvedEntry && text(resolvedEntry.signature) === text(normalized.signature)) {
+      if (resolvedEntry && matchesNotificationSignature(normalized, resolvedEntry.signature)) {
         normalized.resolved = true;
         normalized.resolvedAt = text(resolvedEntry.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso();
+        normalized.read = Boolean(resolvedEntry.read) || normalized.read;
       } else {
         normalized.resolved = false;
         normalized.resolvedAt = "";
@@ -630,10 +719,20 @@
   };
 
   const buildDerivedNotifications = (previous = []) => {
-    const previousMap = new Map(previous.map((entry) => {
-      const normalized = normalizeNotification(entry);
-      return [normalized.id, normalized];
-    }));
+    const previousNotifications = previous.map((entry) => normalizeNotification(entry));
+    const previousMap = new Map(previousNotifications.map((entry) => [entry.id, entry]));
+    const previousActiveByAlertKey = new Map();
+    const occurrenceIndexByAlertKey = new Map();
+    previousNotifications.forEach((entry) => {
+      const alertKey = text(entry.alertKey) || entry.id;
+      occurrenceIndexByAlertKey.set(
+        alertKey,
+        Math.max(occurrenceIndexByAlertKey.get(alertKey) || 0, Number.isInteger(entry.occurrenceIndex) ? entry.occurrenceIndex : 0)
+      );
+      if (!entry.resolved && !previousActiveByAlertKey.has(alertKey)) {
+        previousActiveByAlertKey.set(alertKey, entry);
+      }
+    });
     const inventory = readInventory();
     const movements = readMovements();
     const usageMap = buildUsageMap(movements, analyticsDemandWindowDays);
@@ -643,21 +742,36 @@
     const nextResolvedState = normalizeResolvedState(state.notificationResolvedState);
     const nextReadState = { ...state.notificationReadState };
     const pushNotification = (raw) => {
-      const nextNotification = normalizeNotification(raw);
-      if (text(state.notificationDismissedState[nextNotification.id]) === text(nextNotification.signature)) {
+      const baseNotification = normalizeNotification(raw);
+      const alertKey = text(baseNotification.alertKey) || baseNotification.id;
+      const previousEntry = previousActiveByAlertKey.get(alertKey) || null;
+      const nextOccurrenceIndex = previousEntry
+        ? previousEntry.occurrenceIndex
+        : ((occurrenceIndexByAlertKey.get(alertKey) || 0) + 1);
+      if (!previousEntry) {
+        occurrenceIndexByAlertKey.set(alertKey, nextOccurrenceIndex);
+      }
+
+      const nextNotification = normalizeNotification({
+        ...baseNotification,
+        id: previousEntry ? previousEntry.id : composeNotificationOccurrenceId(alertKey, nextOccurrenceIndex),
+        alertKey,
+        occurrenceIndex: nextOccurrenceIndex
+      });
+      if (matchesNotificationSignature(nextNotification, state.notificationDismissedState[nextNotification.id])) {
         return;
       }
-      const previousEntry = previousMap.get(nextNotification.id);
       delete nextResolvedState[nextNotification.id];
       activeIds.add(nextNotification.id);
-      const preserveRead = text(nextReadState[nextNotification.id]) === text(nextNotification.signature)
+      const preserveCreatedAt = Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature);
+      const preserveRead = matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])
         || (Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature) && previousEntry.read && !previousEntry.resolved);
 
       notifications.push(normalizeNotification({
         ...nextNotification,
-        createdAt: preserveRead && previousEntry ? previousEntry.createdAt : nextNotification.createdAt,
+        createdAt: preserveCreatedAt && previousEntry ? previousEntry.createdAt : nextNotification.createdAt,
         updatedAt: nowIso(),
-        read: preserveRead ? (previousEntry?.read || text(nextReadState[nextNotification.id]) === text(nextNotification.signature)) : false,
+        read: preserveRead ? (previousEntry?.read || matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])) : false,
         resolved: false,
         resolvedAt: ""
       }));
@@ -732,23 +846,26 @@
       if (!notificationId || !text(previousEntry.signature)) return;
 
       const resolvedEntry = nextResolvedState[notificationId];
-      const resolvedAt = text(resolvedEntry?.signature) === text(previousEntry.signature)
+      const resolvedAt = matchesNotificationSignature(previousEntry, resolvedEntry?.signature)
         ? (text(resolvedEntry.resolvedAt) || text(previousEntry.resolvedAt) || previousEntry.updatedAt || nowIso())
         : nowIso();
+      const resolvedWasRead = Boolean(previousEntry.read || matchesNotificationReadState(previousEntry, nextReadState[notificationId]));
 
       nextResolvedState[notificationId] = {
         signature: previousEntry.signature,
-        resolvedAt
+        resolvedAt,
+        read: resolvedWasRead
       };
 
       notifications.push(normalizeNotification({
         ...previousEntry,
+        read: resolvedWasRead,
         resolved: true,
         resolvedAt,
         updatedAt: resolvedAt
       }));
 
-      if (text(nextReadState[notificationId]) === text(previousEntry.signature)) {
+      if (matchesNotificationReadState(previousEntry, nextReadState[notificationId])) {
         delete nextReadState[notificationId];
       }
     });
@@ -762,7 +879,6 @@
     const priorityWeight = { critical: 4, high: 3, medium: 2, low: 1 };
     notifications.sort((left, right) => {
       if (left.resolved !== right.resolved) return left.resolved ? 1 : -1;
-      if (left.read !== right.read) return left.read ? 1 : -1;
       const priorityDelta = (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
       if (priorityDelta) return priorityDelta;
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
@@ -1090,7 +1206,7 @@
               <span>${esc(notification.category)}</span>
             </div>
             <h6 class="mss-system-toast__title">${esc(notification.title)}</h6>
-            <p class="mss-system-toast__body">${esc(notification.body)}</p>
+            <p class="mss-system-toast__body">${esc(toastMessageText(notification))}</p>
             <div class="mss-system-toast__meta">${esc(formatRelativeTime(notification.createdAt))}</div>
           </div>
           <button type="button" class="mss-system-toast__close" aria-label="Dismiss alert">
@@ -1124,7 +1240,7 @@
     if (notification.priority === "critical" || notification.priority === "high") return true;
     if (title.includes("low in stock")) return true;
     if (title.includes("high usage trend")) return true;
-    return false;
+    return hasActionableRecommendation(notification);
   };
 
   const syncNotifications = async ({ showToasts = false } = {}) => {
@@ -1160,13 +1276,18 @@
           const activeNotificationMap = new Map(activeNotifications.map((notification) => [notification.id, notification]));
           Object.keys(popupState).forEach((notificationId) => {
             const activeEntry = activeNotificationMap.get(notificationId);
-            if (!activeEntry || text(popupState[notificationId]) !== text(activeEntry.signature)) {
+            if (!activeEntry || !matchesNotificationSignature(activeEntry, popupState[notificationId])) {
               delete popupState[notificationId];
             }
           });
           const unseen = nextOptions.showToasts
             ? activeNotifications
-              .filter((notification) => !notification.read && shouldPopup(notification) && text(popupState[notification.id]) !== text(notification.signature))
+              .filter((notification) => !notification.read && shouldPopup(notification) && !matchesNotificationSignature(notification, popupState[notification.id]))
+              .sort((left, right) => {
+                const priorityDelta = (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
+                if (priorityDelta !== 0) return priorityDelta;
+                return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+              })
               .slice(0, MAX_POPUPS)
             : [];
 

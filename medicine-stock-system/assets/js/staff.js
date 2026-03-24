@@ -119,8 +119,21 @@
   };
   const staffNavLinks = Array.from(document.querySelectorAll("#sidebar .menu a[href^='#']"));
   const staffSections = Array.from(document.querySelectorAll("[data-staff-section]"));
-  const staffNotificationViewButtons = Array.from(document.querySelectorAll("[data-staff-notification-view]"));
-  const staffNotificationTypeButtons = Array.from(document.querySelectorAll("[data-staff-notification-type]"));
+  const ensureStaffNotificationTypeButtons = () => {
+    const quickFilters = document.querySelector('[aria-label="BHW notification types"]');
+    if (quickFilters && !quickFilters.querySelector('[data-staff-notification-type="resolved"]')) {
+      const resolvedButton = document.createElement("button");
+      resolvedButton.type = "button";
+      resolvedButton.className = "notification-filter-pill";
+      resolvedButton.dataset.staffNotificationType = "resolved";
+      resolvedButton.setAttribute("aria-pressed", "false");
+      resolvedButton.textContent = "Resolved";
+      quickFilters.appendChild(resolvedButton);
+    }
+
+    return Array.from(document.querySelectorAll("[data-staff-notification-type]"));
+  };
+  const staffNotificationTypeButtons = ensureStaffNotificationTypeButtons();
 
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
   const dispenseSuccessModal = refs.dispenseSuccessModal && window.bootstrap
@@ -162,7 +175,6 @@
     householdResidentsError: ""
   };
   const staffNotificationUiState = {
-    viewFilter: staffNotificationViewButtons.length ? "active" : "all",
     typeFilter: "all"
   };
 
@@ -174,11 +186,40 @@
   let staffNotificationHiddenState = {};
   let staffNotificationHiddenStorageKey = "";
   let pendingStaffNotificationRemoveId = "";
+  let pendingStaffReadNotificationId = "";
+  const NOTIFICATION_OCCURRENCE_SEPARATOR = "::";
+  const DEFAULT_NOTIFICATION_MESSAGE = "Review the medicine notification.";
 
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  const parseNotificationOccurrenceId = (value) => {
+    const notificationId = text(value);
+    if (!notificationId) return { alertKey: "", occurrenceIndex: 0 };
+
+    const separatorIndex = notificationId.lastIndexOf(NOTIFICATION_OCCURRENCE_SEPARATOR);
+    if (separatorIndex <= 0) {
+      return {
+        alertKey: notificationId,
+        occurrenceIndex: 0
+      };
+    }
+
+    const alertKey = text(notificationId.slice(0, separatorIndex));
+    const occurrenceIndex = Number.parseInt(notificationId.slice(separatorIndex + NOTIFICATION_OCCURRENCE_SEPARATOR.length), 10);
+    if (!alertKey || !Number.isInteger(occurrenceIndex) || occurrenceIndex < 1) {
+      return {
+        alertKey: notificationId,
+        occurrenceIndex: 0
+      };
+    }
+
+    return {
+      alertKey,
+      occurrenceIndex
+    };
+  };
   const numeric = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -291,26 +332,52 @@
       : formatDateTime(notification?.createdAt)
   );
   const notificationMessageText = (notification) => {
-    const baseBody = text(notification?.body) || "Review the medicine notification.";
+    const baseBody = text(notification?.body) || DEFAULT_NOTIFICATION_MESSAGE;
     if (!notification?.resolved) return baseBody;
     return `${baseBody} Status update: Resolved automatically on ${formatDateTime(resolvedTimestamp(notification))} after the alert condition cleared.`;
   };
 
   const normalizeNotification = (entry = {}) => {
     const priority = ["critical", "high", "medium", "low"].includes(keyOf(entry.priority)) ? keyOf(entry.priority) : "medium";
+    const notificationId = text(entry.id) || uid();
+    const parsedOccurrence = parseNotificationOccurrenceId(notificationId);
+    const occurrenceCandidate = Number.parseInt(text(entry.occurrenceIndex || entry.occurrence_index), 10);
+    const occurrenceIndex = Number.isInteger(occurrenceCandidate) && occurrenceCandidate > 0
+      ? occurrenceCandidate
+      : parsedOccurrence.occurrenceIndex;
+    const alertKey = text(entry.alertKey || entry.alert_key) || parsedOccurrence.alertKey || notificationId;
     return {
-      id: text(entry.id) || uid(),
+      id: notificationId,
+      alertKey,
+      occurrenceIndex,
       category: text(entry.category) || "Medicine Status",
       priority,
       title: text(entry.title) || "Medicine alert",
-      body: text(entry.body) || "Review the medicine notification.",
+      body: text(entry.body) || DEFAULT_NOTIFICATION_MESSAGE,
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
       read: Boolean(entry.read),
-      signature: text(entry.signature),
+      signature: text(entry.signature) || [text(entry.category) || "Medicine Status", priority, text(entry.title) || "Medicine alert"].join("|"),
       resolved: Boolean(entry.resolved),
       resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
+  };
+
+  const matchesNotificationSignature = (notification, signature) => {
+    const normalized = normalizeNotification(notification);
+    const candidate = text(signature);
+    if (!candidate) return false;
+
+    const legacySignature = [normalized.category, normalized.priority, normalized.title, normalized.body].join("|");
+    return candidate === normalized.signature || candidate === legacySignature;
+  };
+
+  const matchesNotificationReadState = (notification, value) => {
+    const normalized = normalizeNotification(notification);
+    const candidate = text(value);
+    if (!candidate) return false;
+
+    return candidate === normalized.id || matchesNotificationSignature(normalized, candidate);
   };
 
   const normalizeStaffNotificationHiddenState = (entry = {}) => {
@@ -338,7 +405,8 @@
       if (!notificationId || !signature) return;
       resolvedState[notificationId] = {
         signature,
-        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso()
+        resolvedAt: text(resolvedEntry.resolvedAt ?? resolvedEntry.resolved_at) || nowIso(),
+        read: resolvedEntry.read === true || resolvedEntry.isRead === true || resolvedEntry.is_read === true
       };
     });
     return resolvedState;
@@ -424,8 +492,10 @@
     const nextReadState = { ...normalizeReadState(currentReadState) };
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
-      if (!normalized.resolved && normalized.read && normalized.id && normalized.signature) {
-        nextReadState[normalized.id] = normalized.signature;
+      if (!normalized.resolved && normalized.id && normalized.signature && (
+        normalized.read || matchesNotificationReadState(normalized, nextReadState[normalized.id])
+      )) {
+        nextReadState[normalized.id] = normalized.id;
       }
     });
     return nextReadState;
@@ -438,7 +508,8 @@
       if (!normalized.resolved || !normalized.id || !normalized.signature) return;
       nextResolvedState[normalized.id] = {
         signature: normalized.signature,
-        resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso()
+        resolvedAt: text(normalized.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso(),
+        read: Boolean(normalized.read)
       };
     });
     return nextResolvedState;
@@ -448,9 +519,10 @@
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
       const resolvedEntry = resolvedState[normalized.id];
-      if (resolvedEntry && text(resolvedEntry.signature) === text(normalized.signature)) {
+      if (resolvedEntry && matchesNotificationSignature(normalized, resolvedEntry.signature)) {
         normalized.resolved = true;
         normalized.resolvedAt = text(resolvedEntry.resolvedAt) || normalized.updatedAt || normalized.createdAt || nowIso();
+        normalized.read = Boolean(resolvedEntry.read) || normalized.read;
       } else if (!normalized.resolved) {
         normalized.resolvedAt = "";
       }
@@ -461,9 +533,9 @@
   const applyReadStateToNotifications = (notifications = [], readState = {}) => (
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
-      if (!normalized.resolved) {
-        normalized.read = text(readState[normalized.id]) === text(normalized.signature);
-      }
+      normalized.read = normalized.resolved
+        ? Boolean(normalized.read) || matchesNotificationReadState(normalized, readState[normalized.id])
+        : matchesNotificationReadState(normalized, readState[normalized.id]);
       return normalized;
     })
   );
@@ -472,7 +544,6 @@
     .map(normalizeNotification)
     .sort((left, right) => {
       if (left.resolved !== right.resolved) return left.resolved ? 1 : -1;
-      if (left.read !== right.read) return left.read ? 1 : -1;
       const priorityDelta = (notificationPriorityWeight[right.priority] || 0) - (notificationPriorityWeight[left.priority] || 0);
       if (priorityDelta) return priorityDelta;
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
@@ -569,12 +640,6 @@
     return notifications.filter((notification) => !isStaffNotificationRemoved(notification));
   };
 
-  const matchesStaffNotificationView = (notification) => {
-    if (staffNotificationUiState.viewFilter === "active") return !notification.resolved;
-    if (staffNotificationUiState.viewFilter === "resolved") return notification.resolved;
-    return true;
-  };
-
   const matchesStaffNotificationType = (notification) => {
     const title = keyOf(notification.title);
     if (staffNotificationUiState.typeFilter === "low-stock") {
@@ -585,12 +650,11 @@
     }
     if (staffNotificationUiState.typeFilter === "expiring-soon") return notification.category === "Expiring Soon";
     if (staffNotificationUiState.typeFilter === "critical") return notification.priority === "critical";
+    if (staffNotificationUiState.typeFilter === "resolved") return Boolean(notification.resolved);
     return true;
   };
 
-  const getFilteredStaffNotifications = () => getVisibleStaffNotifications().filter((notification) => (
-    matchesStaffNotificationView(notification) && matchesStaffNotificationType(notification)
-  ));
+  const getFilteredStaffNotifications = () => getVisibleStaffNotifications().filter(matchesStaffNotificationType);
 
   const dispatchStaffNotificationStateUpdate = () => {
     window.dispatchEvent(new CustomEvent("mss:notifications-state-updated", {
@@ -637,7 +701,7 @@
     if (!updated.resolved) {
       state.notificationReadState = {
         ...state.notificationReadState,
-        [updated.id]: updated.signature
+        [updated.id]: updated.id
       };
     }
     state.notifications = applyReadStateToNotifications(state.notifications, state.notificationReadState);
@@ -736,9 +800,7 @@
 
   const renderStaffNotifications = () => {
     const allNotifications = getVisibleStaffNotifications();
-    const notifications = allNotifications.filter((notification) => (
-      matchesStaffNotificationView(notification) && matchesStaffNotificationType(notification)
-    ));
+    const notifications = allNotifications.filter(matchesStaffNotificationType);
     const unreadCount = allNotifications.filter((entry) => !entry.read && !entry.resolved).length;
 
     [refs.staffSidebarNotificationBadge].forEach((badge) => {
@@ -747,27 +809,16 @@
       badge.classList.toggle("d-none", unreadCount <= 0);
     });
 
-    syncStaffNotificationFilterButtons(staffNotificationViewButtons, "staffNotificationView", staffNotificationUiState.viewFilter);
     syncStaffNotificationFilterButtons(staffNotificationTypeButtons, "staffNotificationType", staffNotificationUiState.typeFilter);
 
     if (refs.staffNotificationCount) {
-      const noun = staffNotificationUiState.viewFilter === "resolved"
-        ? "resolved notification"
-        : staffNotificationUiState.viewFilter === "active"
-          ? "active alert"
-          : "notification";
-      refs.staffNotificationCount.textContent = `${formatNumber(notifications.length)} ${notifications.length === 1 ? noun : `${noun}s`}`;
+      refs.staffNotificationCount.textContent = `${formatNumber(notifications.length)} ${notifications.length === 1 ? "notification" : "notifications"}`;
     }
 
     if (!refs.staffNotificationFeed) return;
 
     if (!notifications.length) {
-      const emptyMessage = staffNotificationUiState.viewFilter === "resolved"
-        ? "No resolved notifications yet."
-        : staffNotificationUiState.viewFilter === "active"
-          ? "No active alerts right now."
-          : "No notifications yet.";
-      refs.staffNotificationFeed.innerHTML = `<div class="notification-empty">${esc(emptyMessage)}</div>`;
+      refs.staffNotificationFeed.innerHTML = '<div class="notification-empty">No notifications found.</div>';
       return;
     }
 
@@ -3079,13 +3130,6 @@
 
   window.MSSOpenNotificationCenter = openStaffNotificationCenter;
 
-  staffNotificationViewButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      staffNotificationUiState.viewFilter = text(button.dataset.staffNotificationView) || "active";
-      renderStaffNotifications();
-    });
-  });
-
   staffNotificationTypeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       staffNotificationUiState.typeFilter = text(button.dataset.staffNotificationType) || "all";
@@ -3111,15 +3155,19 @@
     if (!card) return;
 
     const notificationId = text(card.getAttribute("data-staff-notification-id"));
-    let notification = getStoredNotifications().find((entry) => text(entry.id) === notificationId) || null;
+    const notification = getStoredNotifications().find((entry) => text(entry.id) === notificationId) || null;
     if (!notification) return;
 
-    if (!notification.read) {
-      notification = markStaffNotificationRead(notification) || notification;
-      renderStaffNotifications();
+    const openedNotification = normalizeNotification(notification);
+    if (!notification.read && staffNotificationMessageModal) {
+      pendingStaffReadNotificationId = notificationId;
+      openStaffNotificationDetail(openedNotification);
+      return;
     }
 
-    openStaffNotificationDetail(notification);
+    pendingStaffReadNotificationId = "";
+    const readNotification = notification.read ? openedNotification : (markStaffNotificationRead(notification) || openedNotification);
+    openStaffNotificationDetail(readNotification);
   });
 
   window.addEventListener("mss:notifications-synced", (event) => {
@@ -3186,6 +3234,19 @@
   });
 
   refs.confirmStaffNotificationRemoveBtn?.addEventListener("click", confirmStaffNotificationRemove);
+
+  byId("staffNotificationMessageModal")?.addEventListener("shown.bs.modal", () => {
+    if (!pendingStaffReadNotificationId) return;
+    const notification = getStoredNotifications().find((entry) => text(entry.id) === pendingStaffReadNotificationId) || null;
+    if (notification && !notification.read) {
+      void markStaffNotificationRead(notification);
+    }
+    pendingStaffReadNotificationId = "";
+  });
+
+  byId("staffNotificationMessageModal")?.addEventListener("hidden.bs.modal", () => {
+    pendingStaffReadNotificationId = "";
+  });
 
   staffNotificationRemoveModalElement?.addEventListener("hidden.bs.modal", () => {
     pendingStaffNotificationRemoveId = "";

@@ -74,6 +74,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                     <button type="button" class="notification-filter-pill" data-notification-type="out-of-stock" aria-pressed="false">Out of Stock</button>
                     <button type="button" class="notification-filter-pill" data-notification-type="expiring-soon" aria-pressed="false">Expiring Soon</button>
                     <button type="button" class="notification-filter-pill" data-notification-type="critical" aria-pressed="false">Critical</button>
+                    <button type="button" class="notification-filter-pill" data-notification-type="resolved" aria-pressed="false">Resolved</button>
                   </div>
                 </div>
               </div>

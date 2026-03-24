@@ -756,11 +756,13 @@ function mss_state_fetch_notification_resolved_state(PDO $pdo): array
         }
 
         $resolvedAt = mss_state_text($entry['resolvedAt'] ?? $entry['resolved_at'] ?? '');
+        $isRead = filter_var($entry['read'] ?? false, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
         $resolvedState[$stateKey] = [
             'signature' => $signature,
             'resolvedAt' => $resolvedAt !== ''
                 ? str_replace(' ', 'T', mss_state_datetime($resolvedAt))
                 : '',
+            'read' => $isRead === null ? false : $isRead,
         ];
     }
 
@@ -1374,6 +1376,7 @@ function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): 
         }
 
         $resolvedAt = mss_state_text($stateEntry['resolvedAt'] ?? $stateEntry['resolved_at'] ?? '');
+        $isRead = filter_var($stateEntry['read'] ?? false, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
         $resolvedState[$stateKey] = [
             'signature' => $signature,
             'resolvedAt' => str_replace(
@@ -1381,6 +1384,7 @@ function mss_state_replace_notification_resolved_state(PDO $pdo, array $value): 
                 'T',
                 mss_state_datetime($resolvedAt, date('Y-m-d H:i:s'))
             ),
+            'read' => $isRead === null ? false : $isRead,
         ];
     }
 
