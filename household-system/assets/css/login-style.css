@@ -131,7 +131,8 @@ body::after{
 .brand-sub{
   font-size:1.04rem;
   line-height:1.45;
-  max-width:30ch;
+  max-width:none;
+  white-space:nowrap;
   color:rgba(248, 250, 252, 0.85);
 }
 .brand-desc{
@@ -364,6 +365,7 @@ footer{
     font-size:0.76rem;
     line-height:1.3;
     max-width:none;
+    white-space:normal;
     color:rgba(248, 250, 252, 0.82);
   }
 

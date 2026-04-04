@@ -2688,7 +2688,7 @@ if ($action === '') {
 }
 
 if ($requesterRequiresCredentialUpdate && $action !== 'update_own_credentials') {
-    users_api_error(403, 'Update your temporary admin credentials before using other settings actions.');
+    users_api_error(403, 'Update your temporary credentials before using other settings actions.');
 }
 
 try {

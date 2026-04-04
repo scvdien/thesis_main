@@ -249,6 +249,9 @@ h1,h2,h3,h4,h5,h6{
 .sidebar-actions{
   padding-top:10px;
   border-top:1px solid rgba(255,255,255,0.18);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
 }
 .sidebar-actions .btn{
   border-radius:999px;
@@ -259,8 +262,10 @@ h1,h2,h3,h4,h5,h6{
   box-shadow:0 10px 20px rgba(15,23,42,0.2);
   display:inline-flex;
   align-items:center;
+  justify-content:center;
   gap:6px;
   padding:6px 14px;
+  width:100%;
 }
 .sidebar-actions .btn:hover,
 .sidebar-actions .btn:focus{
@@ -1050,28 +1055,28 @@ body.sidebar-open{
 .staff-credentials-shell{
   display:flex;
   flex-direction:column;
-  gap:22px;
-  padding:28px;
+  gap:18px;
+  padding:24px 26px 26px;
 }
 .staff-credentials-hero{
   display:flex;
-  align-items:flex-start;
-  gap:16px;
+  align-items:center;
+  gap:14px;
 }
 .staff-credentials-icon{
-  width:58px;
-  height:58px;
-  border-radius:18px;
+  width:50px;
+  height:50px;
+  border-radius:16px;
   display:inline-flex;
   align-items:center;
   justify-content:center;
   flex:0 0 auto;
   color:#fff;
   background:linear-gradient(135deg, var(--accent) 0%, #1d4ed8 100%);
-  box-shadow:0 16px 28px rgba(29, 78, 216, 0.2);
+  box-shadow:0 12px 22px rgba(29, 78, 216, 0.18);
 }
 .staff-credentials-icon i{
-  font-size:1.45rem;
+  font-size:1.22rem;
 }
 .staff-credentials-copy{
   min-width:0;
@@ -1080,32 +1085,32 @@ body.sidebar-open{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  margin-bottom:10px;
-  padding:5px 11px;
+  margin-bottom:6px;
+  padding:4px 10px;
   border-radius:999px;
-  background:rgba(15, 76, 107, 0.08);
-  color:var(--accent);
-  font-size:0.74rem;
-  font-weight:800;
-  letter-spacing:0.08em;
-  text-transform:uppercase;
+  background:rgba(15, 76, 107, 0.07);
+  color:#305471;
+  font-size:0.68rem;
+  font-weight:700;
+  letter-spacing:0.03em;
 }
 .staff-credentials-copy .modal-title{
   margin:0;
-  font-size:1.45rem;
+  font-size:1.28rem;
   line-height:1.2;
+  color:#0f172a;
 }
 .staff-credentials-copy p{
-  margin:10px 0 0;
-  max-width:46ch;
-  color:#475569;
-  font-size:0.98rem;
-  line-height:1.55;
+  margin:6px 0 0;
+  max-width:28ch;
+  color:#64748b;
+  font-size:0.94rem;
+  line-height:1.45;
 }
 .staff-credentials-grid{
   display:grid;
   grid-template-columns:repeat(2, minmax(0, 1fr));
-  gap:16px;
+  gap:14px;
 }
 .staff-credentials-field{
   display:flex;
@@ -1117,26 +1122,35 @@ body.sidebar-open{
 }
 .staff-credentials-modal .form-label{
   margin-bottom:8px;
+  color:#526581;
+  font-size:0.82rem;
+  font-weight:600;
+  letter-spacing:0.01em;
+  text-transform:none;
 }
 .staff-credentials-modal .form-control{
-  min-height:52px;
-  border-radius:16px;
+  min-height:50px;
+  border-radius:14px;
   background:#fff;
-  border-color:#d8e1ea;
-  box-shadow:0 2px 6px rgba(15,23,42,0.03);
+  border-color:#dbe4ee;
+  box-shadow:none;
+}
+.staff-credentials-modal .form-control:focus{
+  border-color:rgba(15, 76, 107, 0.28);
+  box-shadow:0 0 0 3px rgba(15, 76, 107, 0.08);
 }
 .staff-credentials-modal .form-control[readonly]{
-  background:linear-gradient(180deg, #f8fbff 0%, #f1f5f9 100%);
+  background:#f6f8fb;
   color:#0f172a;
-  font-weight:700;
+  font-weight:600;
 }
 .staff-credentials-notice{
-  padding:14px 16px;
-  border-radius:16px;
+  padding:12px 14px;
+  border-radius:14px;
   border:1px solid rgba(148,163,184,0.24);
   background:#f8fafc;
-  font-size:0.94rem;
-  line-height:1.55;
+  font-size:0.9rem;
+  line-height:1.5;
 }
 .staff-credentials-notice.text-muted{
   color:#475569 !important;
@@ -1156,10 +1170,10 @@ body.sidebar-open{
   justify-content:flex-end;
   gap:12px;
   flex-wrap:wrap;
-  padding-top:2px;
+  padding-top:4px;
 }
 .staff-credentials-actions .btn{
-  min-width:190px;
+  min-width:176px;
   justify-content:center;
 }
 .load-household-dialog{

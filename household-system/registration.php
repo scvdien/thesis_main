@@ -43,6 +43,12 @@ $isRegistrationEditMode = $editHouseholdId !== '';
 $registrationReturnSource = strtolower(trim((string) ($_GET['from'] ?? '')));
 $isHouseholdEditReturn = $isRegistrationEditMode && $registrationReturnSource === 'household-view';
 $registrationRequiresCredentialUpdate = $authRole === AUTH_ROLE_STAFF && !empty($authUser['requires_credential_update']);
+$showStaffAccountSettings = $authRole === AUTH_ROLE_STAFF;
+$staffCredentialsTitle = 'Change Credentials';
+$staffCredentialsDescription = $registrationRequiresCredentialUpdate
+  ? 'Update your username or password to continue.'
+  : 'Update your username or password.';
+$staffCredentialsBadge = $registrationRequiresCredentialUpdate ? 'Required' : '';
 $registrationCurrentUsername = (string) ($authUser['username'] ?? '');
 $registrationCsrfToken = auth_csrf_token();
 $registrationStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
@@ -119,6 +125,11 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         </div>
       </div>
       <div class="sidebar-actions">
+        <?php if ($showStaffAccountSettings): ?>
+          <button type="button" class="btn btn-light btn-sm" id="openStaffAccountSettingsBtn">
+            <i class="bi bi-person-gear"></i> Change Credentials
+          </button>
+        <?php endif; ?>
         <a href="logout.php" class="btn btn-light btn-sm">
           <i class="bi bi-box-arrow-right"></i> Logout
         </a>
@@ -141,13 +152,13 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
           <div class="content-subtitle content-subtitle-mobile"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></div>
         </div>
       </div>
-        <div class="content-meta">
-          <div class="content-meta-actions">
-            <button type="button" class="btn btn-outline-primary btn-sm" id="loadExistingBtn">
-              <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? ($isHouseholdEditReturn ? 'Back to Household' : 'Back to Registration') : 'Load Existing Household' ?>
-            </button>
-          </div>
+      <div class="content-meta">
+        <div class="content-meta-actions">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="loadExistingBtn">
+            <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? ($isHouseholdEditReturn ? 'Back to Household' : 'Back to Registration') : 'Load Existing Household' ?>
+          </button>
         </div>
+      </div>
     </div>
 
     <form id="censusForm">
@@ -419,9 +430,9 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
             <i class="bi bi-shield-lock-fill"></i>
           </div>
           <div class="staff-credentials-copy">
-            <span class="staff-credentials-badge">Required Update</span>
-            <h5 class="modal-title">Update Temporary Credentials</h5>
-            <p>Your temporary staff credentials must be updated before you can continue using the registration module.</p>
+            <span class="staff-credentials-badge" id="staffCredentialsModeBadge"<?= $staffCredentialsBadge === '' ? ' hidden' : '' ?>><?= htmlspecialchars($staffCredentialsBadge, ENT_QUOTES, 'UTF-8') ?></span>
+            <h5 class="modal-title" id="staffCredentialsModalTitle"><?= htmlspecialchars($staffCredentialsTitle, ENT_QUOTES, 'UTF-8') ?></h5>
+            <p id="staffCredentialsModalDescription"><?= htmlspecialchars($staffCredentialsDescription, ENT_QUOTES, 'UTF-8') ?></p>
           </div>
         </div>
 
@@ -431,12 +442,12 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
             <input type="text" class="form-control" id="staffCredentialsCurrentUsername" readonly>
           </div>
           <div class="staff-credentials-field">
-            <label class="form-label small" for="staffCredentialsCurrentPassword">Temporary Password</label>
-            <input type="password" class="form-control" id="staffCredentialsCurrentPassword" placeholder="Enter temporary password" autocomplete="current-password">
+            <label class="form-label small" for="staffCredentialsCurrentPassword">Current Password</label>
+            <input type="password" class="form-control" id="staffCredentialsCurrentPassword" placeholder="Enter current password" autocomplete="current-password">
           </div>
           <div class="staff-credentials-field">
             <label class="form-label small" for="staffCredentialsNewUsername">New Username</label>
-            <input type="text" class="form-control" id="staffCredentialsNewUsername" placeholder="Keep or change username" autocomplete="username">
+            <input type="text" class="form-control" id="staffCredentialsNewUsername" placeholder="Enter new username" autocomplete="username">
           </div>
           <div class="staff-credentials-field">
             <label class="form-label small" for="staffCredentialsNewPassword">New Password</label>
@@ -451,8 +462,9 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         <div class="staff-credentials-notice text-muted" id="staffCredentialsNotice" hidden></div>
 
         <div class="staff-credentials-actions">
-          <a href="logout.php" class="btn btn-secondary btn-modern">Logout</a>
-          <button type="button" class="btn btn-primary btn-modern" id="staffCredentialsSaveBtn">Save New Credentials</button>
+          <button type="button" class="btn btn-secondary btn-modern d-none" id="staffCredentialsCancelBtn" data-bs-dismiss="modal">Close</button>
+          <a href="logout.php" class="btn btn-secondary btn-modern" id="staffCredentialsLogoutBtn">Logout</a>
+          <button type="button" class="btn btn-primary btn-modern" id="staffCredentialsSaveBtn">Save Changes</button>
         </div>
       </div>
     </div>

@@ -1606,8 +1606,13 @@ body.role-can-edit .role-secretary-only{
 }
 .audit-module .module-table .audit-record-id-cell,
 .audit-module .module-table .audit-ip-cell{
-  white-space:nowrap;
   font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.audit-module .module-table .audit-record-id-cell{
+  white-space:normal;
+}
+.audit-module .module-table .audit-ip-cell{
+  white-space:nowrap;
 }
 .audit-module .module-table td:nth-child(2),
 .audit-module .module-table .audit-details-cell,
@@ -1615,7 +1620,14 @@ body.role-can-edit .role-secretary-only{
   white-space:normal;
   word-break:break-word;
 }
-.audit-module .module-table .audit-record-id-text,
+.audit-module .module-table .audit-record-id-text{
+  display:block;
+  max-width:100%;
+  line-height:1.35;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .audit-module .module-table .audit-ip-text{
   display:inline-block;
   white-space:nowrap;

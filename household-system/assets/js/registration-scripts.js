@@ -42,8 +42,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
   const CREDENTIAL_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
-  const requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
-  const currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
+  let requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
+  let currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
   const contentTitle = document.querySelector(".content-title");
   const contentSubtitle = document.querySelector(".content-subtitle:not(.content-subtitle-mobile)");
   const contentSubtitleMobile = document.querySelector(".content-subtitle-mobile");
@@ -79,16 +79,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const logoutModalEl = document.getElementById("logoutModal");
   const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
   const logoutConfirm = document.getElementById("logoutConfirm");
+  const openStaffAccountSettingsBtn = document.getElementById("openStaffAccountSettingsBtn");
   const staffCredentialsModalEl = document.getElementById("staffCredentialsModal");
   const staffCredentialsModal = staffCredentialsModalEl
     ? new bootstrap.Modal(staffCredentialsModalEl, { backdrop: "static", keyboard: false })
     : null;
+  const staffCredentialsModeBadge = document.getElementById("staffCredentialsModeBadge");
+  const staffCredentialsModalTitle = document.getElementById("staffCredentialsModalTitle");
+  const staffCredentialsModalDescription = document.getElementById("staffCredentialsModalDescription");
   const staffCredentialsCurrentUsername = document.getElementById("staffCredentialsCurrentUsername");
   const staffCredentialsCurrentPassword = document.getElementById("staffCredentialsCurrentPassword");
   const staffCredentialsNewUsername = document.getElementById("staffCredentialsNewUsername");
   const staffCredentialsNewPassword = document.getElementById("staffCredentialsNewPassword");
   const staffCredentialsConfirmPassword = document.getElementById("staffCredentialsConfirmPassword");
   const staffCredentialsNotice = document.getElementById("staffCredentialsNotice");
+  const staffCredentialsCancelBtn = document.getElementById("staffCredentialsCancelBtn");
+  const staffCredentialsLogoutBtn = document.getElementById("staffCredentialsLogoutBtn");
   const staffCredentialsSaveBtn = document.getElementById("staffCredentialsSaveBtn");
   const clearModalEl = document.getElementById("clearModal");
   const clearModal = clearModalEl ? new bootstrap.Modal(clearModalEl) : null;
@@ -166,6 +172,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     const nextUrl = new URL("registration.php", window.location.href);
     nextUrl.searchParams.set("year", String(targetRecordYear));
     return nextUrl.toString();
+  };
+
+  const canDeleteMembersInCurrentFlow = () => !(isEditMode && currentRole === "staff");
+
+  const syncMemberActionButtons = (members = getMembers()) => {
+    const canDeleteMembers = canDeleteMembersInCurrentFlow();
+
+    if (editMemberBtn) {
+      editMemberBtn.disabled = members.length === 0;
+    }
+
+    if (deleteMemberBtn) {
+      deleteMemberBtn.classList.toggle("d-none", !canDeleteMembers);
+      deleteMemberBtn.disabled = !canDeleteMembers || members.length === 0;
+    }
   };
 
   if (isEditMode) {
@@ -392,24 +413,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     staffCredentialsNotice.classList.add("text-muted");
   };
 
+  const setStaffCredentialsMode = (mode = "optional") => {
+    const isRequiredMode = mode === "required";
+
+    if (staffCredentialsModeBadge) {
+      staffCredentialsModeBadge.textContent = isRequiredMode ? "Required" : "";
+      staffCredentialsModeBadge.hidden = !isRequiredMode;
+    }
+    if (staffCredentialsModalTitle) {
+      staffCredentialsModalTitle.textContent = "Change Credentials";
+    }
+    if (staffCredentialsModalDescription) {
+      staffCredentialsModalDescription.textContent = isRequiredMode
+        ? "Update your username or password to continue."
+        : "Update your username or password.";
+    }
+    if (staffCredentialsSaveBtn) {
+      staffCredentialsSaveBtn.textContent = "Save Changes";
+    }
+    staffCredentialsCancelBtn?.classList.toggle("d-none", isRequiredMode);
+    staffCredentialsLogoutBtn?.classList.toggle("d-none", !isRequiredMode);
+  };
+
   const resetStaffCredentialFields = () => {
     if (staffCredentialsCurrentUsername) {
       staffCredentialsCurrentUsername.value = currentSessionUsername;
     }
-  if (staffCredentialsCurrentPassword) {
-    staffCredentialsCurrentPassword.value = "";
-  }
-  if (staffCredentialsNewUsername) {
-    staffCredentialsNewUsername.value = currentSessionUsername;
-  }
-  if (staffCredentialsNewPassword) {
-    staffCredentialsNewPassword.value = "";
-  }
-  if (staffCredentialsConfirmPassword) {
-    staffCredentialsConfirmPassword.value = "";
-  }
-  setStaffCredentialsNotice("");
-};
+    if (staffCredentialsCurrentPassword) {
+      staffCredentialsCurrentPassword.value = "";
+    }
+    if (staffCredentialsNewUsername) {
+      staffCredentialsNewUsername.value = currentSessionUsername;
+    }
+    if (staffCredentialsNewPassword) {
+      staffCredentialsNewPassword.value = "";
+    }
+    if (staffCredentialsConfirmPassword) {
+      staffCredentialsConfirmPassword.value = "";
+    }
+    setStaffCredentialsNotice("");
+  };
+
+  const openStaffCredentialsModal = (mode = "optional") => {
+    setStaffCredentialsMode(mode);
+    resetStaffCredentialFields();
+    staffCredentialsModal?.show();
+  };
 
   const submitStaffCredentialUpdate = async () => {
     const currentUsername = String(staffCredentialsCurrentUsername?.value || "").trim();
@@ -2511,12 +2560,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
+    syncMemberActionButtons(members);
+
     if (!members.length) {
       return;
     }
 
     if (membersContainer) {
       membersContainer.innerHTML = members.map((member, index) => {
+      const canDeleteMembers = canDeleteMembersInCurrentFlow();
       const name = `${member.first_name || ""} ${member.last_name || ""}`.trim() || `Member ${index + 1}`;
       const metaParts = [
         member.sex,
@@ -2533,20 +2585,15 @@ document.addEventListener("DOMContentLoaded", async () => {
             <button type="button" class="btn btn-sm btn-outline-primary view-member" data-index="${index}">
               <i class="bi bi-eye"></i> View
             </button>
+            ${canDeleteMembers ? `
             <button type="button" class="btn btn-sm btn-danger remove-member" data-index="${index}">
               <i class="bi bi-trash"></i> Delete
             </button>
+            ` : ""}
           </div>
         </div>
       `;
       }).join("");
-    }
-
-    if (editMemberBtn) {
-      editMemberBtn.disabled = members.length === 0;
-    }
-    if (deleteMemberBtn) {
-      deleteMemberBtn.disabled = members.length === 0;
     }
   };
 
@@ -2563,14 +2610,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (viewBtn) {
         currentMemberIndex = index;
-        if (editMemberBtn) {
-          editMemberBtn.disabled = false;
-        }
-        if (deleteMemberBtn) {
-          deleteMemberBtn.disabled = false;
-        }
+        syncMemberActionButtons(members);
         renderMemberModal(member);
         memberModal?.show();
+        return;
+      }
+
+      if (!canDeleteMembersInCurrentFlow()) {
         return;
       }
 
@@ -2591,12 +2637,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!member) return;
 
       currentMemberIndex = index;
-      if (editMemberBtn) {
-        editMemberBtn.disabled = false;
-      }
-      if (deleteMemberBtn) {
-        deleteMemberBtn.disabled = false;
-      }
+      syncMemberActionButtons(members);
       renderMemberModal(member);
       memberModal?.show();
     });
@@ -2850,6 +2891,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (deleteMemberBtn) {
     deleteMemberBtn.addEventListener("click", () => {
+      if (!canDeleteMembersInCurrentFlow()) return;
       if (currentMemberIndex === null) return;
       deleteMemberModal?.show();
     });
@@ -2857,6 +2899,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (deleteMemberConfirm) {
     deleteMemberConfirm.addEventListener("click", () => {
+      if (!canDeleteMembersInCurrentFlow()) return;
       if (currentMemberIndex === null) return;
       const members = getMembers();
       if (!members[currentMemberIndex]) return;
@@ -2864,12 +2907,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setMembers(members);
       renderMembers();
       currentMemberIndex = null;
-      if (deleteMemberBtn) {
-        deleteMemberBtn.disabled = true;
-      }
-      if (editMemberBtn) {
-        editMemberBtn.disabled = true;
-      }
+      syncMemberActionButtons(members);
       deleteMemberModal?.hide();
       memberModal?.hide();
     });
@@ -2915,6 +2953,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     staffCredentialsModalEl.addEventListener("shown.bs.modal", () => {
       staffCredentialsCurrentPassword?.focus();
     });
+    staffCredentialsModalEl.addEventListener("hidden.bs.modal", () => {
+      if (!requiresCredentialUpdate) {
+        resetStaffCredentialFields();
+        setStaffCredentialsMode("optional");
+      }
+    });
+  }
+  if (openStaffAccountSettingsBtn) {
+    openStaffAccountSettingsBtn.addEventListener("click", () => {
+      openStaffCredentialsModal("optional");
+    });
   }
   if (staffCredentialsSaveBtn) {
     staffCredentialsSaveBtn.addEventListener("click", async () => {
@@ -2928,6 +2977,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       staffCredentialsSaveBtn.textContent = "Saving...";
       try {
         const result = await submitStaffCredentialUpdate();
+        requiresCredentialUpdate = false;
+        currentSessionUsername = result.newUsername;
         document.body.dataset.requiresCredentialUpdate = "false";
         document.body.dataset.currentUsername = result.newUsername;
         setStaffCredentialsNotice(
@@ -2943,7 +2994,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } finally {
         staffCredentialSaveBusy = false;
         staffCredentialsSaveBtn.disabled = false;
-        staffCredentialsSaveBtn.textContent = originalText || "Save New Credentials";
+        staffCredentialsSaveBtn.textContent = originalText || "Save Changes";
       }
     });
   }
@@ -2986,9 +3037,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (requiresCredentialUpdate) {
-    resetStaffCredentialFields();
     window.setTimeout(() => {
-      staffCredentialsModal?.show();
+      openStaffCredentialsModal("required");
     }, 0);
   }
 });
