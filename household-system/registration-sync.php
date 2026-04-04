@@ -35,6 +35,11 @@ function reg_text(mixed $value, int $maxLength = 255): string
     return $text;
 }
 
+function reg_quote_identifier(string $value): string
+{
+    return '`' . str_replace('`', '``', $value) . '`';
+}
+
 function reg_title_case_text(mixed $value): string
 {
     $text = trim((string) $value);
@@ -545,6 +550,109 @@ function reg_required_sync_procedures(): array
     ];
 }
 
+/**
+ * @param array<string, mixed> $triggerRow
+ */
+function reg_legacy_trigger_label(array $triggerRow): string
+{
+    return trim(
+        (string) ($triggerRow['trigger_name'] ?? '')
+        . ' on '
+        . (string) ($triggerRow['table_name'] ?? '')
+        . ' ('
+        . trim((string) ($triggerRow['action_timing'] ?? ''))
+        . ' '
+        . trim((string) ($triggerRow['event_manipulation'] ?? ''))
+        . ')'
+    );
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function reg_legacy_trigger_rows(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        'SELECT `TRIGGER_NAME`, `EVENT_OBJECT_TABLE`, `ACTION_TIMING`, `EVENT_MANIPULATION`, `ACTION_STATEMENT`
+         FROM `information_schema`.`TRIGGERS`
+         WHERE `TRIGGER_SCHEMA` = DATABASE()
+         ORDER BY `EVENT_OBJECT_TABLE` ASC, `TRIGGER_NAME` ASC'
+    );
+    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $items = [];
+
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $triggerName = trim((string) ($row['TRIGGER_NAME'] ?? ''));
+        if ($triggerName === '' || preg_match('/^[A-Za-z0-9_]+$/', $triggerName) !== 1) {
+            continue;
+        }
+
+        $actionStatement = strtolower(trim((string) ($row['ACTION_STATEMENT'] ?? '')));
+        $matchedProcedures = [];
+        foreach (array_keys(reg_required_sync_procedures()) as $procedureName) {
+            if (strpos($actionStatement, strtolower($procedureName)) !== false) {
+                $matchedProcedures[] = $procedureName;
+            }
+        }
+
+        if ($matchedProcedures === []) {
+            continue;
+        }
+
+        $triggerRow = [
+            'trigger_name' => $triggerName,
+            'table_name' => trim((string) ($row['EVENT_OBJECT_TABLE'] ?? '')),
+            'action_timing' => strtoupper(trim((string) ($row['ACTION_TIMING'] ?? ''))),
+            'event_manipulation' => strtoupper(trim((string) ($row['EVENT_MANIPULATION'] ?? ''))),
+            'action_statement' => trim((string) ($row['ACTION_STATEMENT'] ?? '')),
+            'matched_procedures' => $matchedProcedures,
+        ];
+        $triggerRow['trigger_label'] = reg_legacy_trigger_label($triggerRow);
+        $items[] = $triggerRow;
+    }
+
+    return $items;
+}
+
+/**
+ * @return array{removed:array<int, string>,removed_count:int}
+ */
+function reg_remove_legacy_sync_triggers(PDO $pdo): array
+{
+    $removed = [];
+
+    foreach (reg_legacy_trigger_rows($pdo) as $triggerRow) {
+        $triggerName = trim((string) ($triggerRow['trigger_name'] ?? ''));
+        if ($triggerName === '') {
+            continue;
+        }
+
+        try {
+            $pdo->exec('DROP TRIGGER IF EXISTS ' . reg_quote_identifier($triggerName));
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'Unable to remove legacy sync trigger ' . $triggerName . '. ' . $exception->getMessage(),
+                0,
+                $exception
+            );
+        }
+
+        $removedLabel = trim((string) ($triggerRow['trigger_label'] ?? ''));
+        $removed[] = $removedLabel !== '' ? $removedLabel : $triggerName;
+    }
+
+    $removed = array_values(array_unique(array_filter(array_map('trim', $removed))));
+
+    return [
+        'removed' => $removed,
+        'removed_count' => count($removed),
+    ];
+}
+
 function reg_procedure_exists(PDO $pdo, string $procedureName): bool
 {
     if ($procedureName === '' || preg_match('/^[A-Za-z0-9_]+$/', $procedureName) !== 1) {
@@ -632,6 +740,11 @@ function reg_execute_migration_sql(PDO $pdo, string $migrationFileName): void
 
 function reg_ensure_sync_procedures(PDO $pdo): void
 {
+    if (!auth_sync_routines_enabled()) {
+        reg_remove_legacy_sync_triggers($pdo);
+        return;
+    }
+
     foreach (reg_required_sync_procedures() as $procedureName => $migrationFileName) {
         if (reg_procedure_exists($pdo, $procedureName)) {
             continue;
@@ -643,6 +756,35 @@ function reg_ensure_sync_procedures(PDO $pdo): void
             throw new RuntimeException('Failed to install required database routine: ' . $procedureName . '.');
         }
     }
+}
+
+function reg_friendly_server_error(Throwable $exception): string
+{
+    $message = strtolower(trim($exception->getMessage()));
+    if ($message === '') {
+        return 'Unable to process registration request right now.';
+    }
+
+    if (
+        (strpos($message, 'procedure') !== false && strpos($message, 'does not exist') !== false)
+        || strpos($message, 'create routine command denied') !== false
+        || strpos($message, 'unable to install required database routine') !== false
+        || strpos($message, 'failed to install required database routine') !== false
+    ) {
+        return auth_sync_routines_enabled()
+            ? 'Registration sync failed: database sync routines are missing or not allowed for this database user.'
+            : 'Registration sync failed: legacy database triggers are calling missing sync routines. Remove the old triggers from the database, or enable AUTH_ENABLE_SYNC_ROUTINES=1 on a server that allows routines.';
+    }
+
+    if (
+        strpos($message, 'unable to remove legacy sync trigger') !== false
+        || strpos($message, 'trigger command denied') !== false
+        || strpos($message, 'drop trigger command denied') !== false
+    ) {
+        return 'Registration sync failed: legacy database triggers could not be removed with the current database user. Remove them in phpMyAdmin, or use a database user that can drop triggers.';
+    }
+
+    return 'Unable to process registration request right now.';
 }
 
 const REG_SCHEMA_MAINTENANCE_SESSION_KEY = '__registration_schema_maintenance_at';
@@ -2185,5 +2327,5 @@ try {
 
     reg_error(400, 'Unsupported action.');
 } catch (Throwable $exception) {
-    reg_error(500, 'Unable to process registration request right now.');
+    reg_error(500, reg_friendly_server_error($exception));
 }

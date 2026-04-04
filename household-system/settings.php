@@ -561,11 +561,31 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <span class="badge bg-success-subtle text-success" id="backupHealthBadge">Healthy</span>
             </div>
-            <div class="settings-callout">
-              <i class="bi bi-info-circle"></i>
-              <div>
-                <div class="fw-semibold">Backup Policy</div>
-                <div class="small text-muted">Only household and resident records are included. Captain, admin, and staff credentials are not part of this backup.</div>
+            <div class="settings-callout" id="backupDatabaseCompatCard">
+              <i class="bi bi-hdd-stack"></i>
+              <div class="w-100">
+                <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                  <div class="fw-semibold">Database Setup</div>
+                  <span class="badge bg-secondary-subtle text-secondary" id="backupDatabaseCompatBadge">Checking</span>
+                </div>
+                <div class="small text-muted" id="backupDatabaseCompatText">Checking database migrations, tables, and legacy trigger setup...</div>
+                <ul class="small text-muted mb-0 ps-3 d-none" id="backupDatabaseCompatList"></ul>
+                <div class="mt-3 d-none" id="backupDatabaseCompatActions">
+                  <button type="button" class="btn btn-outline-danger btn-sm" id="backupDatabaseCompatFixBtn">
+                    <i class="bi bi-wrench-adjustable-circle"></i> Remove Legacy Triggers
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-callout" id="backupEnvironmentCard">
+              <i class="bi bi-cpu"></i>
+              <div class="w-100">
+                <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                  <div class="fw-semibold">PHP Environment</div>
+                  <span class="badge bg-secondary-subtle text-secondary" id="backupEnvironmentBadge">Checking</span>
+                </div>
+                <div class="small text-muted" id="backupEnvironmentText">Checking PHP version, Composer files, and required extensions...</div>
+                <ul class="small text-muted mb-0 ps-3 d-none" id="backupEnvironmentList"></ul>
               </div>
             </div>
               <div class="settings-form-grid">

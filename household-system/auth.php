@@ -33,7 +33,13 @@ function auth_roles(): array
  */
 function auth_env(array $keys, string $default = ''): string
 {
+    $fileConfig = db_file_config();
     foreach ($keys as $key) {
+        $normalizedKey = strtoupper(trim((string) $key));
+        if ($normalizedKey !== '' && isset($fileConfig[$normalizedKey])) {
+            return $fileConfig[$normalizedKey];
+        }
+
         if (isset($_ENV[$key]) && trim((string) $_ENV[$key]) !== '') {
             return trim((string) $_ENV[$key]);
         }
@@ -45,7 +51,56 @@ function auth_env(array $keys, string $default = ''): string
             return trim((string) $value);
         }
     }
-    return $default;
+
+    return trim($default);
+}
+
+/**
+ * @param array<int, string> $keys
+ */
+function auth_env_flag(array $keys, bool $default = false): bool
+{
+    $value = strtolower(auth_env($keys, $default ? '1' : '0'));
+
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+function auth_request_host(): string
+{
+    $rawHost = trim((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    if ($rawHost === '') {
+        return '';
+    }
+
+    $parsedHost = parse_url('http://' . $rawHost, PHP_URL_HOST);
+    if (!is_string($parsedHost) || trim($parsedHost) === '') {
+        return strtolower(trim($rawHost, '[]'));
+    }
+
+    return strtolower(trim($parsedHost, '[]'));
+}
+
+function auth_initial_setup_allowed(): bool
+{
+    if (auth_env_flag(['AUTH_DISABLE_INITIAL_SETUP', 'HIMS_DISABLE_INITIAL_SETUP'], false)) {
+        return false;
+    }
+
+    return true;
+}
+
+function auth_initial_setup_lock_message(): string
+{
+    return 'Initial setup is disabled for this server. Remove AUTH_DISABLE_INITIAL_SETUP or HIMS_DISABLE_INITIAL_SETUP to create the first captain account.';
+}
+
+function auth_sync_routines_enabled(): bool
+{
+    return auth_env_flag([
+        'AUTH_ENABLE_SYNC_ROUTINES',
+        'HIMS_ENABLE_SYNC_ROUTINES',
+        'ENABLE_SYNC_ROUTINES',
+    ], false);
 }
 
 function auth_footer_system_name(): string
@@ -491,6 +546,9 @@ function auth_create_initial_captain(string $fullName, string $username, string 
 
         if (auth_users_count($pdo) > 0) {
             throw new RuntimeException('Initial setup is already complete. Sign in with your existing account.');
+        }
+        if (!auth_initial_setup_allowed()) {
+            throw new RuntimeException(auth_initial_setup_lock_message());
         }
 
         $existsStmt = $pdo->prepare(

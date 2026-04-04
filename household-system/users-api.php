@@ -74,6 +74,114 @@ function users_api_password_strong(string $password): bool
 const USERS_API_BACKUP_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const USERS_API_BACKUP_MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
+function users_api_ini_size_to_bytes(mixed $value): int
+{
+    $raw = trim((string) $value);
+    if ($raw === '' || $raw === '-1') {
+        return 0;
+    }
+
+    if (preg_match('/^\d+$/', $raw) === 1) {
+        return (int) $raw;
+    }
+
+    if (preg_match('/^(\d+)([KMGTP])B?$/i', $raw, $matches) !== 1) {
+        return 0;
+    }
+
+    $amount = (int) ($matches[1] ?? 0);
+    $unit = strtoupper((string) ($matches[2] ?? ''));
+    $multipliers = [
+        'K' => 1024,
+        'M' => 1024 * 1024,
+        'G' => 1024 * 1024 * 1024,
+        'T' => 1024 * 1024 * 1024 * 1024,
+        'P' => 1024 * 1024 * 1024 * 1024 * 1024,
+    ];
+
+    return isset($multipliers[$unit]) ? $amount * $multipliers[$unit] : 0;
+}
+
+function users_api_php_upload_max_filesize_bytes(): int
+{
+    return users_api_ini_size_to_bytes(ini_get('upload_max_filesize'));
+}
+
+function users_api_php_post_max_size_bytes(): int
+{
+    return users_api_ini_size_to_bytes(ini_get('post_max_size'));
+}
+
+function users_api_backup_effective_upload_limit_bytes(): int
+{
+    $limits = [USERS_API_BACKUP_MAX_UPLOAD_BYTES];
+    $phpUploadLimit = users_api_php_upload_max_filesize_bytes();
+    $phpPostLimit = users_api_php_post_max_size_bytes();
+
+    if ($phpUploadLimit > 0) {
+        $limits[] = $phpUploadLimit;
+    }
+    if ($phpPostLimit > 0) {
+        $limits[] = $phpPostLimit;
+    }
+
+    return max(1, min($limits));
+}
+
+function users_api_backup_upload_limit_message(): string
+{
+    return 'Backup file must be ' . users_api_backup_human_size(users_api_backup_effective_upload_limit_bytes()) . ' or less on this server.';
+}
+
+function users_api_is_multipart_request(): bool
+{
+    $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
+    return strpos($contentType, 'multipart/form-data') !== false;
+}
+
+function users_api_request_content_length_bytes(): int
+{
+    $contentLength = (string) ($_SERVER['CONTENT_LENGTH'] ?? '');
+    return ctype_digit($contentLength) ? (int) $contentLength : 0;
+}
+
+function users_api_upload_request_exceeds_server_limit(): bool
+{
+    if (!users_api_is_multipart_request()) {
+        return false;
+    }
+
+    $postLimitBytes = users_api_php_post_max_size_bytes();
+    if ($postLimitBytes <= 0) {
+        return false;
+    }
+
+    $contentLength = users_api_request_content_length_bytes();
+    return $contentLength > 0 && $contentLength > $postLimitBytes;
+}
+
+function users_api_upload_request_limit_message(): string
+{
+    $postLimitBytes = users_api_php_post_max_size_bytes();
+    if ($postLimitBytes > 0) {
+        return 'Upload exceeds this server\'s request size limit of ' . users_api_backup_human_size($postLimitBytes) . '.';
+    }
+
+    return 'Upload exceeds this server\'s request size limit.';
+}
+
+function users_api_upload_error_message(int $error, string $tooLargeMessage): string
+{
+    return match ($error) {
+        UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => $tooLargeMessage,
+        UPLOAD_ERR_PARTIAL => 'Upload was interrupted before it finished. Please try again.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Server upload temp directory is missing.',
+        UPLOAD_ERR_CANT_WRITE => 'Server could not write the uploaded file.',
+        UPLOAD_ERR_EXTENSION => 'A server extension stopped the file upload.',
+        default => 'Failed to upload file.',
+    };
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -388,24 +496,108 @@ function users_api_decode_official_seal_data(mixed $value): ?array
     ];
 }
 
-function users_api_delete_official_seal_file(string $relativePath): void
+function users_api_official_seal_storage_prefix(): string
 {
-    $normalized = ltrim(trim(str_replace('\\', '/', $relativePath)), '/');
-    if ($normalized === '') {
-        return;
+    return 'storage/official-seals/';
+}
+
+function users_api_official_seal_legacy_public_prefix(): string
+{
+    return 'assets/img/official-seals/';
+}
+
+/**
+ * @param array<int, string> $envKeys
+ * @return array<int, string>
+ */
+function users_api_storage_candidate_directories(array $envKeys, string $relativePath): array
+{
+    $candidates = [];
+
+    $configuredDirectory = auth_env($envKeys, '');
+    if ($configuredDirectory !== '') {
+        $candidates[] = users_api_backup_normalize_directory($configuredDirectory);
     }
 
-    $prefix = 'assets/img/official-seals/';
-    if (strpos($normalized, $prefix) !== 0) {
-        return;
+    $documentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+    if ($documentRoot !== '') {
+        $candidates[] = users_api_backup_normalize_directory(
+            dirname($documentRoot) . DIRECTORY_SEPARATOR . 'hims-private' . DIRECTORY_SEPARATOR . $relativePath
+        );
+    }
+
+    $candidates[] = users_api_backup_normalize_directory(
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private-storage' . DIRECTORY_SEPARATOR . $relativePath
+    );
+
+    $resolved = [];
+    foreach ($candidates as $candidate) {
+        if ($candidate !== '') {
+            $resolved[] = $candidate;
+        }
+    }
+
+    return array_values(array_unique($resolved));
+}
+
+/**
+ * @return array<int, string>
+ */
+function users_api_official_seal_directory_candidates(): array
+{
+    return users_api_storage_candidate_directories(
+        ['HIMS_OFFICIAL_SEAL_STORAGE_DIR', 'OFFICIAL_SEAL_STORAGE_DIR'],
+        'uploads' . DIRECTORY_SEPARATOR . 'official-seals'
+    );
+}
+
+function users_api_official_seal_absolute_directory(): string
+{
+    foreach (users_api_official_seal_directory_candidates() as $directory) {
+        if (!users_api_backup_try_prepare_directory($directory)) {
+            continue;
+        }
+        if (is_writable($directory)) {
+            return $directory;
+        }
+    }
+
+    users_api_error(500, 'Unable to create official seal storage directory.');
+}
+
+function users_api_official_seal_resolve_absolute_path(string $storedPath): string
+{
+    $normalized = ltrim(trim(str_replace('\\', '/', $storedPath)), '/');
+    if ($normalized === '') {
+        return '';
     }
 
     $fileName = basename($normalized);
     if ($fileName === '' || $fileName === '.' || $fileName === '..') {
-        return;
+        return '';
     }
 
-    $absolutePath = __DIR__ . '/assets/img/official-seals/' . $fileName;
+    if (strpos($normalized, users_api_official_seal_storage_prefix()) === 0) {
+        foreach (users_api_official_seal_directory_candidates() as $directory) {
+            $absolutePath = $directory . DIRECTORY_SEPARATOR . $fileName;
+            if (is_file($absolutePath)) {
+                return $absolutePath;
+            }
+        }
+        return '';
+    }
+
+    if (strpos($normalized, users_api_official_seal_legacy_public_prefix()) === 0) {
+        $absolutePath = __DIR__ . '/assets/img/official-seals/' . $fileName;
+        return is_file($absolutePath) ? $absolutePath : '';
+    }
+
+    return '';
+}
+
+function users_api_delete_official_seal_file(string $relativePath): void
+{
+    $absolutePath = users_api_official_seal_resolve_absolute_path($relativePath);
     if (is_file($absolutePath)) {
         @unlink($absolutePath);
     }
@@ -551,21 +743,40 @@ function users_api_backup_normalize_directory(string $path): string
 
 function users_api_backup_absolute_directory(): string
 {
-    $configuredDirectory = auth_env(['HIMS_BACKUP_STORAGE_DIR', 'BACKUP_STORAGE_DIR'], '');
-    if ($configuredDirectory !== '') {
-        return users_api_backup_normalize_directory($configuredDirectory);
-    }
-
-    $documentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
-    if ($documentRoot !== '') {
-        return users_api_backup_normalize_directory(
-            dirname($documentRoot) . DIRECTORY_SEPARATOR . 'hims-private' . DIRECTORY_SEPARATOR . 'backups'
-        );
-    }
-
-    return users_api_backup_normalize_directory(
-        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private-storage' . DIRECTORY_SEPARATOR . 'backups'
+    $candidates = users_api_storage_candidate_directories(
+        ['HIMS_BACKUP_STORAGE_DIR', 'BACKUP_STORAGE_DIR'],
+        'backups'
     );
+
+    return $candidates[0] ?? '';
+}
+
+/**
+ * @return array{directory:string,writable:bool}
+ */
+function users_api_backup_storage_status(): array
+{
+    $firstPreparedDirectory = '';
+
+    foreach (users_api_storage_candidate_directories(['HIMS_BACKUP_STORAGE_DIR', 'BACKUP_STORAGE_DIR'], 'backups') as $candidate) {
+        if (!users_api_backup_try_prepare_directory($candidate)) {
+            continue;
+        }
+        if ($firstPreparedDirectory === '') {
+            $firstPreparedDirectory = $candidate;
+        }
+        if (is_writable($candidate)) {
+            return [
+                'directory' => $candidate,
+                'writable' => true,
+            ];
+        }
+    }
+
+    return [
+        'directory' => $firstPreparedDirectory,
+        'writable' => false,
+    ];
 }
 
 function users_api_backup_try_prepare_directory(string $directory): bool
@@ -733,8 +944,10 @@ function users_api_backup_file_scope_metadata(string $absolutePath): array
  */
 function users_api_backup_list_files(): array
 {
-    $directory = users_api_backup_absolute_directory();
-    users_api_backup_try_prepare_directory($directory);
+    $directory = (string) (users_api_backup_storage_status()['directory'] ?? '');
+    if ($directory === '') {
+        return [];
+    }
     users_api_backup_migrate_legacy_files($directory);
     if (!is_dir($directory)) {
         return [];
@@ -824,13 +1037,14 @@ function users_api_backup_find_file_by_name(string $fileName): ?array
 
 function users_api_backup_ensure_directory(): string
 {
-    $directory = users_api_backup_absolute_directory();
-    if (!users_api_backup_try_prepare_directory($directory)) {
+    $status = users_api_backup_storage_status();
+    $directory = (string) ($status['directory'] ?? '');
+    if ($directory === '') {
         users_api_error(500, 'Unable to create backup storage directory.');
     }
     users_api_backup_migrate_legacy_files($directory);
 
-    if (!is_writable($directory)) {
+    if (($status['writable'] ?? false) !== true || !is_writable($directory)) {
         users_api_error(500, 'Backup storage directory is not writable.');
     }
 
@@ -842,16 +1056,34 @@ function users_api_backup_ensure_directory(): string
  */
 function users_api_backup_status_payload(): array
 {
+    $storageStatus = users_api_backup_storage_status();
+    $storageReady = ($storageStatus['writable'] ?? false) === true;
+    $restoreUploadLimitBytes = users_api_backup_effective_upload_limit_bytes();
+    $restoreUploadLimitLabel = users_api_backup_human_size($restoreUploadLimitBytes);
+    $downloadLimitLabel = users_api_backup_human_size(USERS_API_BACKUP_MAX_DOWNLOAD_BYTES);
+    $warningMessage = '';
+    if (!$storageReady) {
+        $warningMessage = 'Backup storage is not writable on this server right now.';
+    } elseif ($restoreUploadLimitBytes < USERS_API_BACKUP_MAX_UPLOAD_BYTES) {
+        $warningMessage = 'Restore uploads are limited to ' . $restoreUploadLimitLabel . ' by this server.';
+    }
+
     $latest = users_api_backup_latest_file();
     if (!is_array($latest)) {
         return [
             'available' => false,
             'schedule' => 'Manual Only',
             'storage_location' => 'Private Server Storage',
+            'storage_ready' => $storageReady,
             'last_backup_at' => '',
             'last_backup_size_bytes' => 0,
             'last_backup_size_label' => 'N/A',
             'last_backup_file_name' => '',
+            'restore_upload_limit_bytes' => $restoreUploadLimitBytes,
+            'restore_upload_limit_label' => $restoreUploadLimitLabel,
+            'download_limit_bytes' => USERS_API_BACKUP_MAX_DOWNLOAD_BYTES,
+            'download_limit_label' => $downloadLimitLabel,
+            'warning_message' => $warningMessage,
         ];
     }
 
@@ -859,10 +1091,16 @@ function users_api_backup_status_payload(): array
         'available' => true,
         'schedule' => 'Manual Only',
         'storage_location' => 'Private Server Storage',
+        'storage_ready' => $storageReady,
         'last_backup_at' => (string) ($latest['created_at'] ?? ''),
         'last_backup_size_bytes' => (int) ($latest['size_bytes'] ?? 0),
         'last_backup_size_label' => (string) ($latest['size_label'] ?? 'N/A'),
         'last_backup_file_name' => (string) ($latest['file_name'] ?? ''),
+        'restore_upload_limit_bytes' => $restoreUploadLimitBytes,
+        'restore_upload_limit_label' => $restoreUploadLimitLabel,
+        'download_limit_bytes' => USERS_API_BACKUP_MAX_DOWNLOAD_BYTES,
+        'download_limit_label' => $downloadLimitLabel,
+        'warning_message' => $warningMessage,
     ];
 }
 
@@ -1016,6 +1254,41 @@ function users_api_backup_table_names(PDO $pdo): array
 }
 
 /**
+ * @return array<int, array<string, string>>
+ */
+function users_api_database_setup_trigger_rows(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        'SELECT `TRIGGER_NAME`, `EVENT_OBJECT_TABLE`, `ACTION_TIMING`, `EVENT_MANIPULATION`, `ACTION_STATEMENT`
+         FROM `information_schema`.`TRIGGERS`
+         WHERE `TRIGGER_SCHEMA` = DATABASE()
+         ORDER BY `EVENT_OBJECT_TABLE` ASC, `TRIGGER_NAME` ASC'
+    );
+    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    $items = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $triggerName = trim((string) ($row['TRIGGER_NAME'] ?? ''));
+        if ($triggerName === '') {
+            continue;
+        }
+
+        $items[] = [
+            'trigger_name' => $triggerName,
+            'table_name' => trim((string) ($row['EVENT_OBJECT_TABLE'] ?? '')),
+            'action_timing' => strtoupper(trim((string) ($row['ACTION_TIMING'] ?? ''))),
+            'event_manipulation' => strtoupper(trim((string) ($row['EVENT_MANIPULATION'] ?? ''))),
+            'action_statement' => trim((string) ($row['ACTION_STATEMENT'] ?? '')),
+        ];
+    }
+
+    return $items;
+}
+
+/**
  * @return array<int, string>
  */
 function users_api_backup_household_table_allowlist(): array
@@ -1086,6 +1359,86 @@ function users_api_backup_required_sync_procedures(): array
     return [
         'sp_sync_registration_household' => '2026-02-25_create_sp_sync_registration_household.sql',
         'sp_sync_registration_member' => '2026-02-25_create_sp_sync_registration_member.sql',
+    ];
+}
+
+/**
+ * @param array<string, mixed> $triggerRow
+ */
+function users_api_backup_legacy_trigger_label(array $triggerRow): string
+{
+    return trim(
+        (string) ($triggerRow['trigger_name'] ?? '')
+        . ' on '
+        . (string) ($triggerRow['table_name'] ?? '')
+        . ' ('
+        . trim((string) ($triggerRow['action_timing'] ?? ''))
+        . ' '
+        . trim((string) ($triggerRow['event_manipulation'] ?? ''))
+        . ')'
+    );
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function users_api_backup_legacy_trigger_rows(PDO $pdo): array
+{
+    $items = [];
+    foreach (users_api_database_setup_trigger_rows($pdo) as $triggerRow) {
+        $actionStatement = strtolower((string) ($triggerRow['action_statement'] ?? ''));
+        $matchedProcedures = [];
+        foreach (array_keys(users_api_backup_required_sync_procedures()) as $procedureName) {
+            if (strpos($actionStatement, strtolower($procedureName)) !== false) {
+                $matchedProcedures[] = $procedureName;
+            }
+        }
+
+        $triggerName = trim((string) ($triggerRow['trigger_name'] ?? ''));
+        if ($matchedProcedures === [] || $triggerName === '' || preg_match('/^[A-Za-z0-9_]+$/', $triggerName) !== 1) {
+            continue;
+        }
+
+        $triggerRow['matched_procedures'] = $matchedProcedures;
+        $triggerRow['trigger_label'] = users_api_backup_legacy_trigger_label($triggerRow);
+        $items[] = $triggerRow;
+    }
+
+    return $items;
+}
+
+/**
+ * @return array{removed:array<int, string>,removed_count:int}
+ */
+function users_api_backup_remove_legacy_sync_triggers(PDO $pdo): array
+{
+    $removed = [];
+
+    foreach (users_api_backup_legacy_trigger_rows($pdo) as $triggerRow) {
+        $triggerName = trim((string) ($triggerRow['trigger_name'] ?? ''));
+        if ($triggerName === '') {
+            continue;
+        }
+
+        try {
+            $pdo->exec('DROP TRIGGER IF EXISTS ' . users_api_quote_identifier($triggerName));
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'Unable to remove legacy sync trigger ' . $triggerName . '. ' . $exception->getMessage(),
+                0,
+                $exception
+            );
+        }
+
+        $removedLabel = trim((string) ($triggerRow['trigger_label'] ?? ''));
+        $removed[] = $removedLabel !== '' ? $removedLabel : $triggerName;
+    }
+
+    $removed = array_values(array_unique(array_filter(array_map('trim', $removed))));
+
+    return [
+        'removed' => $removed,
+        'removed_count' => count($removed),
     ];
 }
 
@@ -1176,6 +1529,11 @@ function users_api_backup_execute_migration_sql(PDO $pdo, string $migrationFileN
 
 function users_api_backup_ensure_sync_procedures(PDO $pdo): void
 {
+    if (!auth_sync_routines_enabled()) {
+        users_api_backup_remove_legacy_sync_triggers($pdo);
+        return;
+    }
+
     foreach (users_api_backup_required_sync_procedures() as $procedureName => $migrationFileName) {
         if (users_api_backup_procedure_exists($pdo, $procedureName)) {
             continue;
@@ -1195,6 +1553,407 @@ function users_api_backup_ensure_sync_procedures(PDO $pdo): void
             throw new RuntimeException('Failed to install required database routine: ' . $procedureName . '.');
         }
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function users_api_database_setup_status(PDO $pdo): array
+{
+    $status = 'healthy';
+    $summary = 'Shared-hosting safe mode is active. No legacy sync triggers were detected.';
+    $details = [];
+    $actionItems = [];
+    $missingTables = [];
+    $missingMigrationFiles = [];
+    $missingProcedures = [];
+    $legacyTriggers = [];
+    $existingTablesLookup = [];
+    $routinesEnabled = auth_sync_routines_enabled();
+    $requiredProcedures = users_api_backup_required_sync_procedures();
+    $statusRanks = [
+        'healthy' => 0,
+        'warning' => 1,
+        'action_required' => 2,
+    ];
+    $escalateStatus = static function (string $nextStatus) use (&$status, $statusRanks): void {
+        $currentRank = $statusRanks[$status] ?? 0;
+        $nextRank = $statusRanks[$nextStatus] ?? $currentRank;
+        if ($nextRank > $currentRank) {
+            $status = $nextStatus;
+        }
+    };
+
+    try {
+        foreach (users_api_backup_scope_table_names($pdo) as $tableName) {
+            $normalizedTableName = strtolower(trim($tableName));
+            if ($normalizedTableName !== '') {
+                $existingTablesLookup[$normalizedTableName] = true;
+            }
+        }
+    } catch (Throwable $exception) {
+        $escalateStatus('warning');
+        $details[] = 'Unable to inspect registration tables with the current database user.';
+    }
+
+    $coreTables = [
+        'registration_households',
+        'registration_members',
+        'registration_residents',
+    ];
+    $presentCoreTableCount = 0;
+    foreach ($coreTables as $tableName) {
+        if (isset($existingTablesLookup[$tableName])) {
+            $presentCoreTableCount++;
+            continue;
+        }
+        $missingTables[] = $tableName;
+    }
+
+    if ($presentCoreTableCount > 0 && $presentCoreTableCount < count($coreTables)) {
+        $escalateStatus('action_required');
+        $details[] = 'Registration sync tables are incomplete. Missing: ' . implode(', ', $missingTables) . '.';
+        $actionItems[] = 'Repair or recreate the missing registration_* tables before using restore, rollover, or sync.';
+    } elseif ($presentCoreTableCount === 0) {
+        $escalateStatus('warning');
+        $details[] = 'Registration sync tables have not been created yet. This is normal on a fresh deployment, but restore and rollover should wait until the schema exists.';
+    } elseif (!isset($existingTablesLookup['registration_year_rollovers'])) {
+        $escalateStatus('warning');
+        $details[] = 'Rollover tracking table registration_year_rollovers is missing. The rollover feature may recreate it when database permissions allow.';
+    }
+
+    if ($routinesEnabled) {
+        try {
+            foreach ($requiredProcedures as $procedureName => $migrationFileName) {
+                if (!is_file(users_api_backup_migration_path($migrationFileName))) {
+                    $missingMigrationFiles[] = $migrationFileName;
+                }
+                if (!users_api_backup_procedure_exists($pdo, $procedureName)) {
+                    $missingProcedures[] = $procedureName;
+                }
+            }
+        } catch (Throwable $exception) {
+            $escalateStatus('warning');
+            $details[] = 'Unable to inspect stored procedures with the current database user.';
+        }
+
+        if ($missingMigrationFiles !== []) {
+            $escalateStatus('action_required');
+            $details[] = 'Required routine migration files are missing from the app files.';
+            $actionItems[] = 'Upload these SQL files to household-system/database/migrations: ' . implode(', ', array_values(array_unique($missingMigrationFiles))) . '.';
+        }
+
+        if ($missingProcedures !== []) {
+            $escalateStatus('action_required');
+            $details[] = 'Required sync procedures are missing from the database: ' . implode(', ', array_values(array_unique($missingProcedures))) . '.';
+            $actionItems[] = 'Import the create-procedure SQL files in Hostinger phpMyAdmin, or disable routine mode before going live on shared hosting.';
+        }
+    }
+
+    try {
+        foreach (users_api_backup_legacy_trigger_rows($pdo) as $triggerRow) {
+            $triggerLabel = trim((string) ($triggerRow['trigger_label'] ?? ''));
+            if ($triggerLabel !== '') {
+                $legacyTriggers[] = $triggerLabel;
+            }
+        }
+    } catch (Throwable $exception) {
+        $escalateStatus('warning');
+        $details[] = 'Unable to inspect database triggers with the current database user.';
+    }
+
+    if (!$routinesEnabled && $legacyTriggers !== []) {
+        $escalateStatus('action_required');
+        $details[] = 'Legacy sync triggers are still installed and will call old stored procedures on save or restore.';
+        $actionItems[] = 'Remove the old triggers that call sp_sync_registration_household or sp_sync_registration_member with the button below or in phpMyAdmin before using shared-hosting safe mode.';
+    } elseif ($routinesEnabled && $legacyTriggers === [] && $missingProcedures === []) {
+        $details[] = 'Routine mode is enabled and no legacy trigger mismatch was detected.';
+    } elseif (!$routinesEnabled && $legacyTriggers === []) {
+        $details[] = 'Routine mode is disabled, which is the recommended setup for shared hosting when no legacy triggers remain.';
+    }
+
+    if ($status === 'action_required') {
+        if (!$routinesEnabled && $legacyTriggers !== []) {
+            $summary = 'Action required: legacy sync triggers are still calling procedures that are disabled in shared-hosting mode.';
+        } elseif ($missingProcedures !== []) {
+            $summary = 'Action required: required database procedures are missing for the current routine-enabled setup.';
+        } elseif ($missingMigrationFiles !== []) {
+            $summary = 'Action required: required migration SQL files are missing from this deployment.';
+        } else {
+            $summary = 'Action required: the registration database schema is incomplete for live use.';
+        }
+    } elseif ($status === 'warning') {
+        if ($presentCoreTableCount === 0) {
+            $summary = 'Review needed: the registration tables have not been created yet on this database.';
+        } else {
+            $summary = 'Review needed: some database setup checks could not be fully verified for hosting.';
+        }
+    } elseif ($routinesEnabled) {
+        $summary = 'Database routines are enabled and the required setup looks ready.';
+    }
+
+    $uniqueLegacyTriggers = array_values(array_unique($legacyTriggers));
+
+    return [
+        'status' => $status,
+        'label' => $status === 'action_required'
+            ? 'Action Required'
+            : ($status === 'warning' ? 'Review Needed' : 'Ready'),
+        'summary' => $summary,
+        'details' => array_values(array_unique(array_filter(array_map('trim', $details)))),
+        'action_items' => array_values(array_unique(array_filter(array_map('trim', $actionItems)))),
+        'routines_enabled' => $routinesEnabled,
+        'missing_tables' => array_values(array_unique($missingTables)),
+        'missing_migration_files' => array_values(array_unique($missingMigrationFiles)),
+        'missing_procedures' => array_values(array_unique($missingProcedures)),
+        'legacy_triggers' => $uniqueLegacyTriggers,
+        'legacy_trigger_count' => count($uniqueLegacyTriggers),
+        'can_remove_legacy_triggers' => !$routinesEnabled && $uniqueLegacyTriggers !== [],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function users_api_environment_status(): array
+{
+    $requiredPhpVersion = '8.3.0';
+    $recommendedMaxPhpVersion = '8.4.x';
+    $phpVersion = PHP_VERSION;
+    $phpArchitecture = PHP_INT_SIZE === 8 ? '64-bit' : '32-bit';
+    $vendorAutoloadPath = __DIR__ . '/vendor/autoload.php';
+    $vendorAutoloadPresent = is_file($vendorAutoloadPath);
+    $pdoMysqlDriverReady = false;
+    if (class_exists('PDO')) {
+        try {
+            $pdoMysqlDriverReady = in_array('mysql', PDO::getAvailableDrivers(), true);
+        } catch (Throwable $exception) {
+            $pdoMysqlDriverReady = false;
+        }
+    }
+
+    $checks = [
+        [
+            'key' => 'php_version',
+            'label' => 'PHP 8.3 or newer',
+            'required' => true,
+            'ok' => PHP_VERSION_ID >= 80300,
+            'detail' => 'Detected PHP ' . $phpVersion . '.',
+        ],
+        [
+            'key' => 'php_supported_max',
+            'label' => 'PHP below 8.5',
+            'required' => true,
+            'ok' => PHP_VERSION_ID < 80500,
+            'detail' => 'The bundled PhpSpreadsheet version is intended for PHP versions below 8.5.',
+        ],
+        [
+            'key' => 'php_64bit',
+            'label' => '64-bit PHP build',
+            'required' => true,
+            'ok' => PHP_INT_SIZE === 8,
+            'detail' => 'Detected ' . $phpArchitecture . ' PHP.',
+        ],
+        [
+            'key' => 'vendor_autoload',
+            'label' => 'Composer vendor files',
+            'required' => true,
+            'ok' => $vendorAutoloadPresent,
+            'detail' => $vendorAutoloadPresent
+                ? 'vendor/autoload.php is present.'
+                : 'vendor/autoload.php is missing.',
+        ],
+        [
+            'key' => 'pdo_mysql',
+            'label' => 'PDO MySQL driver',
+            'required' => true,
+            'ok' => extension_loaded('pdo') && extension_loaded('pdo_mysql') && $pdoMysqlDriverReady,
+            'detail' => 'Required for the database connection.',
+        ],
+        [
+            'key' => 'ctype',
+            'label' => 'ctype',
+            'required' => true,
+            'ok' => extension_loaded('ctype') || function_exists('ctype_alpha'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'dom',
+            'label' => 'DOM',
+            'required' => true,
+            'ok' => extension_loaded('dom') && class_exists('DOMDocument'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'fileinfo',
+            'label' => 'fileinfo',
+            'required' => true,
+            'ok' => extension_loaded('fileinfo') && function_exists('finfo_open'),
+            'detail' => 'Required for upload MIME validation.',
+        ],
+        [
+            'key' => 'gd',
+            'label' => 'GD image library',
+            'required' => true,
+            'ok' => extension_loaded('gd') && function_exists('imagepng') && function_exists('imagecreatefrompng') && function_exists('imagecreatefromjpeg'),
+            'detail' => 'Required for official seal processing and export watermark rendering.',
+        ],
+        [
+            'key' => 'iconv',
+            'label' => 'iconv',
+            'required' => true,
+            'ok' => extension_loaded('iconv') || function_exists('iconv'),
+            'detail' => 'Used for export text conversion.',
+        ],
+        [
+            'key' => 'libxml',
+            'label' => 'libxml',
+            'required' => true,
+            'ok' => extension_loaded('libxml'),
+            'detail' => 'Required by XML-based spreadsheet readers and writers.',
+        ],
+        [
+            'key' => 'mbstring',
+            'label' => 'mbstring',
+            'required' => true,
+            'ok' => extension_loaded('mbstring') && function_exists('mb_strlen'),
+            'detail' => 'Required by ZipStream and PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'simplexml',
+            'label' => 'SimpleXML',
+            'required' => true,
+            'ok' => extension_loaded('simplexml') && function_exists('simplexml_load_string'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'xml',
+            'label' => 'XML',
+            'required' => true,
+            'ok' => extension_loaded('xml'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'xmlreader',
+            'label' => 'XMLReader',
+            'required' => true,
+            'ok' => extension_loaded('xmlreader') && class_exists('XMLReader'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'xmlwriter',
+            'label' => 'XMLWriter',
+            'required' => true,
+            'ok' => extension_loaded('xmlwriter') && class_exists('XMLWriter'),
+            'detail' => 'Required by PhpSpreadsheet.',
+        ],
+        [
+            'key' => 'zip',
+            'label' => 'ZIP',
+            'required' => true,
+            'ok' => extension_loaded('zip') && class_exists('ZipArchive'),
+            'detail' => 'Required by PhpSpreadsheet Excel export.',
+        ],
+        [
+            'key' => 'zlib',
+            'label' => 'zlib',
+            'required' => true,
+            'ok' => extension_loaded('zlib') && function_exists('gzencode'),
+            'detail' => 'Required by FPDF and ZipStream.',
+        ],
+        [
+            'key' => 'intl',
+            'label' => 'intl',
+            'required' => false,
+            'ok' => extension_loaded('intl'),
+            'detail' => 'Optional for richer locale-aware formatting.',
+        ],
+    ];
+
+    $failedRequired = [];
+    $failedOptional = [];
+    foreach ($checks as $check) {
+        if (($check['ok'] ?? false) === true) {
+            continue;
+        }
+        if (($check['required'] ?? false) === true) {
+            $failedRequired[] = $check;
+        } else {
+            $failedOptional[] = $check;
+        }
+    }
+
+    $details = [];
+    $actionItems = [];
+    if ($failedRequired !== []) {
+        foreach ($failedRequired as $check) {
+            $details[] = $check['label'] . ' is missing or not ready. ' . $check['detail'];
+            switch ((string) ($check['key'] ?? '')) {
+                case 'php_version':
+                    $actionItems[] = 'Switch the hosting PHP version to 8.3 or newer in Hostinger hPanel.';
+                    break;
+                case 'php_64bit':
+                    $actionItems[] = 'Use a 64-bit PHP environment because the installed Composer packages require it.';
+                    break;
+                case 'php_supported_max':
+                    $actionItems[] = 'Use PHP 8.3 or 8.4 on hosting, because the bundled spreadsheet package is not declared for PHP 8.5+.';
+                    break;
+                case 'vendor_autoload':
+                    $actionItems[] = 'Run composer install locally, then upload the full vendor/ directory with the app files.';
+                    break;
+                case 'pdo_mysql':
+                    $actionItems[] = 'Enable PDO MySQL on the hosting account, or move the app to a PHP environment that includes it.';
+                    break;
+                case 'gd':
+                    $actionItems[] = 'Enable the GD extension so official seal uploads and report watermarking can work.';
+                    break;
+                case 'zip':
+                    $actionItems[] = 'Enable the ZIP extension so Excel exports can be generated.';
+                    break;
+                default:
+                    $actionItems[] = 'Enable the PHP extension or platform requirement for ' . $check['label'] . '.';
+                    break;
+            }
+        }
+    }
+
+    if ($failedOptional !== []) {
+        foreach ($failedOptional as $check) {
+            $details[] = $check['label'] . ' is optional and currently unavailable. ' . $check['detail'];
+        }
+    }
+
+    $status = 'healthy';
+    if ($failedRequired !== []) {
+        $status = 'action_required';
+    } elseif ($failedOptional !== []) {
+        $status = 'warning';
+    }
+
+    $summary = 'Detected PHP ' . $phpVersion . ' (' . $phpArchitecture . '). Required environment checks and Composer vendor files look ready.';
+    if ($status === 'action_required') {
+        $failedLabels = array_map(static fn (array $check): string => (string) ($check['label'] ?? ''), $failedRequired);
+        $summary = 'Action required: PHP environment is not ready for this app. Detected PHP ' . $phpVersion . ' (' . $phpArchitecture . '). Missing or incompatible items: ' . implode(', ', array_filter($failedLabels)) . '.';
+    } elseif ($status === 'warning') {
+        $optionalLabels = array_map(static fn (array $check): string => (string) ($check['label'] ?? ''), $failedOptional);
+        $summary = 'Review needed: PHP ' . $phpVersion . ' (' . $phpArchitecture . ') is usable, but some optional environment features are unavailable: ' . implode(', ', array_filter($optionalLabels)) . '.';
+    }
+
+    return [
+        'status' => $status,
+        'label' => $status === 'action_required'
+            ? 'Action Required'
+            : ($status === 'warning' ? 'Review Needed' : 'Ready'),
+        'summary' => $summary,
+        'details' => array_values(array_unique(array_filter(array_map('trim', $details)))),
+        'action_items' => array_values(array_unique(array_filter(array_map('trim', $actionItems)))),
+        'php_version' => $phpVersion,
+        'required_php_version' => $requiredPhpVersion,
+        'recommended_max_php_version' => $recommendedMaxPhpVersion,
+        'php_architecture' => $phpArchitecture,
+        'vendor_autoload_present' => $vendorAutoloadPresent,
+        'checks' => $checks,
+    ];
 }
 
 function users_api_backup_database_name(PDO $pdo): string
@@ -1483,7 +2242,9 @@ function users_api_uploaded_backup_file(): array
         users_api_error(422, 'Backup file is required.');
     }
     if ($error !== UPLOAD_ERR_OK) {
-        users_api_error(422, 'Failed to upload backup file.');
+        $message = users_api_upload_error_message($error, users_api_backup_upload_limit_message());
+        $statusCode = in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) ? 413 : 422;
+        users_api_error($statusCode, $message);
     }
 
     $tmpPath = (string) ($file['tmp_name'] ?? '');
@@ -1495,8 +2256,8 @@ function users_api_uploaded_backup_file(): array
     if ($size <= 0) {
         users_api_error(422, 'Uploaded backup file is empty.');
     }
-    if ($size > USERS_API_BACKUP_MAX_UPLOAD_BYTES) {
-        users_api_error(413, 'Backup file must be 25MB or less.');
+    if ($size > users_api_backup_effective_upload_limit_bytes()) {
+        users_api_error(413, users_api_backup_upload_limit_message());
     }
 
     $fileName = users_api_backup_normalized_file_name($file['name'] ?? '', false);
@@ -1702,7 +2463,7 @@ function users_api_backup_download_payload(array $fileMeta): array
         users_api_error(500, 'Backup file is empty.');
     }
     if ($sizeBytes > USERS_API_BACKUP_MAX_DOWNLOAD_BYTES) {
-        users_api_error(413, 'Backup file is too large to download via API.');
+        users_api_error(413, 'Backup file is too large to download via API. Maximum supported size is ' . users_api_backup_human_size(USERS_API_BACKUP_MAX_DOWNLOAD_BYTES) . '.');
     }
 
     $raw = file_get_contents($absolutePath);
@@ -1730,14 +2491,26 @@ function users_api_backup_restore_friendly_error(Throwable $exception): string
         || strpos($message, 'failed to install required database routine') !== false
         || strpos($message, 'missing migration file') !== false
     ) {
-        return 'Restore failed: required database sync routines are missing. Please run migrations and try again.';
+        return auth_sync_routines_enabled()
+            ? 'Restore failed: required database sync routines are missing. Please run migrations and try again.'
+            : 'Restore failed: legacy database triggers are calling missing sync routines. Remove the old triggers from the database, or enable AUTH_ENABLE_SYNC_ROUTINES=1 on a server that allows routines.';
     }
 
     if (
         (strpos($message, 'procedure') !== false && strpos($message, 'does not exist') !== false)
         || strpos($message, 'create routine command denied') !== false
     ) {
-        return 'Restore failed: database sync routines are missing or not allowed for this database user.';
+        return auth_sync_routines_enabled()
+            ? 'Restore failed: database sync routines are missing or not allowed for this database user.'
+            : 'Restore failed: legacy database triggers are calling missing sync routines. Remove the old triggers from the database, or enable AUTH_ENABLE_SYNC_ROUTINES=1 on a server that allows routines.';
+    }
+
+    if (
+        strpos($message, 'unable to remove legacy sync trigger') !== false
+        || strpos($message, 'trigger command denied') !== false
+        || strpos($message, 'drop trigger command denied') !== false
+    ) {
+        return 'Restore failed: legacy database triggers could not be removed with the current database user. Remove them in phpMyAdmin, or use a database user that can drop triggers.';
     }
 
     if (
@@ -1805,6 +2578,8 @@ function users_api_settings_payload(PDO $pdo, array $authUser): array
         'active_users' => users_api_active_accounts($pdo),
         'barangay_profile' => users_api_barangay_profile($pdo),
         'backup_status' => users_api_backup_status_payload(),
+        'database_setup_status' => users_api_database_setup_status($pdo),
+        'environment_status' => users_api_environment_status(),
         'backup_year_options' => users_api_backup_available_years($pdo),
     ];
 }
@@ -1894,6 +2669,10 @@ if ($requestMethod === 'GET') {
 
 if ($requestMethod !== 'POST') {
     users_api_error(405, 'Method not allowed.');
+}
+
+if (users_api_upload_request_exceeds_server_limit()) {
+    users_api_error(413, users_api_upload_request_limit_message());
 }
 
 $csrfToken = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
@@ -2139,13 +2918,7 @@ try {
 
         $officialSealPath = $existingSealPath;
         if (is_array($sealUpload)) {
-            $sealDirectory = __DIR__ . '/assets/img/official-seals';
-            if (!is_dir($sealDirectory)) {
-                $created = @mkdir($sealDirectory, 0775, true);
-                if ($created !== true && !is_dir($sealDirectory)) {
-                    users_api_error(500, 'Unable to create official seal storage directory.');
-                }
-            }
+            $sealDirectory = users_api_official_seal_absolute_directory();
 
             $token = '';
             try {
@@ -2159,7 +2932,7 @@ try {
             if (!is_int($savedBytes) || $savedBytes <= 0) {
                 users_api_error(500, 'Unable to save official seal image.');
             }
-            $officialSealPath = 'assets/img/official-seals/' . $fileName;
+            $officialSealPath = users_api_official_seal_storage_prefix() . $fileName;
         }
 
         $stmt = $pdo->prepare(
@@ -2221,6 +2994,57 @@ try {
             'success' => true,
             'message' => 'Barangay profile saved successfully.',
             'data' => users_api_settings_payload($pdo, $authUser),
+        ]);
+    }
+
+    if ($action === 'remove_legacy_sync_triggers') {
+        users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
+
+        if (auth_sync_routines_enabled()) {
+            users_api_error(409, 'Disable routine mode before removing legacy sync triggers.');
+        }
+
+        try {
+            $cleanup = users_api_backup_remove_legacy_sync_triggers($pdo);
+        } catch (Throwable $exception) {
+            $message = strtolower(trim($exception->getMessage()));
+            if (
+                strpos($message, 'unable to inspect database triggers') !== false
+                || strpos($message, 'access denied') !== false
+                || strpos($message, 'trigger command denied') !== false
+            ) {
+                users_api_error(422, 'Unable to remove legacy sync triggers with the current database user. Drop them in phpMyAdmin, then refresh this page.');
+            }
+            throw $exception;
+        }
+
+        $removed = is_array($cleanup['removed'] ?? null)
+            ? array_values(array_unique(array_filter(array_map('strval', $cleanup['removed']))))
+            : [];
+        $removedCount = (int) ($cleanup['removed_count'] ?? count($removed));
+
+        users_api_audit_log(
+            $authUser,
+            'settings_legacy_sync_triggers_removed',
+            'deleted',
+            $removedCount > 0
+                ? 'Removed legacy registration sync triggers.'
+                : 'Checked for legacy registration sync triggers.',
+            'database_trigger',
+            'legacy_sync_cleanup',
+            [
+                'removed_count' => $removedCount,
+                'removed_triggers' => $removed,
+            ]
+        );
+
+        users_api_respond(200, [
+            'success' => true,
+            'message' => $removedCount > 0
+                ? 'Legacy registration sync triggers removed. Shared-hosting safe mode is ready.'
+                : 'No legacy registration sync triggers were found.',
+            'data' => users_api_settings_payload($pdo, $authUser),
+            'cleanup' => $cleanup,
         ]);
     }
 

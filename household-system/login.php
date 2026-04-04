@@ -14,6 +14,12 @@ $errorMessage = '';
 
 auth_bootstrap_store();
 $setupRequired = auth_setup_required(auth_db());
+$setupAllowed = $setupRequired && auth_initial_setup_allowed();
+$setupLocked = $setupRequired && !$setupAllowed;
+
+if ($setupLocked) {
+    $errorMessage = auth_initial_setup_lock_message();
+}
 
 if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
     $fullNameInput = trim((string) ($_POST['full_name'] ?? ''));
@@ -25,7 +31,9 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
     if (!auth_csrf_valid($csrfToken)) {
         $errorMessage = 'Your session expired. Please try signing in again.';
     } elseif ($setupRequired) {
-        if ($fullNameInput === '' || $usernameInput === '' || $passwordInput === '' || $passwordConfirmInput === '') {
+        if (!$setupAllowed) {
+            $errorMessage = auth_initial_setup_lock_message();
+        } elseif ($fullNameInput === '' || $usernameInput === '' || $passwordInput === '' || $passwordConfirmInput === '') {
             $errorMessage = 'Complete all fields to create the first captain account.';
         } elseif ($passwordInput !== $passwordConfirmInput) {
             $errorMessage = 'Passwords do not match.';
@@ -60,6 +68,11 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
     }
 
     $setupRequired = auth_setup_required(auth_db());
+    $setupAllowed = $setupRequired && auth_initial_setup_allowed();
+    $setupLocked = $setupRequired && !$setupAllowed;
+    if ($setupLocked && $errorMessage === '') {
+        $errorMessage = auth_initial_setup_lock_message();
+    }
 }
 
 $csrfToken = auth_csrf_token();
@@ -89,6 +102,16 @@ if (stripos($brandLabel, 'barangay') !== 0) {
 $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
 $loginStyleVersion = @filemtime(__DIR__ . '/assets/css/login-style.css');
 $loginStyleHref = 'assets/css/login-style.css' . ($loginStyleVersion ? '?v=' . rawurlencode((string) $loginStyleVersion) : '');
+$panelEyebrow = $setupLocked ? 'Setup Locked' : ($setupRequired ? 'System Setup' : 'Welcome back');
+$panelHeading = $setupLocked
+    ? 'Initial setup is disabled on this server'
+    : ($setupRequired ? 'Create the first captain account' : 'Sign in to your account');
+$panelDescription = $setupLocked
+    ? 'Initial account creation is currently disabled by server configuration.'
+    : ($setupRequired
+        ? 'No user accounts exist yet. Complete the secure first-time setup before going online.'
+        : 'Use your assigned credentials to continue.');
+$formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login';
 ?>
 <!doctype html>
 <html lang="en">
@@ -133,74 +156,83 @@ $loginStyleHref = 'assets/css/login-style.css' . ($loginStyleVersion ? '?v=' . r
 
       <section class="form-panel reveal delay-2">
         <div class="form-head">
-          <span class="eyebrow"><?= $setupRequired ? 'System Setup' : 'Welcome back' ?></span>
-          <h2><?= $setupRequired ? 'Create the first captain account' : 'Sign in to your account' ?></h2>
-          <p><?= $setupRequired ? 'No user accounts exist yet. Complete the secure first-time setup before going online.' : 'Use your assigned credentials to continue.' ?></p>
+          <span class="eyebrow"><?= htmlspecialchars($panelEyebrow, ENT_QUOTES, 'UTF-8') ?></span>
+          <h2><?= htmlspecialchars($panelHeading, ENT_QUOTES, 'UTF-8') ?></h2>
+          <p><?= htmlspecialchars($panelDescription, ENT_QUOTES, 'UTF-8') ?></p>
         </div>
 
-        <form id="loginForm" class="login-form" autocomplete="on" method="post" action="login.php" data-mode="<?= $setupRequired ? 'setup' : 'login' ?>" novalidate>
-          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+        <?php if ($setupLocked): ?>
+          <div id="error" class="form-error is-visible" role="alert" aria-live="polite">
+            <?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?>
+          </div>
+          <p class="small text-muted mb-0">
+            Remove <code>AUTH_DISABLE_INITIAL_SETUP=1</code> or <code>HIMS_DISABLE_INITIAL_SETUP=1</code> from your server config to continue.
+          </p>
+        <?php else: ?>
+          <form id="loginForm" class="login-form" autocomplete="on" method="post" action="login.php" data-mode="<?= htmlspecialchars($formMode, ENT_QUOTES, 'UTF-8') ?>" novalidate>
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
 
-          <?php if ($setupRequired): ?>
+            <?php if ($setupRequired): ?>
+              <div class="field">
+                <label for="full_name">Captain Full Name</label>
+                <div class="input-wrap">
+                  <i class="bi bi-person-badge"></i>
+                  <input
+                    type="text"
+                    id="full_name"
+                    name="full_name"
+                    class="form-control"
+                    placeholder="Enter full name"
+                    autocomplete="name"
+                    value="<?php echo htmlspecialchars($fullNameInput, ENT_QUOTES, 'UTF-8'); ?>"
+                    required
+                  >
+                </div>
+              </div>
+            <?php endif; ?>
+
             <div class="field">
-              <label for="full_name">Captain Full Name</label>
+              <label for="username">Username</label>
               <div class="input-wrap">
-                <i class="bi bi-person-badge"></i>
+                <i class="bi bi-person"></i>
                 <input
                   type="text"
-                  id="full_name"
-                  name="full_name"
+                  id="username"
+                  name="username"
                   class="form-control"
-                  placeholder="Enter full name"
-                  autocomplete="name"
-                  value="<?php echo htmlspecialchars($fullNameInput, ENT_QUOTES, 'UTF-8'); ?>"
+                  placeholder="Enter your username"
+                  autocomplete="username"
+                  value="<?php echo htmlspecialchars($usernameInput, ENT_QUOTES, 'UTF-8'); ?>"
                   required
                 >
               </div>
             </div>
-          <?php endif; ?>
 
-          <div class="field">
-            <label for="username">Username</label>
-            <div class="input-wrap">
-              <i class="bi bi-person"></i>
-              <input
-                type="text"
-                id="username"
-                name="username"
-                class="form-control"
-                placeholder="Enter your username"
-                autocomplete="username"
-                value="<?php echo htmlspecialchars($usernameInput, ENT_QUOTES, 'UTF-8'); ?>"
-                required
-              >
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="password">Password</label>
-            <div class="input-wrap">
-              <i class="bi bi-lock"></i>
-              <input type="password" id="password" name="password" class="form-control" placeholder="<?= $setupRequired ? '8+ chars, include 1 special character' : 'Enter your password' ?>" autocomplete="<?= $setupRequired ? 'new-password' : 'current-password' ?>" required>
-            </div>
-          </div>
-
-          <?php if ($setupRequired): ?>
             <div class="field">
-              <label for="password_confirm">Confirm Password</label>
+              <label for="password">Password</label>
               <div class="input-wrap">
-                <i class="bi bi-shield-lock"></i>
-                <input type="password" id="password_confirm" name="password_confirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password" required>
+                <i class="bi bi-lock"></i>
+                <input type="password" id="password" name="password" class="form-control" placeholder="<?= $setupRequired ? '8+ chars, include 1 special character' : 'Enter your password' ?>" autocomplete="<?= $setupRequired ? 'new-password' : 'current-password' ?>" required>
               </div>
             </div>
-          <?php endif; ?>
 
-          <div id="error" class="form-error<?php echo $errorMessage !== '' ? ' is-visible' : ''; ?>" role="alert" aria-live="polite">
-            <?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?>
-          </div>
+            <?php if ($setupRequired): ?>
+              <div class="field">
+                <label for="password_confirm">Confirm Password</label>
+                <div class="input-wrap">
+                  <i class="bi bi-shield-lock"></i>
+                  <input type="password" id="password_confirm" name="password_confirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password" required>
+                </div>
+              </div>
+            <?php endif; ?>
 
-          <button id="loginBtn" class="btn btn-primary w-100" type="submit"><?= $setupRequired ? 'Create Secure Account' : 'Sign In' ?></button>
-        </form>
+            <div id="error" class="form-error<?php echo $errorMessage !== '' ? ' is-visible' : ''; ?>" role="alert" aria-live="polite">
+              <?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?>
+            </div>
+
+            <button id="loginBtn" class="btn btn-primary w-100" type="submit"><?= $setupRequired ? 'Create Secure Account' : 'Sign In' ?></button>
+          </form>
+        <?php endif; ?>
       </section>
     </div>
   </div>

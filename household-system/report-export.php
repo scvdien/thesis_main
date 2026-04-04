@@ -270,6 +270,16 @@ function envValue(array $keys, string $default = ''): string
 }
 
 /**
+ * @param array<int, string> $keys
+ */
+function envFlag(array $keys, bool $default = false): bool
+{
+    $value = strtolower(envValue($keys, $default ? '1' : '0'));
+
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+/**
  * @return array<int, string>
  */
 function envList(array $keys): array
@@ -313,6 +323,103 @@ function excelCliPhpCandidates(): array
     return array_values(array_unique($candidates));
 }
 
+function excelCliFallbackEnabled(): bool
+{
+    return envFlag([
+        'REPORT_EXPORT_ENABLE_CLI_FALLBACK',
+        'EXCEL_EXPORT_ENABLE_CLI_FALLBACK',
+        'ENABLE_REPORT_EXPORT_CLI_FALLBACK',
+    ], false);
+}
+
+function reportNormalizeDirectory(string $path): string
+{
+    $normalized = trim($path);
+    if ($normalized === '') {
+        return '';
+    }
+
+    $normalized = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $normalized);
+
+    return rtrim($normalized, DIRECTORY_SEPARATOR);
+}
+
+/**
+ * @return array<int, string>
+ */
+function reportTempDirectoryCandidates(): array
+{
+    $candidates = [];
+
+    $configured = envValue([
+        'REPORT_EXPORT_TEMP_DIR',
+        'HIMS_TEMP_DIR',
+        'TEMP_STORAGE_DIR',
+    ], '');
+    if ($configured !== '') {
+        $candidates[] = reportNormalizeDirectory($configured);
+    }
+
+    $documentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+    if ($documentRoot !== '') {
+        $candidates[] = reportNormalizeDirectory(
+            dirname($documentRoot) . DIRECTORY_SEPARATOR . 'hims-private' . DIRECTORY_SEPARATOR . 'tmp'
+        );
+    }
+
+    $candidates[] = reportNormalizeDirectory(
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private-storage' . DIRECTORY_SEPARATOR . 'tmp'
+    );
+
+    $systemTemp = trim((string) sys_get_temp_dir());
+    if ($systemTemp !== '') {
+        $candidates[] = reportNormalizeDirectory($systemTemp);
+    }
+
+    $resolved = [];
+    foreach ($candidates as $candidate) {
+        if ($candidate !== '') {
+            $resolved[] = $candidate;
+        }
+    }
+
+    return array_values(array_unique($resolved));
+}
+
+function reportTempDirectory(): string
+{
+    static $resolved = null;
+    if (is_string($resolved) && $resolved !== '') {
+        return $resolved;
+    }
+
+    foreach (reportTempDirectoryCandidates() as $directory) {
+        if (!is_dir($directory)) {
+            $created = @mkdir($directory, 0775, true);
+            if ($created !== true && !is_dir($directory)) {
+                continue;
+            }
+        }
+
+        if (is_writable($directory)) {
+            $resolved = $directory;
+            return $directory;
+        }
+    }
+
+    throw new RuntimeException('Unable to create a writable report temp directory.');
+}
+
+function reportCreateTempFile(string $prefix): string
+{
+    $tempFile = tempnam(reportTempDirectory(), $prefix);
+    if (!is_string($tempFile) || $tempFile === '') {
+        throw new RuntimeException('Unable to allocate a temporary report file.');
+    }
+
+    return $tempFile;
+}
+
 function findExcelCliPhpBinary(): ?string
 {
     foreach (excelCliPhpCandidates() as $candidate) {
@@ -329,11 +436,11 @@ function exportSpreadsheetUsingExternalPhp(
     string $phpBinary,
     ?string &$errorMessage = null
 ): ?string {
-    $tmpDir = sys_get_temp_dir();
-    $inputFile = tempnam($tmpDir, 'hims_xlsx_in_');
-    $outputBase = tempnam($tmpDir, 'hims_xlsx_out_');
-    if (!is_string($inputFile) || !is_string($outputBase)) {
-        $errorMessage = 'Unable to allocate temporary files for Excel export.';
+    try {
+        $inputFile = reportCreateTempFile('hims_xlsx_in_');
+        $outputBase = reportCreateTempFile('hims_xlsx_out_');
+    } catch (Throwable $exception) {
+        $errorMessage = $exception->getMessage();
         return null;
     }
 
@@ -597,13 +704,41 @@ function reportOfficialSealAbsolutePath(array $profile): string
     }
 
     $normalized = ltrim(trim(str_replace('\\', '/', $relativePath)), '/');
-    $prefix = 'assets/img/official-seals/';
-    if (strpos($normalized, $prefix) !== 0) {
+    $fileName = basename($normalized);
+    if ($fileName === '' || $fileName === '.' || $fileName === '..') {
         return '';
     }
 
-    $fileName = basename($normalized);
-    if ($fileName === '' || $fileName === '.' || $fileName === '..') {
+    $storagePrefix = 'storage/official-seals/';
+    if (strpos($normalized, $storagePrefix) === 0) {
+        $candidates = [];
+        $configuredDirectory = envValue(['HIMS_OFFICIAL_SEAL_STORAGE_DIR', 'OFFICIAL_SEAL_STORAGE_DIR'], '');
+        if ($configuredDirectory !== '') {
+            $candidates[] = reportNormalizeDirectory($configuredDirectory);
+        }
+
+        $documentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+        if ($documentRoot !== '') {
+            $candidates[] = reportNormalizeDirectory(
+                dirname($documentRoot) . DIRECTORY_SEPARATOR . 'hims-private' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'official-seals'
+            );
+        }
+
+        $candidates[] = reportNormalizeDirectory(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'private-storage' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'official-seals'
+        );
+
+        foreach (array_values(array_unique(array_filter($candidates, static fn (string $candidate): bool => $candidate !== ''))) as $directory) {
+            $absolutePath = $directory . DIRECTORY_SEPARATOR . $fileName;
+            if (is_file($absolutePath)) {
+                return $absolutePath;
+            }
+        }
+        return '';
+    }
+
+    $legacyPrefix = 'assets/img/official-seals/';
+    if (strpos($normalized, $legacyPrefix) !== 0) {
         return '';
     }
 
@@ -713,8 +848,9 @@ function prepareFpdfWatermarkImage(string $absoluteSealPath): array
         $sourceHeight
     );
 
-    $tempBase = tempnam(sys_get_temp_dir(), 'hims_pdf_wm_');
-    if (!is_string($tempBase) || $tempBase === '') {
+    try {
+        $tempBase = reportCreateTempFile('hims_pdf_wm_');
+    } catch (Throwable $exception) {
         imagedestroy($canvas);
         imagedestroy($source);
         return $fallback;
@@ -2355,7 +2491,7 @@ if ($format === 'pdf') {
     outputPdf($report, $profile);
 }
 
-if ($format === 'xlsx' && PHP_VERSION_ID < 80300) {
+if ($format === 'xlsx' && excelCliFallbackEnabled() && PHP_VERSION_ID < 80300) {
     $excelPhpBinary = findExcelCliPhpBinary();
     if (is_string($excelPhpBinary) && $excelPhpBinary !== '') {
         $externalError = '';

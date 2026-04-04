@@ -160,7 +160,7 @@ const SETTINGS_AUDIT_FETCH_LIMIT = 200;
 const ACTIVE_USERS_REFRESH_INTERVAL_MS = 30000;
 const BARANGAY_PROFILE_SEAL_MAX_SIZE_BYTES = 2 * 1024 * 1024;
 const BARANGAY_PROFILE_SEAL_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-const BACKUP_RESTORE_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const BACKUP_RESTORE_PRIORITY_NOTICE = 'Run Backup first before restoring. Restoring will overwrite current household and resident records.';
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
@@ -171,6 +171,8 @@ const settingsState = {
   activeUsers: [],
   barangayProfile: null,
   backupStatus: null,
+  databaseSetupStatus: null,
+  environmentStatus: null,
   backupYearOptions: []
 };
 const backupSelectionState = {
@@ -310,6 +312,16 @@ const barangayProfileSaveBtn = document.getElementById('barangayProfileSaveBtn')
 const barangayProfileNotice = document.getElementById('barangayProfileNotice');
 const backupRestorePanel = document.getElementById('backup-restore');
 const backupHealthBadge = document.getElementById('backupHealthBadge');
+const backupDatabaseCompatCard = document.getElementById('backupDatabaseCompatCard');
+const backupDatabaseCompatBadge = document.getElementById('backupDatabaseCompatBadge');
+const backupDatabaseCompatText = document.getElementById('backupDatabaseCompatText');
+const backupDatabaseCompatList = document.getElementById('backupDatabaseCompatList');
+const backupDatabaseCompatActions = document.getElementById('backupDatabaseCompatActions');
+const backupDatabaseCompatFixBtn = document.getElementById('backupDatabaseCompatFixBtn');
+const backupEnvironmentCard = document.getElementById('backupEnvironmentCard');
+const backupEnvironmentBadge = document.getElementById('backupEnvironmentBadge');
+const backupEnvironmentText = document.getElementById('backupEnvironmentText');
+const backupEnvironmentList = document.getElementById('backupEnvironmentList');
 const backupScheduleSelect = document.getElementById('backupScheduleSelect');
 const backupStorageLocationSelect = document.getElementById('backupStorageLocationSelect');
 const backupCoverageSelect = document.getElementById('backupCoverageSelect');
@@ -514,20 +526,124 @@ const normalizeBarangayProfile = (profile) => {
   };
 };
 
+const normalizeStringArray = (value) => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  ));
+};
+
 const normalizeBackupStatus = (status) => {
   const row = status && typeof status === 'object' ? status : {};
   const rawSize = Number(row.last_backup_size_bytes ?? row.lastBackupSizeBytes ?? 0);
   const sizeBytes = Number.isFinite(rawSize) && rawSize > 0 ? Math.trunc(rawSize) : 0;
   const fileName = String(row.last_backup_file_name || row.lastBackupFileName || '').trim();
   const available = row.available === true || sizeBytes > 0 || fileName !== '';
+  const rawRestoreLimit = Number(row.restore_upload_limit_bytes ?? row.restoreUploadLimitBytes ?? DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES);
+  const restoreUploadLimitBytes = Number.isFinite(rawRestoreLimit) && rawRestoreLimit > 0
+    ? Math.trunc(rawRestoreLimit)
+    : DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES;
+  const rawDownloadLimit = Number(row.download_limit_bytes ?? row.downloadLimitBytes ?? DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES);
+  const downloadLimitBytes = Number.isFinite(rawDownloadLimit) && rawDownloadLimit > 0
+    ? Math.trunc(rawDownloadLimit)
+    : DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES;
   return {
     available,
     schedule: String(row.schedule || 'Manual Only').trim() || 'Manual Only',
     storageLocation: String(row.storage_location || row.storageLocation || 'Local Server').trim() || 'Local Server',
+    storageReady: row.storage_ready !== false && row.storageReady !== false,
     lastBackupAt: String(row.last_backup_at || row.lastBackupAt || '').trim(),
     lastBackupSizeBytes: sizeBytes,
     lastBackupSizeLabel: String(row.last_backup_size_label || row.lastBackupSizeLabel || '').trim(),
-    lastBackupFileName: fileName
+    lastBackupFileName: fileName,
+    restoreUploadLimitBytes,
+    restoreUploadLimitLabel: String(row.restore_upload_limit_label || row.restoreUploadLimitLabel || '').trim() || formatBackupSize(restoreUploadLimitBytes),
+    downloadLimitBytes,
+    downloadLimitLabel: String(row.download_limit_label || row.downloadLimitLabel || '').trim() || formatBackupSize(downloadLimitBytes),
+    warningMessage: String(row.warning_message || row.warningMessage || '').trim()
+  };
+};
+
+const normalizeDatabaseSetupStatus = (status) => {
+  const row = status && typeof status === 'object' ? status : null;
+  const normalizedStatus = String(row?.status || '').trim().toLowerCase();
+  const statusValue = normalizedStatus === 'action_required'
+    ? 'action_required'
+    : normalizedStatus === 'warning'
+      ? 'warning'
+      : 'healthy';
+  const checked = !!row;
+  const defaultLabel = !checked
+    ? 'Checking'
+    : statusValue === 'action_required'
+      ? 'Action Required'
+      : statusValue === 'warning'
+        ? 'Review Needed'
+        : 'Ready';
+  const defaultSummary = !checked
+    ? 'Checking database migrations, tables, and legacy trigger setup...'
+    : statusValue === 'action_required'
+      ? 'Database setup still needs manual action before live restore or sync.'
+      : statusValue === 'warning'
+        ? 'Review the database setup before going live on shared hosting.'
+        : 'Database setup looks ready for hosted use.';
+  const rawLegacyTriggerCount = Number(row?.legacy_trigger_count ?? row?.legacyTriggerCount ?? 0);
+  return {
+    checked,
+    status: statusValue,
+    label: String(row?.label || row?.status_label || row?.statusLabel || '').trim() || defaultLabel,
+    summary: String(row?.summary || '').trim() || defaultSummary,
+    details: normalizeStringArray(row?.details),
+    actionItems: normalizeStringArray(row?.action_items ?? row?.actionItems),
+    routinesEnabled: row?.routines_enabled === true || row?.routinesEnabled === true,
+    missingTables: normalizeStringArray(row?.missing_tables ?? row?.missingTables),
+    missingMigrationFiles: normalizeStringArray(row?.missing_migration_files ?? row?.missingMigrationFiles),
+    missingProcedures: normalizeStringArray(row?.missing_procedures ?? row?.missingProcedures),
+    legacyTriggers: normalizeStringArray(row?.legacy_triggers ?? row?.legacyTriggers),
+    canRemoveLegacyTriggers: row?.can_remove_legacy_triggers === true || row?.canRemoveLegacyTriggers === true,
+    legacyTriggerCount: Number.isFinite(rawLegacyTriggerCount) && rawLegacyTriggerCount > 0
+      ? Math.trunc(rawLegacyTriggerCount)
+      : 0
+  };
+};
+
+const normalizeEnvironmentStatus = (status) => {
+  const row = status && typeof status === 'object' ? status : null;
+  const normalizedStatus = String(row?.status || '').trim().toLowerCase();
+  const statusValue = normalizedStatus === 'action_required'
+    ? 'action_required'
+    : normalizedStatus === 'warning'
+      ? 'warning'
+      : 'healthy';
+  const checked = !!row;
+  const defaultLabel = !checked
+    ? 'Checking'
+    : statusValue === 'action_required'
+      ? 'Action Required'
+      : statusValue === 'warning'
+        ? 'Review Needed'
+        : 'Ready';
+  const defaultSummary = !checked
+    ? 'Checking PHP version, Composer files, and required extensions...'
+    : statusValue === 'action_required'
+      ? 'PHP environment still needs required platform fixes before deployment.'
+      : statusValue === 'warning'
+        ? 'PHP environment is usable, but some optional features are missing.'
+        : 'PHP environment looks ready for deployment.';
+  return {
+    checked,
+    status: statusValue,
+    label: String(row?.label || row?.status_label || row?.statusLabel || '').trim() || defaultLabel,
+    summary: String(row?.summary || '').trim() || defaultSummary,
+    details: normalizeStringArray(row?.details),
+    actionItems: normalizeStringArray(row?.action_items ?? row?.actionItems),
+    phpVersion: String(row?.php_version || row?.phpVersion || '').trim(),
+    requiredPhpVersion: String(row?.required_php_version || row?.requiredPhpVersion || '').trim(),
+    phpArchitecture: String(row?.php_architecture || row?.phpArchitecture || '').trim(),
+    vendorAutoloadPresent: row?.vendor_autoload_present === true || row?.vendorAutoloadPresent === true,
+    checks: Array.isArray(row?.checks) ? row.checks : []
   };
 };
 
@@ -545,6 +661,8 @@ const readStaffAccounts = () => (Array.isArray(settingsState.staffAccounts) ? se
 const readActiveUsers = () => (Array.isArray(settingsState.activeUsers) ? settingsState.activeUsers.slice() : []);
 const readBarangayProfile = () => settingsState.barangayProfile;
 const readBackupStatus = () => settingsState.backupStatus;
+const readDatabaseSetupStatus = () => settingsState.databaseSetupStatus;
+const readEnvironmentStatus = () => settingsState.environmentStatus;
 const readBackupYearOptions = () => (Array.isArray(settingsState.backupYearOptions) ? settingsState.backupYearOptions.slice() : []);
 
 const hasValidAdminAccount = (account) => !!(account && account.id && account.username && account.fullName);
@@ -557,6 +675,8 @@ const applySettingsPayload = (payload) => {
     settingsState.activeUsers = [];
     settingsState.barangayProfile = null;
     settingsState.backupStatus = null;
+    settingsState.databaseSetupStatus = null;
+    settingsState.environmentStatus = null;
     settingsState.backupYearOptions = [];
     return;
   }
@@ -568,6 +688,8 @@ const applySettingsPayload = (payload) => {
   settingsState.activeUsers = activeRows.map(normalizeActiveUser).filter(Boolean);
   settingsState.barangayProfile = normalizeBarangayProfile(payload.barangay_profile);
   settingsState.backupStatus = normalizeBackupStatus(payload.backup_status);
+  settingsState.databaseSetupStatus = normalizeDatabaseSetupStatus(payload.database_setup_status);
+  settingsState.environmentStatus = normalizeEnvironmentStatus(payload.environment_status);
   settingsState.backupYearOptions = normalizeBackupYearOptions(payload.backup_year_options);
 };
 
@@ -922,7 +1044,7 @@ const formatActiveUserSeenAt = (value) => {
 const setBackupRestoreNotice = (message, tone = 'muted') => {
   if (!backupRestoreNotice) return;
   backupRestoreNotice.textContent = message;
-  backupRestoreNotice.classList.remove('text-muted', 'text-success', 'text-danger');
+  backupRestoreNotice.classList.remove('text-muted', 'text-success', 'text-danger', 'text-warning');
   if (tone === 'success') {
     backupRestoreNotice.classList.add('text-success');
     return;
@@ -931,7 +1053,93 @@ const setBackupRestoreNotice = (message, tone = 'muted') => {
     backupRestoreNotice.classList.add('text-danger');
     return;
   }
+  if (tone === 'warning') {
+    backupRestoreNotice.classList.add('text-warning');
+    return;
+  }
   backupRestoreNotice.classList.add('text-muted');
+};
+
+const renderBackupDatabaseSetupState = (databaseSetup) => {
+  if (!backupDatabaseCompatCard) return;
+
+  const setup = databaseSetup || normalizeDatabaseSetupStatus(null);
+  const listItems = setup.actionItems.length > 0 ? setup.actionItems : setup.details;
+  const shouldHideCard = setup.checked && setup.status === 'healthy';
+
+  backupDatabaseCompatCard.classList.toggle('d-none', shouldHideCard);
+  if (shouldHideCard) {
+    return;
+  }
+
+  if (backupDatabaseCompatBadge) {
+    backupDatabaseCompatBadge.className = 'badge';
+    if (!setup.checked) {
+      backupDatabaseCompatBadge.textContent = 'Checking';
+      backupDatabaseCompatBadge.classList.add('bg-secondary-subtle', 'text-secondary');
+    } else if (setup.status === 'action_required') {
+      backupDatabaseCompatBadge.textContent = setup.label || 'Action Required';
+      backupDatabaseCompatBadge.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (setup.status === 'warning') {
+      backupDatabaseCompatBadge.textContent = setup.label || 'Review Needed';
+      backupDatabaseCompatBadge.classList.add('bg-warning-subtle', 'text-warning');
+    } else {
+      backupDatabaseCompatBadge.textContent = setup.label || 'Ready';
+      backupDatabaseCompatBadge.classList.add('bg-success-subtle', 'text-success');
+    }
+  }
+
+  if (backupDatabaseCompatText) {
+    backupDatabaseCompatText.textContent = setup.summary || 'Checking database setup...';
+  }
+
+  if (backupDatabaseCompatList) {
+    backupDatabaseCompatList.classList.toggle('d-none', listItems.length === 0);
+    backupDatabaseCompatList.innerHTML = listItems
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join('');
+  }
+};
+
+const renderBackupEnvironmentState = (environmentStatus) => {
+  if (!backupEnvironmentCard) return;
+
+  const environment = environmentStatus || normalizeEnvironmentStatus(null);
+  const listItems = environment.actionItems.length > 0 ? environment.actionItems : environment.details;
+  const shouldHideCard = environment.checked && environment.status === 'healthy';
+
+  backupEnvironmentCard.classList.toggle('d-none', shouldHideCard);
+  if (shouldHideCard) {
+    return;
+  }
+
+  if (backupEnvironmentBadge) {
+    backupEnvironmentBadge.className = 'badge';
+    if (!environment.checked) {
+      backupEnvironmentBadge.textContent = 'Checking';
+      backupEnvironmentBadge.classList.add('bg-secondary-subtle', 'text-secondary');
+    } else if (environment.status === 'action_required') {
+      backupEnvironmentBadge.textContent = environment.label || 'Action Required';
+      backupEnvironmentBadge.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (environment.status === 'warning') {
+      backupEnvironmentBadge.textContent = environment.label || 'Review Needed';
+      backupEnvironmentBadge.classList.add('bg-warning-subtle', 'text-warning');
+    } else {
+      backupEnvironmentBadge.textContent = environment.label || 'Ready';
+      backupEnvironmentBadge.classList.add('bg-success-subtle', 'text-success');
+    }
+  }
+
+  if (backupEnvironmentText) {
+    backupEnvironmentText.textContent = environment.summary || 'Checking PHP environment...';
+  }
+
+  if (backupEnvironmentList) {
+    backupEnvironmentList.classList.toggle('d-none', listItems.length === 0);
+    backupEnvironmentList.innerHTML = listItems
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join('');
+  }
 };
 
 const formatBackupDateTime = (value) => {
@@ -963,6 +1171,16 @@ const formatBackupSize = (value) => {
   }
   const rounded = unitIndex === 0 ? String(Math.trunc(normalized)) : normalized.toFixed(2).replace(/\.?0+$/, '');
   return `${rounded} ${units[unitIndex]}`;
+};
+
+const getBackupRestoreMaxFileSizeBytes = (backup) => {
+  const rawValue = Number(backup?.restoreUploadLimitBytes ?? DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES);
+  return Number.isFinite(rawValue) && rawValue > 0 ? Math.trunc(rawValue) : DEFAULT_BACKUP_RESTORE_MAX_FILE_SIZE_BYTES;
+};
+
+const getBackupRestoreMaxFileSizeLabel = (backup) => {
+  const text = normalizeText(backup?.restoreUploadLimitLabel);
+  return text || formatBackupSize(getBackupRestoreMaxFileSizeBytes(backup));
 };
 
 const getSelectedBackupCoverageMode = () => (backupSelectionState.mode === 'year' ? 'year' : 'all');
@@ -1226,11 +1444,15 @@ const renderBackupRestoreState = () => {
   if (!backupRestorePanel) return;
 
   const backup = readBackupStatus() || normalizeBackupStatus(null);
+  const databaseSetup = readDatabaseSetupStatus() || normalizeDatabaseSetupStatus(null);
+  const environmentStatus = readEnvironmentStatus() || normalizeEnvironmentStatus(null);
   const availableYears = readBackupYearOptions();
   ensureBackupYearOptions(availableYears);
   const selectedCoverageMode = getSelectedBackupCoverageMode();
   const selectedBackupYear = getSelectedBackupYear();
   const yearModeActive = selectedCoverageMode === 'year';
+  renderBackupDatabaseSetupState(databaseSetup);
+  renderBackupEnvironmentState(environmentStatus);
   syncSelectByText(backupScheduleSelect, backup.schedule);
   syncSelectByText(backupStorageLocationSelect, backup.storageLocation);
   if (backupScheduleSelect) backupScheduleSelect.disabled = true;
@@ -1263,13 +1485,57 @@ const renderBackupRestoreState = () => {
   }
 
   if (backupHealthBadge) {
-    backupHealthBadge.classList.remove('bg-success-subtle', 'text-success', 'bg-warning-subtle', 'text-warning');
-    if (backup.available) {
+    backupHealthBadge.classList.remove(
+      'bg-primary-subtle',
+      'text-primary',
+      'bg-success-subtle',
+      'text-success',
+      'bg-warning-subtle',
+      'text-warning',
+      'bg-danger-subtle',
+      'text-danger'
+    );
+    if (!backup.storageReady) {
+      backupHealthBadge.textContent = 'Storage Issue';
+      backupHealthBadge.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (!databaseSetup.checked) {
+      backupHealthBadge.textContent = 'Checking';
+      backupHealthBadge.classList.add('bg-primary-subtle', 'text-primary');
+    } else if (databaseSetup.status === 'action_required') {
+      backupHealthBadge.textContent = 'DB Setup';
+      backupHealthBadge.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (environmentStatus.checked && environmentStatus.status === 'action_required') {
+      backupHealthBadge.textContent = 'Env Issue';
+      backupHealthBadge.classList.add('bg-danger-subtle', 'text-danger');
+    } else if (databaseSetup.status === 'warning') {
+      backupHealthBadge.textContent = 'Review DB';
+      backupHealthBadge.classList.add('bg-warning-subtle', 'text-warning');
+    } else if (environmentStatus.checked && environmentStatus.status === 'warning') {
+      backupHealthBadge.textContent = 'Review Env';
+      backupHealthBadge.classList.add('bg-warning-subtle', 'text-warning');
+    } else if (backup.available) {
       backupHealthBadge.textContent = 'Healthy';
       backupHealthBadge.classList.add('bg-success-subtle', 'text-success');
     } else {
       backupHealthBadge.textContent = 'No Backup';
       backupHealthBadge.classList.add('bg-warning-subtle', 'text-warning');
+    }
+  }
+
+  const canRemoveLegacyTriggers = databaseSetup.checked
+    && databaseSetup.canRemoveLegacyTriggers
+    && databaseSetup.legacyTriggerCount > 0;
+  if (backupDatabaseCompatActions) {
+    backupDatabaseCompatActions.classList.toggle('d-none', !canRemoveLegacyTriggers);
+  }
+  if (backupDatabaseCompatFixBtn) {
+    backupDatabaseCompatFixBtn.disabled = !canRemoveLegacyTriggers || isBackupActionBusy || isSettingsMutating;
+    if (!canRemoveLegacyTriggers) {
+      backupDatabaseCompatFixBtn.title = 'No legacy sync triggers need removal.';
+    } else if (isBackupActionBusy || isSettingsMutating) {
+      backupDatabaseCompatFixBtn.title = 'Please wait for the current settings action to finish.';
+    } else {
+      backupDatabaseCompatFixBtn.title = '';
     }
   }
 
@@ -1283,8 +1549,10 @@ const renderBackupRestoreState = () => {
     backupRestoreFileName.title = normalizeText(selectedFileName);
   }
   if (backupRunBtn) {
-    backupRunBtn.disabled = isBackupActionBusy || isSettingsMutating || (yearModeActive && (!selectedBackupYear || availableYears.length === 0));
-    if (yearModeActive && availableYears.length === 0) {
+    backupRunBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.storageReady || (yearModeActive && (!selectedBackupYear || availableYears.length === 0));
+    if (!backup.storageReady) {
+      backupRunBtn.title = backup.warningMessage || 'Backup storage is not writable on this server.';
+    } else if (yearModeActive && availableYears.length === 0) {
       backupRunBtn.title = 'No household years are available for year-specific backup.';
     } else if (yearModeActive && !selectedBackupYear) {
       backupRunBtn.title = 'Select a valid backup year first.';
@@ -1293,11 +1561,20 @@ const renderBackupRestoreState = () => {
     }
   }
   if (backupDownloadBtn) {
-    backupDownloadBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available;
+    const downloadTooLarge = backup.available && backup.lastBackupSizeBytes > backup.downloadLimitBytes;
+    backupDownloadBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available || downloadTooLarge;
+    if (downloadTooLarge) {
+      backupDownloadBtn.title = `Latest backup exceeds the API download limit of ${backup.downloadLimitLabel}.`;
+    } else {
+      backupDownloadBtn.title = '';
+    }
   }
   if (backupRestoreBtn) {
-    backupRestoreBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available || !previewReady;
-    if (!backup.available) {
+    const restoreBlockedByDatabaseSetup = databaseSetup.checked && databaseSetup.status === 'action_required';
+    backupRestoreBtn.disabled = isBackupActionBusy || isSettingsMutating || !backup.available || !previewReady || restoreBlockedByDatabaseSetup;
+    if (restoreBlockedByDatabaseSetup) {
+      backupRestoreBtn.title = databaseSetup.summary || 'Complete the database setup steps before running restore.';
+    } else if (!backup.available) {
       backupRestoreBtn.title = 'Run Backup first to create a current household-data recovery point.';
     } else if (backupRestorePreviewState.loading) {
       backupRestoreBtn.title = 'Analyzing the selected backup file.';
@@ -3423,15 +3700,17 @@ backupRestoreFileInput?.addEventListener('change', async () => {
     return;
   }
 
-  if (selectedFile.size > BACKUP_RESTORE_MAX_FILE_SIZE_BYTES) {
+  const backup = readBackupStatus() || normalizeBackupStatus(null);
+  const maxRestoreFileSizeBytes = getBackupRestoreMaxFileSizeBytes(backup);
+  const maxRestoreFileSizeLabel = getBackupRestoreMaxFileSizeLabel(backup);
+  if (selectedFile.size > maxRestoreFileSizeBytes) {
     cancelBackupRestorePreview();
     backupRestoreFileInput.value = '';
-    setBackupRestoreNotice('Backup file must be 25MB or less.', 'danger');
+    setBackupRestoreNotice(`Backup file must be ${maxRestoreFileSizeLabel} or less.`, 'danger');
     renderBackupRestoreState();
     return;
   }
 
-  const backup = readBackupStatus() || normalizeBackupStatus(null);
   setBackupRestoreNotice(`Analyzing backup file: ${selectedFile.name}`, 'muted');
   const previewReady = await loadBackupRestorePreview(selectedFile);
   if (!previewReady) {
@@ -3443,6 +3722,36 @@ backupRestoreFileInput?.addEventListener('change', async () => {
     return;
   }
   setBackupRestoreNotice(`Preview ready: ${selectedFile.name}`, 'muted');
+});
+
+backupDatabaseCompatFixBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!backupRestorePanel || isBackupActionBusy) return;
+
+  const databaseSetup = readDatabaseSetupStatus() || normalizeDatabaseSetupStatus(null);
+  if (!databaseSetup.canRemoveLegacyTriggers || databaseSetup.legacyTriggerCount <= 0) {
+    renderBackupRestoreState();
+    return;
+  }
+
+  setBackupActionBusy(true);
+  setBackupRestoreNotice('Removing legacy registration sync triggers...', 'muted');
+  try {
+    const response = await runSettingsAction({ action: 'remove_legacy_sync_triggers' });
+    rerenderSettingsPanels();
+    const removedCount = Number(response?.cleanup?.removed_count ?? response?.cleanup?.removedCount ?? 0);
+    const message = response?.message || (
+      removedCount > 0
+        ? `Removed ${removedCount} legacy registration sync trigger${removedCount === 1 ? '' : 's'}.`
+        : 'No legacy registration sync triggers were found.'
+    );
+    setBackupRestoreNotice(message, 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to remove legacy sync triggers right now.';
+    setBackupRestoreNotice(message, 'danger');
+  } finally {
+    setBackupActionBusy(false);
+  }
 });
 
 backupRunBtn?.addEventListener('click', async (event) => {
@@ -3524,8 +3833,10 @@ backupRestoreBtn?.addEventListener('click', async (event) => {
     renderBackupRestoreState();
     return;
   }
-  if (selectedFile.size > BACKUP_RESTORE_MAX_FILE_SIZE_BYTES) {
-    setBackupRestoreNotice('Backup file must be 25MB or less.', 'danger');
+  const maxRestoreFileSizeBytes = getBackupRestoreMaxFileSizeBytes(backup);
+  const maxRestoreFileSizeLabel = getBackupRestoreMaxFileSizeLabel(backup);
+  if (selectedFile.size > maxRestoreFileSizeBytes) {
+    setBackupRestoreNotice(`Backup file must be ${maxRestoreFileSizeLabel} or less.`, 'danger');
     renderBackupRestoreState();
     return;
   }
@@ -3786,7 +4097,30 @@ const initializeSettingsState = async () => {
     setBarangayProfileNotice('These details will appear on official documents and reports.', 'muted');
   }
   if (backupRestorePanel) {
-    setBackupRestoreNotice(BACKUP_RESTORE_PRIORITY_NOTICE, 'muted');
+    const backup = readBackupStatus() || normalizeBackupStatus(null);
+    const databaseSetup = readDatabaseSetupStatus() || normalizeDatabaseSetupStatus(null);
+    const environmentStatus = readEnvironmentStatus() || normalizeEnvironmentStatus(null);
+    const databaseTone = databaseSetup.status === 'action_required'
+      ? 'danger'
+      : databaseSetup.status === 'warning'
+        ? 'warning'
+        : 'muted';
+    const environmentTone = environmentStatus.status === 'action_required'
+      ? 'danger'
+      : environmentStatus.status === 'warning'
+        ? 'warning'
+        : 'muted';
+    setBackupRestoreNotice(
+      backup.warningMessage
+        || (databaseSetup.checked && databaseSetup.status !== 'healthy' ? databaseSetup.summary : '')
+        || (environmentStatus.checked && environmentStatus.status !== 'healthy' ? environmentStatus.summary : '')
+        || BACKUP_RESTORE_PRIORITY_NOTICE,
+      backup.warningMessage
+        ? 'danger'
+        : (databaseSetup.checked && databaseSetup.status !== 'healthy'
+          ? databaseTone
+          : (environmentStatus.checked && environmentStatus.status !== 'healthy' ? environmentTone : 'muted'))
+    );
   }
 };
 

@@ -1,26 +1,31 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-03-13-v2";
+const CACHE_VERSION = "2026-04-03-v3";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
-const OFFLINE_FALLBACK_URL = "./offline-registration.html";
+const APP_SCOPE_URL = new URL(self.registration.scope);
+const APP_SCOPE_PATH = APP_SCOPE_URL.pathname.endsWith("/")
+  ? APP_SCOPE_URL.pathname
+  : `${APP_SCOPE_URL.pathname}/`;
+const buildScopedUrl = (path = "") => new URL(path, APP_SCOPE_URL).toString();
+const OFFLINE_FALLBACK_URL = buildScopedUrl("offline-registration.html");
 const PRECACHE_URLS = [
-  "./registration.php",
-  "./member.php",
-  OFFLINE_FALLBACK_URL,
-  "./manifest.webmanifest",
-  "./bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css",
-  "./bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js",
-  "./assets/vendor/bootstrap-icons/bootstrap-icons.css",
-  "./assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2",
-  "./assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff",
-  "./assets/css/registration-style.css",
-  "./assets/js/indexeddb-storage-scripts.js",
-  "./assets/js/registration-offline-init.js",
-  "./assets/js/registration-scripts.js",
-  "./assets/js/member-scripts.js",
-  "./assets/img/barangay-cabarian-logo.png"
-];
+  "registration.php",
+  "member.php",
+  "offline-registration.html",
+  "manifest.webmanifest",
+  "bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css",
+  "bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js",
+  "assets/vendor/bootstrap-icons/bootstrap-icons.css",
+  "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2",
+  "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff",
+  "assets/css/registration-style.css",
+  "assets/js/indexeddb-storage-scripts.js",
+  "assets/js/registration-offline-init.js",
+  "assets/js/registration-scripts.js",
+  "assets/js/member-scripts.js",
+  "assets/img/barangay-cabarian-logo.png"
+].map((path) => buildScopedUrl(path));
 const REGISTRATION_PAGE_NAMES = new Set(["registration.php", "member.php", "offline-registration.html"]);
 const BYPASS_PAGE_NAMES = new Set([
   "registration-sync.php",
@@ -31,14 +36,14 @@ const BYPASS_PAGE_NAMES = new Set([
 ]);
 const ASSET_PATH_PATTERN = /\.(?:css|js|png|jpg|jpeg|svg|webp|gif|ico|woff2?|ttf)$/i;
 
-const getUrl = (input) => new URL(typeof input === "string" ? input : input.url, self.location.origin);
+const getUrl = (input) => new URL(typeof input === "string" ? input : input.url, APP_SCOPE_URL);
 const getPageName = (input) => {
   const url = getUrl(input);
   const segments = url.pathname.split("/");
   return String(segments.pop() || "").trim().toLowerCase();
 };
 
-const isSameOriginGet = (request) => request.method === "GET" && getUrl(request).origin === self.location.origin;
+const isSameOriginGet = (request) => request.method === "GET" && getUrl(request).origin === APP_SCOPE_URL.origin;
 const isRegistrationNavigation = (request) => request.mode === "navigate" && REGISTRATION_PAGE_NAMES.has(getPageName(request));
 const isBypassedRequest = (request) => BYPASS_PAGE_NAMES.has(getPageName(request));
 const isAssetRequest = (request) => ASSET_PATH_PATTERN.test(getUrl(request).pathname);
@@ -60,7 +65,8 @@ const clearRegistrationCaches = async () => {
 };
 
 const cachePageResponse = async (request, response) => {
-  if (!response || !response.ok || !REGISTRATION_PAGE_NAMES.has(getPageName(response.url || request.url))) {
+  const responseUrl = response && response.url ? response.url : request.url;
+  if (!response || !response.ok || !REGISTRATION_PAGE_NAMES.has(getPageName(responseUrl))) {
     return;
   }
 
@@ -162,7 +168,11 @@ const handleAssetRequest = async (request) => {
 
 const cacheCurrentRoute = async (urlString) => {
   const routeUrl = getUrl(urlString);
-  if (routeUrl.origin !== self.location.origin || !REGISTRATION_PAGE_NAMES.has(getPageName(routeUrl))) {
+  if (routeUrl.origin !== APP_SCOPE_URL.origin) {
+    return;
+  }
+
+  if (!routeUrl.pathname.startsWith(APP_SCOPE_PATH) || !REGISTRATION_PAGE_NAMES.has(getPageName(routeUrl))) {
     return;
   }
 
