@@ -865,6 +865,10 @@ function mss_state_replace_users(PDO $pdo, array $rows): void
         $passwordHash = $password !== ''
             ? password_hash($password, PASSWORD_DEFAULT)
             : ($existingPasswordHash !== '' ? $existingPasswordHash : password_hash('Admin123!', PASSWORD_DEFAULT));
+        $incomingCredentialsUpdatedAt = mss_state_text($row['credentialsUpdatedAt'] ?? '');
+        $credentialsUpdatedAt = $incomingCredentialsUpdatedAt === ''
+            ? null
+            : ($password !== '' ? mss_auth_now() : mss_state_nullable_datetime($incomingCredentialsUpdatedAt));
 
         $createdAt = mss_state_datetime($row['createdAt'] ?? '', date('Y-m-d H:i:s'));
         $updatedAt = mss_state_datetime($row['updatedAt'] ?? '', $createdAt);
@@ -878,7 +882,7 @@ function mss_state_replace_users(PDO $pdo, array $rows): void
             ':role' => mss_state_text($row['role'] ?? $row['accountType'] ?? 'BHW') ?: 'BHW',
             ':status' => mss_state_text($row['status'] ?? 'Active') ?: 'Active',
             ':password_hash' => $passwordHash,
-            ':credentials_updated_at' => mss_state_nullable_datetime($row['credentialsUpdatedAt'] ?? ''),
+            ':credentials_updated_at' => $credentialsUpdatedAt,
             ':created_at' => $createdAt,
             ':created_by' => mss_state_text($row['createdBy'] ?? 'System Seed'),
             ':updated_at' => $updatedAt,
@@ -1518,9 +1522,7 @@ try {
     if (mss_state_has_collection($payload, 'users')) {
         mss_state_replace_users($pdo, mss_state_collection($payload, 'users'));
     }
-    if (mss_state_has_collection($payload, 'sessions')) {
-        mss_state_replace_sessions($pdo, mss_state_collection($payload, 'sessions'));
-    }
+    // Auth sessions are server-managed so we do not replace `mss_sessions` from client snapshots.
     if (mss_state_has_collection($payload, 'logs', ['activityLogs'])) {
         mss_state_replace_logs($pdo, mss_state_collection($payload, 'logs', ['activityLogs']));
     }

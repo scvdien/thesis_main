@@ -576,24 +576,119 @@ function mss_dashboard_build_monitoring_snapshot(array $inventory, array $moveme
 /**
  * @return array<string, mixed>
  */
-function mss_dashboard_build_disease_pattern(array $movements): array
+function mss_dashboard_resolve_disease_label(array $movement): string
 {
-    $diseaseSignalMap = [];
-    $medicineSignalMap = [];
+    $category = mss_dashboard_text($movement['diseaseCategory'] ?? '');
+    $illness = mss_dashboard_text($movement['illness'] ?? '');
+
+    if ($category !== '' && mss_dashboard_key($category) !== 'others') {
+        return $category;
+    }
+
+    if ($illness !== '') {
+        return $illness;
+    }
+
+    return $category !== '' ? $category : 'Unspecified';
+}
+
+function mss_dashboard_medicine_signal_key(array $movement): string
+{
+    $medicineId = mss_dashboard_text($movement['medicineId'] ?? '');
+    if ($medicineId !== '') {
+        return 'id:' . $medicineId;
+    }
+
+    $medicineName = mss_dashboard_key($movement['medicineName'] ?? '');
+    return $medicineName !== '' ? 'name:' . $medicineName : '';
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function mss_dashboard_prepare_dispense_disease_rows(array $movements): array
+{
+    $rows = [];
 
     foreach ($movements as $movement) {
         if (mss_dashboard_key($movement['actionType'] ?? '') !== 'dispense') {
             continue;
         }
 
-        $category = mss_dashboard_text($movement['diseaseCategory'] ?? '');
-        $illness = mss_dashboard_text($movement['illness'] ?? '');
-        $patternLabel = ($category !== '' && mss_dashboard_key($category) !== 'others')
-            ? $category
-            : ($illness !== '' ? $illness : ($category !== '' ? $category : 'Unspecified'));
-        $medicineName = mss_dashboard_text($movement['medicineName'] ?? '') ?: 'Unknown medicine';
-        $quantity = max(0, mss_dashboard_int($movement['quantity'] ?? 0));
+        $medicineKey = mss_dashboard_medicine_signal_key($movement);
+        if ($medicineKey === '') {
+            continue;
+        }
+
         $createdAt = mss_dashboard_text($movement['createdAt'] ?? '');
+        $createdTimestamp = $createdAt !== '' ? strtotime($createdAt) : false;
+
+        $rows[] = [
+            'medicineKey' => $medicineKey,
+            'medicineName' => mss_dashboard_text($movement['medicineName'] ?? '') ?: 'Unknown medicine',
+            'quantity' => max(0, mss_dashboard_int($movement['quantity'] ?? 0)),
+            'label' => mss_dashboard_resolve_disease_label($movement),
+            'createdAt' => $createdAt,
+            'createdTimestamp' => $createdTimestamp !== false ? (int) $createdTimestamp : 0,
+        ];
+    }
+
+    return $rows;
+}
+
+/**
+ * @param array<int, array<string, mixed>> $rows
+ */
+function mss_dashboard_sort_disease_rows(array &$rows): void
+{
+    usort($rows, static function (array $left, array $right): int {
+        $requestComparison = ((int) ($right['requests'] ?? 0)) <=> ((int) ($left['requests'] ?? 0));
+        if ($requestComparison !== 0) {
+            return $requestComparison;
+        }
+
+        $quantityComparison = ((int) ($right['quantity'] ?? 0)) <=> ((int) ($left['quantity'] ?? 0));
+        if ($quantityComparison !== 0) {
+            return $quantityComparison;
+        }
+
+        return strcmp((string) ($left['illness'] ?? $left['medicine'] ?? ''), (string) ($right['illness'] ?? $right['medicine'] ?? ''));
+    });
+}
+
+/**
+ * @param array<int, array<string, mixed>> $items
+ */
+function mss_dashboard_summarize_supporting_medicines(array $items): string
+{
+    $labels = array_values(array_filter(array_map(
+        static fn (array $item): string => mss_dashboard_text($item['medicine'] ?? ''),
+        $items
+    )));
+
+    if ($labels === []) {
+        return 'No strong medicine signal yet';
+    }
+    if (count($labels) <= 2) {
+        return implode(', ', $labels);
+    }
+
+    return implode(', ', array_slice($labels, 0, 2)) . ' +' . (count($labels) - 2) . ' more';
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_dashboard_build_recorded_disease_pattern_rows(array $dispenseRows): array
+{
+    $diseaseSignalMap = [];
+    $medicineSignalMap = [];
+
+    foreach ($dispenseRows as $row) {
+        $patternLabel = mss_dashboard_text($row['label'] ?? '') ?: 'Unspecified';
+        $medicineName = mss_dashboard_text($row['medicineName'] ?? '') ?: 'Unknown medicine';
+        $quantity = max(0, mss_dashboard_int($row['quantity'] ?? 0));
+        $createdAt = mss_dashboard_text($row['createdAt'] ?? '');
 
         if (!isset($diseaseSignalMap[$patternLabel])) {
             $diseaseSignalMap[$patternLabel] = [
@@ -601,6 +696,8 @@ function mss_dashboard_build_disease_pattern(array $movements): array
                 'requests' => 0,
                 'quantity' => 0,
                 'latestAt' => '',
+                'basis' => 'recorded',
+                'basisLabel' => 'Recorded dispense cases',
             ];
         }
         $diseaseSignalMap[$patternLabel]['requests'] += 1;
@@ -628,19 +725,7 @@ function mss_dashboard_build_disease_pattern(array $movements): array
     }
 
     $patternRows = array_values($diseaseSignalMap);
-    usort($patternRows, static function (array $left, array $right): int {
-        $requestComparison = ((int) ($right['requests'] ?? 0)) <=> ((int) ($left['requests'] ?? 0));
-        if ($requestComparison !== 0) {
-            return $requestComparison;
-        }
-
-        $quantityComparison = ((int) ($right['quantity'] ?? 0)) <=> ((int) ($left['quantity'] ?? 0));
-        if ($quantityComparison !== 0) {
-            return $quantityComparison;
-        }
-
-        return strcmp((string) ($left['illness'] ?? ''), (string) ($right['illness'] ?? ''));
-    });
+    mss_dashboard_sort_disease_rows($patternRows);
 
     $medicineRows = array_values($medicineSignalMap);
     usort($medicineRows, static function (array $left, array $right): int {
@@ -658,18 +743,360 @@ function mss_dashboard_build_disease_pattern(array $movements): array
     });
 
     return [
-        'hasData' => $patternRows !== [],
         'patterns' => $patternRows,
         'medicines' => $medicineRows,
+        'totalCases' => count($dispenseRows),
+    ];
+}
+
+/**
+ * @return array<string, array<string, mixed>>
+ */
+function mss_dashboard_build_disease_association_map(array $trainingRows, float $baselineFactor = 1.0): array
+{
+    $associationMap = [];
+
+    foreach ($trainingRows as $row) {
+        $label = mss_dashboard_text($row['label'] ?? '');
+        $medicineKey = mss_dashboard_text($row['medicineKey'] ?? '');
+        if ($medicineKey === '' || $label === '' || $label === 'Unspecified') {
+            continue;
+        }
+
+        if (!isset($associationMap[$medicineKey])) {
+            $associationMap[$medicineKey] = [
+                'medicine' => mss_dashboard_text($row['medicineName'] ?? '') ?: 'Unknown medicine',
+                'requests' => 0,
+                'quantity' => 0,
+                'patterns' => [],
+            ];
+        }
+
+        $associationMap[$medicineKey]['requests'] += 1;
+        $associationMap[$medicineKey]['quantity'] += max(0, mss_dashboard_int($row['quantity'] ?? 0));
+        if (!isset($associationMap[$medicineKey]['patterns'][$label])) {
+            $associationMap[$medicineKey]['patterns'][$label] = [
+                'illness' => $label,
+                'requests' => 0,
+                'quantity' => 0,
+            ];
+        }
+        $associationMap[$medicineKey]['patterns'][$label]['requests'] += 1;
+        $associationMap[$medicineKey]['patterns'][$label]['quantity'] += max(0, mss_dashboard_int($row['quantity'] ?? 0));
+    }
+
+    foreach ($associationMap as $medicineKey => $entry) {
+        $patternRows = array_values($entry['patterns'] ?? []);
+        if ($patternRows === []) {
+            unset($associationMap[$medicineKey]);
+            continue;
+        }
+
+        mss_dashboard_sort_disease_rows($patternRows);
+        $totalRequests = max(1, (int) ($entry['requests'] ?? 0));
+        $dominantRequests = max(1, (int) ($patternRows[0]['requests'] ?? 0));
+        $dominantShare = $dominantRequests / $totalRequests;
+        $supportDepth = min(1.0, $totalRequests / 6.0);
+        $reliability = max(0.12, min(1.0, $baselineFactor * (($supportDepth * 0.65) + ($dominantShare * 0.35))));
+
+        foreach ($patternRows as $index => $patternRow) {
+            $patternRows[$index]['share'] = ((int) ($patternRow['requests'] ?? 0)) / $totalRequests;
+        }
+
+        $entry['patterns'] = $patternRows;
+        $entry['dominantIllness'] = mss_dashboard_text($patternRows[0]['illness'] ?? 'Unspecified') ?: 'Unspecified';
+        $entry['dominantShare'] = $dominantShare;
+        $entry['reliability'] = $reliability;
+        $associationMap[$medicineKey] = $entry;
+    }
+
+    return $associationMap;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_dashboard_score_disease_window(array $windowRows, array $associationMap): array
+{
+    $signalMap = [];
+    $medicineMap = [];
+    $matchedRequests = 0;
+    $windowTotalScore = 0.0;
+
+    foreach ($windowRows as $row) {
+        $medicineKey = mss_dashboard_text($row['medicineKey'] ?? '');
+        if ($medicineKey === '' || !isset($associationMap[$medicineKey])) {
+            continue;
+        }
+
+        $association = $associationMap[$medicineKey];
+        $medicineName = mss_dashboard_text($row['medicineName'] ?? '') ?: 'Unknown medicine';
+        $quantity = max(1, mss_dashboard_int($row['quantity'] ?? 0, 1));
+        $eventImpact = 1.0 + min(1.5, $quantity / 10.0);
+        $matchedRequests += 1;
+
+        if (!isset($medicineMap[$medicineName])) {
+            $medicineMap[$medicineName] = [
+                'medicine' => $medicineName,
+                'requests' => 0,
+                'quantity' => 0,
+                'mappedIllness' => mss_dashboard_text($association['dominantIllness'] ?? 'Unspecified') ?: 'Unspecified',
+                'confidence' => 0,
+            ];
+        }
+        $medicineMap[$medicineName]['requests'] += 1;
+        $medicineMap[$medicineName]['quantity'] += $quantity;
+        $medicineMap[$medicineName]['confidence'] = max(
+            (int) ($medicineMap[$medicineName]['confidence'] ?? 0),
+            (int) round((((float) ($association['dominantShare'] ?? 0.0)) * 0.55 + ((float) ($association['reliability'] ?? 0.0)) * 0.45) * 100)
+        );
+
+        foreach (($association['patterns'] ?? []) as $patternRow) {
+            $illness = mss_dashboard_text($patternRow['illness'] ?? '');
+            $share = mss_dashboard_float($patternRow['share'] ?? 0);
+            if ($illness === '' || $share < 0.18) {
+                continue;
+            }
+
+            $contribution = $share * mss_dashboard_float($association['reliability'] ?? 0) * $eventImpact;
+            if ($contribution < 0.16) {
+                continue;
+            }
+
+            if (!isset($signalMap[$illness])) {
+                $signalMap[$illness] = [
+                    'illness' => $illness,
+                    'score' => 0.0,
+                    'weightedQuantity' => 0.0,
+                    'matchedRequests' => 0,
+                    'associationShareTotal' => 0.0,
+                    'associationReliabilityTotal' => 0.0,
+                    'supportingMedicines' => [],
+                    'latestAt' => '',
+                    'latestTimestamp' => 0,
+                ];
+            }
+
+            $signalMap[$illness]['score'] += $contribution;
+            $signalMap[$illness]['weightedQuantity'] += $quantity * $share;
+            $signalMap[$illness]['matchedRequests'] += 1;
+            $signalMap[$illness]['associationShareTotal'] += $share;
+            $signalMap[$illness]['associationReliabilityTotal'] += mss_dashboard_float($association['reliability'] ?? 0);
+            $signalMap[$illness]['supportingMedicines'][$medicineName] = ($signalMap[$illness]['supportingMedicines'][$medicineName] ?? 0.0) + $contribution;
+
+            $createdTimestamp = (int) ($row['createdTimestamp'] ?? 0);
+            if ($createdTimestamp > (int) ($signalMap[$illness]['latestTimestamp'] ?? 0)) {
+                $signalMap[$illness]['latestTimestamp'] = $createdTimestamp;
+                $signalMap[$illness]['latestAt'] = mss_dashboard_text($row['createdAt'] ?? '');
+            }
+
+            $windowTotalScore += $contribution;
+        }
+    }
+
+    $signalRows = [];
+    foreach ($signalMap as $illness => $entry) {
+        if (mss_dashboard_float($entry['score'] ?? 0) < 0.75) {
+            continue;
+        }
+
+        arsort($entry['supportingMedicines']);
+        $supportingRows = [];
+        foreach ($entry['supportingMedicines'] as $medicineName => $supportScore) {
+            $supportingRows[] = [
+                'medicine' => $medicineName,
+                'score' => round(mss_dashboard_float($supportScore), 2),
+            ];
+        }
+
+        $supportingCount = count($supportingRows);
+        $matchedCount = max(1, (int) ($entry['matchedRequests'] ?? 0));
+        $supportBreadth = min(1.0, $supportingCount / 3.0);
+        $scoreShare = $windowTotalScore > 0 ? mss_dashboard_float($entry['score'] ?? 0) / $windowTotalScore : 0.0;
+        $averageShare = mss_dashboard_float($entry['associationShareTotal'] ?? 0) / $matchedCount;
+        $averageReliability = mss_dashboard_float($entry['associationReliabilityTotal'] ?? 0) / $matchedCount;
+        $confidenceRatio = min(0.96, max(0.18, ($scoreShare * 0.35) + ($averageShare * 0.25) + ($averageReliability * 0.25) + ($supportBreadth * 0.15)));
+
+        $signalRows[] = [
+            'illness' => $illness,
+            'requests' => max(1, (int) round(mss_dashboard_float($entry['score'] ?? 0))),
+            'mappedRequests' => round(mss_dashboard_float($entry['score'] ?? 0), 2),
+            'quantity' => (int) round(mss_dashboard_float($entry['weightedQuantity'] ?? 0)),
+            'confidence' => (int) round($confidenceRatio * 100),
+            'supportingMedicines' => array_slice($supportingRows, 0, 3),
+            'supportingCount' => $supportingCount,
+            'supportingMedicineSummary' => mss_dashboard_summarize_supporting_medicines($supportingRows),
+            'matchedRequests' => (int) ($entry['matchedRequests'] ?? 0),
+            'latestAt' => mss_dashboard_text($entry['latestAt'] ?? ''),
+            'basis' => 'inferred',
+            'basisLabel' => 'Mapped from medicine frequency',
+        ];
+    }
+
+    usort($signalRows, static function (array $left, array $right): int {
+        $scoreComparison = mss_dashboard_float($right['mappedRequests'] ?? 0) <=> mss_dashboard_float($left['mappedRequests'] ?? 0);
+        if ($scoreComparison !== 0) {
+            return $scoreComparison;
+        }
+
+        $confidenceComparison = ((int) ($right['confidence'] ?? 0)) <=> ((int) ($left['confidence'] ?? 0));
+        if ($confidenceComparison !== 0) {
+            return $confidenceComparison;
+        }
+
+        return strcmp((string) ($left['illness'] ?? ''), (string) ($right['illness'] ?? ''));
+    });
+
+    $medicineRows = array_values($medicineMap);
+    usort($medicineRows, static function (array $left, array $right): int {
+        $requestComparison = ((int) ($right['requests'] ?? 0)) <=> ((int) ($left['requests'] ?? 0));
+        if ($requestComparison !== 0) {
+            return $requestComparison;
+        }
+
+        $quantityComparison = ((int) ($right['quantity'] ?? 0)) <=> ((int) ($left['quantity'] ?? 0));
+        if ($quantityComparison !== 0) {
+            return $quantityComparison;
+        }
+
+        $confidenceComparison = ((int) ($right['confidence'] ?? 0)) <=> ((int) ($left['confidence'] ?? 0));
+        if ($confidenceComparison !== 0) {
+            return $confidenceComparison;
+        }
+
+        return strcmp((string) ($left['medicine'] ?? ''), (string) ($right['medicine'] ?? ''));
+    });
+
+    return [
+        'signals' => $signalRows,
+        'medicines' => $medicineRows,
+        'matchedRequests' => $matchedRequests,
+        'windowTotalScore' => round($windowTotalScore, 2),
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_dashboard_build_disease_pattern(array $movements): array
+{
+    $dispenseRows = mss_dashboard_prepare_dispense_disease_rows($movements);
+    $recorded = mss_dashboard_build_recorded_disease_pattern_rows($dispenseRows);
+
+    $now = mss_dashboard_now();
+    $recentCutoff = $now->modify('-30 days')->getTimestamp();
+    $previousCutoff = $now->modify('-60 days')->getTimestamp();
+    $labeledRows = array_values(array_filter(
+        $dispenseRows,
+        static fn (array $row): bool => mss_dashboard_text($row['label'] ?? '') !== '' && mss_dashboard_text($row['label'] ?? '') !== 'Unspecified'
+    ));
+
+    $trainingRows = array_values(array_filter(
+        $labeledRows,
+        static fn (array $row): bool => (int) ($row['createdTimestamp'] ?? 0) > 0 && (int) ($row['createdTimestamp'] ?? 0) < $previousCutoff
+    ));
+    $baselineLabel = 'older labeled dispense history';
+    $baselineFactor = 1.0;
+
+    $trainingPatternCount = count(array_unique(array_map(
+        static fn (array $row): string => mss_dashboard_key($row['label'] ?? ''),
+        $trainingRows
+    )));
+    if (count($trainingRows) < 8 || $trainingPatternCount < 2) {
+        $trainingRows = array_values(array_filter(
+            $labeledRows,
+            static fn (array $row): bool => (int) ($row['createdTimestamp'] ?? 0) > 0 && (int) ($row['createdTimestamp'] ?? 0) < $recentCutoff
+        ));
+        $baselineLabel = 'recent labeled dispense history';
+        $baselineFactor = 0.9;
+        $trainingPatternCount = count(array_unique(array_map(
+            static fn (array $row): string => mss_dashboard_key($row['label'] ?? ''),
+            $trainingRows
+        )));
+    }
+    if (count($trainingRows) < 6 || $trainingPatternCount < 2) {
+        $trainingRows = $labeledRows;
+        $baselineLabel = 'full labeled dispense history (bootstrap mode)';
+        $baselineFactor = 0.75;
+        $trainingPatternCount = count(array_unique(array_map(
+            static fn (array $row): string => mss_dashboard_key($row['label'] ?? ''),
+            $trainingRows
+        )));
+    }
+
+    $associationMap = mss_dashboard_build_disease_association_map($trainingRows, $baselineFactor);
+    $recentRows = array_values(array_filter(
+        $dispenseRows,
+        static fn (array $row): bool => (int) ($row['createdTimestamp'] ?? 0) >= $recentCutoff
+    ));
+    $previousRows = array_values(array_filter(
+        $dispenseRows,
+        static fn (array $row): bool => (int) ($row['createdTimestamp'] ?? 0) >= $previousCutoff && (int) ($row['createdTimestamp'] ?? 0) < $recentCutoff
+    ));
+
+    $recentSignals = $associationMap !== [] ? mss_dashboard_score_disease_window($recentRows, $associationMap) : ['signals' => [], 'medicines' => [], 'matchedRequests' => 0, 'windowTotalScore' => 0.0];
+    $previousSignals = $associationMap !== [] ? mss_dashboard_score_disease_window($previousRows, $associationMap) : ['signals' => [], 'medicines' => [], 'matchedRequests' => 0, 'windowTotalScore' => 0.0];
+
+    $previousSignalMap = [];
+    foreach (($previousSignals['signals'] ?? []) as $row) {
+        $previousSignalMap[mss_dashboard_key($row['illness'] ?? '')] = $row;
+    }
+
+    $inferredPatterns = [];
+    foreach (($recentSignals['signals'] ?? []) as $row) {
+        $patternKey = mss_dashboard_key($row['illness'] ?? '');
+        $previousScore = mss_dashboard_float($previousSignalMap[$patternKey]['mappedRequests'] ?? 0);
+        $currentScore = mss_dashboard_float($row['mappedRequests'] ?? 0);
+        $growthPercent = $previousScore > 0
+            ? (($currentScore - $previousScore) / $previousScore) * 100
+            : ($currentScore > 0 ? 100.0 : 0.0);
+        $trend = $previousScore <= 0
+            ? 'new'
+            : ($growthPercent >= 12 ? 'rising' : ($growthPercent <= -12 ? 'easing' : 'steady'));
+        $trendLabel = match ($trend) {
+            'rising' => 'Rising vs previous 30 days',
+            'easing' => 'Lower vs previous 30 days',
+            'new' => 'New signal this month',
+            default => 'Steady vs previous 30 days',
+        };
+
+        $row['growthPercent'] = round($growthPercent, 1);
+        $row['trend'] = $trend;
+        $row['trendLabel'] = $trendLabel;
+        $inferredPatterns[] = $row;
+    }
+
+    $hasInference = $inferredPatterns !== [];
+    $displayPatterns = $hasInference ? $inferredPatterns : ($recorded['patterns'] ?? []);
+    $displayMedicines = $hasInference ? ($recentSignals['medicines'] ?? []) : ($recorded['medicines'] ?? []);
+    $panelNote = $hasInference
+        ? 'Signals below are inferred from the last 30 days of medicine activity using ' . $baselineLabel . '.'
+        : (($recorded['patterns'] ?? []) !== []
+            ? 'Showing recorded illness cases while the system gathers enough older history to infer medicine-frequency signals.'
+            : 'No disease pattern data yet. Start recording dispense cases to build this analysis.');
+
+    return [
+        'hasData' => $displayPatterns !== [],
+        'mode' => $hasInference ? 'inferred' : 'recorded',
+        'patterns' => $displayPatterns,
+        'medicines' => $displayMedicines,
+        'recordedPatterns' => $recorded['patterns'] ?? [],
+        'recordedMedicines' => $recorded['medicines'] ?? [],
+        'inferredPatterns' => $inferredPatterns,
+        'inferredMedicines' => $recentSignals['medicines'] ?? [],
+        'panelNote' => $panelNote,
         'summary' => [
-            'totalPatterns' => count($patternRows),
-            'totalDispenseCases' => (int) array_reduce(
-                $patternRows,
-                static fn (int $total, array $item): int => $total + (int) ($item['requests'] ?? 0),
-                0
-            ),
+            'totalPatterns' => count($displayPatterns),
+            'totalDispenseCases' => (int) ($recorded['totalCases'] ?? 0),
+            'trainingCases' => count($trainingRows),
+            'trainingPatterns' => $trainingPatternCount,
+            'trainingMedicines' => count($associationMap),
+            'recentMatchedRequests' => (int) ($recentSignals['matchedRequests'] ?? 0),
+            'previousMatchedRequests' => (int) ($previousSignals['matchedRequests'] ?? 0),
+            'baselineLabel' => $baselineLabel,
+            'windowDays' => 30,
         ],
-        'emptyMessage' => 'No disease pattern data yet. Start recording dispense cases to build this analysis.',
+        'emptyMessage' => $panelNote,
     ];
 }
 

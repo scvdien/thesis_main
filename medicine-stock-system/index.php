@@ -132,7 +132,7 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
             <section class="pattern-panel pattern-panel--main">
               <div class="pattern-panel__head">
                 <h5>Disease Pattern Analytics</h5>
-                <p>Cabarian, Ligao City - Common Illness Trend</p>
+                <p id="diseasePatternSubtitle">Cabarian, Ligao City - Common Illness Trend</p>
               </div>
 
               <div class="pattern-panel__body">
@@ -141,7 +141,7 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
                 <section class="pattern-medicine-card">
                   <div class="pattern-medicine-card__head">
                     <span>Requested Medicines</span>
-                    <small>Series and request frequency</small>
+                    <small id="diseasePatternChartCaption">Series and request frequency</small>
                   </div>
                   <div class="pattern-medicine-card__chart">
                     <canvas id="diseasePatternChart"></canvas>

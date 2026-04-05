@@ -129,6 +129,7 @@
     .replace(/'/g, "&#39;");
   const isMobile = () => window.matchMedia("(max-width: 992px)").matches;
   const formatNumber = (value) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(numeric(value)));
+  const formatChange = (value) => `${numeric(value) >= 0 ? "+" : ""}${numeric(value).toFixed(1)}%`;
   const formatDateTime = (value) => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return "-";
@@ -576,6 +577,8 @@
     medicineName: text(entry.medicineName),
     actionType: keyOf(entry.actionType) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
+    diseaseCategory: text(entry.diseaseCategory || entry.disease_category),
+    illness: text(entry.illness),
     createdAt: text(entry.createdAt) || nowIso()
   });
 
@@ -633,6 +636,8 @@
       medicineName: "ORS",
       actionType: "dispense",
       quantity: 18,
+      diseaseCategory: "Diarrhea",
+      illness: "Acute diarrhea",
       createdAt: new Date(Date.now() - (5 * 3600000)).toISOString()
     },
     {
@@ -640,6 +645,8 @@
       medicineName: "Lagundi",
       actionType: "dispense",
       quantity: 6,
+      diseaseCategory: "Cough / Cold",
+      illness: "Cough and colds",
       createdAt: new Date(Date.now() - (9 * 3600000)).toISOString()
     },
     {
@@ -647,6 +654,8 @@
       medicineName: "Amoxicillin",
       actionType: "dispense",
       quantity: 32,
+      diseaseCategory: "Cough / Cold",
+      illness: "Upper respiratory infection",
       createdAt: new Date(Date.now() - (30 * 3600000)).toISOString()
     }
   ].map(normalizeMovement);
@@ -693,6 +702,257 @@
     const direct = usageMap.get(text(medicine.id));
     if (direct) return direct;
     return usageMap.get(keyOf(medicine.name)) || { quantity: 0, count: 0 };
+  };
+  const illnessSignalWindowDays = 30;
+  const illnessSignalMinimumShare = 0.18;
+  const illnessSignalMinimumContribution = 0.16;
+  const illnessSignalMinimumScore = 0.75;
+  const resolveDiseaseLabel = (movement = {}) => {
+    const category = text(movement.diseaseCategory);
+    const illness = text(movement.illness);
+    if (category && keyOf(category) !== "others") return category;
+    return illness || category || "Unspecified";
+  };
+  const medicineSignalKey = (movement = {}) => {
+    const medicineId = text(movement.medicineId);
+    if (medicineId) return `id:${medicineId}`;
+    const medicineName = keyOf(movement.medicineName);
+    return medicineName ? `name:${medicineName}` : "";
+  };
+  const prepareDispenseDiseaseRows = (movements = []) => movements
+    .filter((movement) => keyOf(movement.actionType) === "dispense")
+    .map((movement) => ({
+      medicineKey: medicineSignalKey(movement),
+      medicineName: text(movement.medicineName) || "Unknown medicine",
+      quantity: Math.max(0, Math.round(numeric(movement.quantity))),
+      label: resolveDiseaseLabel(movement),
+      createdAt: text(movement.createdAt) || nowIso(),
+      createdTimestamp: new Date(text(movement.createdAt) || nowIso()).getTime()
+    }))
+    .filter((row) => row.medicineKey && Number.isFinite(row.createdTimestamp));
+  const buildDiseaseAssociationMap = (trainingRows = [], baselineFactor = 1) => {
+    const associationMap = new Map();
+
+    trainingRows.forEach((row) => {
+      const label = text(row.label);
+      const medicineKey = text(row.medicineKey);
+      if (!medicineKey || !label || label === "Unspecified") return;
+
+      const current = associationMap.get(medicineKey) || {
+        medicine: text(row.medicineName) || "Unknown medicine",
+        requests: 0,
+        quantity: 0,
+        patterns: new Map()
+      };
+      current.requests += 1;
+      current.quantity += Math.max(0, Math.round(numeric(row.quantity)));
+
+      const pattern = current.patterns.get(label) || {
+        illness: label,
+        requests: 0,
+        quantity: 0
+      };
+      pattern.requests += 1;
+      pattern.quantity += Math.max(0, Math.round(numeric(row.quantity)));
+      current.patterns.set(label, pattern);
+      associationMap.set(medicineKey, current);
+    });
+
+    associationMap.forEach((entry, medicineKey) => {
+      const patternRows = Array.from(entry.patterns.values())
+        .sort((left, right) => right.requests - left.requests || right.quantity - left.quantity || left.illness.localeCompare(right.illness))
+        .map((pattern) => ({
+          ...pattern,
+          share: entry.requests > 0 ? pattern.requests / entry.requests : 0
+        }));
+
+      if (!patternRows.length) {
+        associationMap.delete(medicineKey);
+        return;
+      }
+
+      const dominantRequests = Math.max(1, Math.round(numeric(patternRows[0]?.requests)));
+      const dominantShare = dominantRequests / Math.max(1, entry.requests);
+      const supportDepth = Math.min(1, entry.requests / 6);
+      const reliability = Math.max(0.12, Math.min(1, baselineFactor * ((supportDepth * 0.65) + (dominantShare * 0.35))));
+
+      associationMap.set(medicineKey, {
+        ...entry,
+        patterns: patternRows,
+        dominantIllness: text(patternRows[0]?.illness) || "Unspecified",
+        dominantShare,
+        reliability
+      });
+    });
+
+    return associationMap;
+  };
+  const scoreDiseaseWindow = (windowRows = [], associationMap = new Map()) => {
+    const signalMap = new Map();
+    const medicineMap = new Map();
+    let matchedRequests = 0;
+    let windowTotalScore = 0;
+
+    windowRows.forEach((row) => {
+      const medicineKey = text(row.medicineKey);
+      const association = associationMap.get(medicineKey);
+      if (!medicineKey || !association) return;
+
+      const medicineName = text(row.medicineName) || "Unknown medicine";
+      const quantity = Math.max(1, Math.round(numeric(row.quantity) || 1));
+      const eventImpact = 1 + Math.min(1.5, quantity / 10);
+      matchedRequests += 1;
+
+      const currentMedicine = medicineMap.get(medicineName) || {
+        medicine: medicineName,
+        requests: 0,
+        quantity: 0,
+        mappedIllness: text(association.dominantIllness) || "Unspecified",
+        confidence: 0
+      };
+      currentMedicine.requests += 1;
+      currentMedicine.quantity += quantity;
+      currentMedicine.confidence = Math.max(
+        currentMedicine.confidence,
+        Math.round((((numeric(association.dominantShare) * 0.55) + (numeric(association.reliability) * 0.45)) * 100))
+      );
+      medicineMap.set(medicineName, currentMedicine);
+
+      (Array.isArray(association.patterns) ? association.patterns : []).forEach((pattern) => {
+        const illness = text(pattern.illness);
+        const share = numeric(pattern.share);
+        if (!illness || share < illnessSignalMinimumShare) return;
+
+        const contribution = share * numeric(association.reliability) * eventImpact;
+        if (contribution < illnessSignalMinimumContribution) return;
+
+        const currentSignal = signalMap.get(illness) || {
+          illness,
+          score: 0,
+          weightedQuantity: 0,
+          matchedRequests: 0,
+          associationShareTotal: 0,
+          associationReliabilityTotal: 0,
+          supportingMedicines: new Map(),
+          latestAt: "",
+          latestTimestamp: 0
+        };
+
+        currentSignal.score += contribution;
+        currentSignal.weightedQuantity += quantity * share;
+        currentSignal.matchedRequests += 1;
+        currentSignal.associationShareTotal += share;
+        currentSignal.associationReliabilityTotal += numeric(association.reliability);
+        currentSignal.supportingMedicines.set(medicineName, (currentSignal.supportingMedicines.get(medicineName) || 0) + contribution);
+        if (numeric(row.createdTimestamp) > numeric(currentSignal.latestTimestamp)) {
+          currentSignal.latestTimestamp = numeric(row.createdTimestamp);
+          currentSignal.latestAt = text(row.createdAt);
+        }
+
+        signalMap.set(illness, currentSignal);
+        windowTotalScore += contribution;
+      });
+    });
+
+    const signals = Array.from(signalMap.values())
+      .filter((entry) => numeric(entry.score) >= illnessSignalMinimumScore)
+      .map((entry) => {
+        const supportingMedicines = Array.from(entry.supportingMedicines.entries())
+          .map(([medicine, score]) => ({ medicine, score: Number(numeric(score).toFixed(2)) }))
+          .sort((left, right) => numeric(right.score) - numeric(left.score));
+        const matchedCount = Math.max(1, Math.round(numeric(entry.matchedRequests)));
+        const supportBreadth = Math.min(1, supportingMedicines.length / 3);
+        const scoreShare = windowTotalScore > 0 ? numeric(entry.score) / windowTotalScore : 0;
+        const averageShare = numeric(entry.associationShareTotal) / matchedCount;
+        const averageReliability = numeric(entry.associationReliabilityTotal) / matchedCount;
+        const confidenceRatio = Math.min(0.96, Math.max(0.18, (scoreShare * 0.35) + (averageShare * 0.25) + (averageReliability * 0.25) + (supportBreadth * 0.15)));
+        const supportSummary = supportingMedicines.length <= 2
+          ? supportingMedicines.map((item) => item.medicine).join(", ")
+          : `${supportingMedicines.slice(0, 2).map((item) => item.medicine).join(", ")} +${supportingMedicines.length - 2} more`;
+
+        return {
+          illness: entry.illness,
+          requests: Math.max(1, Math.round(numeric(entry.score))),
+          mappedRequests: Number(numeric(entry.score).toFixed(2)),
+          quantity: Math.round(numeric(entry.weightedQuantity)),
+          confidence: Math.round(confidenceRatio * 100),
+          supportingMedicines: supportingMedicines.slice(0, 3),
+          supportingMedicineSummary: supportSummary || "No strong medicine signal yet",
+          matchedRequests: Math.round(numeric(entry.matchedRequests)),
+          latestAt: text(entry.latestAt),
+          basis: "inferred",
+          basisLabel: "Mapped from medicine frequency"
+        };
+      })
+      .sort((left, right) => numeric(right.mappedRequests) - numeric(left.mappedRequests) || numeric(right.confidence) - numeric(left.confidence) || left.illness.localeCompare(right.illness));
+
+    const medicines = Array.from(medicineMap.values())
+      .sort((left, right) => numeric(right.requests) - numeric(left.requests) || numeric(right.quantity) - numeric(left.quantity) || numeric(right.confidence) - numeric(left.confidence) || left.medicine.localeCompare(right.medicine));
+
+    return {
+      signals,
+      medicines,
+      matchedRequests,
+      windowTotalScore: Number(windowTotalScore.toFixed(2))
+    };
+  };
+  const buildIllnessSignalSnapshot = (movements = []) => {
+    const dispenseRows = prepareDispenseDiseaseRows(movements);
+    const labeledRows = dispenseRows.filter((row) => {
+      const label = text(row.label);
+      return label && label !== "Unspecified";
+    });
+    const now = Date.now();
+    const recentCutoff = now - (illnessSignalWindowDays * 86400000);
+    const previousCutoff = now - ((illnessSignalWindowDays * 2) * 86400000);
+
+    let trainingRows = labeledRows.filter((row) => numeric(row.createdTimestamp) > 0 && numeric(row.createdTimestamp) < previousCutoff);
+    let baselineFactor = 1;
+    if (trainingRows.length < 8) {
+      trainingRows = labeledRows.filter((row) => numeric(row.createdTimestamp) > 0 && numeric(row.createdTimestamp) < recentCutoff);
+      baselineFactor = 0.9;
+    }
+    const trainingPatterns = new Set(trainingRows.map((row) => keyOf(row.label)).filter(Boolean));
+    if (trainingRows.length < 6 || trainingPatterns.size < 2) {
+      trainingRows = [...labeledRows];
+      baselineFactor = 0.75;
+    }
+
+    const associationMap = buildDiseaseAssociationMap(trainingRows, baselineFactor);
+    const recentRows = dispenseRows.filter((row) => numeric(row.createdTimestamp) >= recentCutoff);
+    const previousRows = dispenseRows.filter((row) => numeric(row.createdTimestamp) >= previousCutoff && numeric(row.createdTimestamp) < recentCutoff);
+    const recentSignals = associationMap.size ? scoreDiseaseWindow(recentRows, associationMap) : { signals: [], medicines: [], matchedRequests: 0, windowTotalScore: 0 };
+    const previousSignals = associationMap.size ? scoreDiseaseWindow(previousRows, associationMap) : { signals: [], medicines: [], matchedRequests: 0, windowTotalScore: 0 };
+    const previousSignalMap = new Map((previousSignals.signals || []).map((signal) => [keyOf(signal.illness), signal]));
+
+    return {
+      signals: (recentSignals.signals || []).map((signal) => {
+        const previous = previousSignalMap.get(keyOf(signal.illness));
+        const previousScore = numeric(previous?.mappedRequests);
+        const currentScore = numeric(signal.mappedRequests);
+        const growthPercent = previousScore > 0 ? ((currentScore - previousScore) / previousScore) * 100 : (currentScore > 0 ? 100 : 0);
+        const trend = previousScore <= 0
+          ? "new"
+          : growthPercent >= 12
+            ? "rising"
+            : growthPercent <= -12
+              ? "easing"
+              : "steady";
+        return {
+          ...signal,
+          growthPercent: Number(growthPercent.toFixed(1)),
+          trend,
+          trendLabel: trend === "rising"
+            ? "Rising vs previous 30 days"
+            : trend === "easing"
+              ? "Lower vs previous 30 days"
+              : trend === "new"
+                ? "New signal this month"
+                : "Steady vs previous 30 days"
+        };
+      }),
+      medicines: recentSignals.medicines || []
+    };
   };
   const analyticsDemandWindowDays = 14;
   const projectedCoverDays = (stockOnHand, recentQuantity, windowDays = analyticsDemandWindowDays) => {
@@ -1095,6 +1355,44 @@
         });
       }
     });
+
+    const illnessSignalSnapshot = buildIllnessSignalSnapshot(movements);
+    (illnessSignalSnapshot.signals || [])
+      .filter((signal) => {
+        const confidence = Math.max(0, Math.round(numeric(signal.confidence)));
+        const mappedRequests = numeric(signal.mappedRequests);
+        const trend = keyOf(signal.trend);
+        return confidence >= 58 && mappedRequests >= 2.5 && (trend === "rising" || trend === "new" || confidence >= 78);
+      })
+      .slice(0, 2)
+      .forEach((signal) => {
+        const illnessKey = keyOf(signal.illness).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "signal";
+        const confidence = Math.max(0, Math.round(numeric(signal.confidence)));
+        const mappedRequests = Math.max(1, Math.round(numeric(signal.requests)));
+        const trend = keyOf(signal.trend);
+        const growthPercent = numeric(signal.growthPercent);
+        const supportSummary = text(signal.supportingMedicineSummary) || "recently dispensed medicines";
+        const priority = confidence >= 80 && (trend === "rising" || trend === "new") ? "high" : "medium";
+        const title = trend === "new"
+          ? `Possible ${text(signal.illness)} signal detected`
+          : `${text(signal.illness)} signal is rising`;
+        const body = trend === "new"
+          ? `${formatNumber(mappedRequests)} mapped request${mappedRequests === 1 ? "" : "s"} were detected in the last ${illnessSignalWindowDays} days. Supporting medicines: ${supportSummary}. Confidence is ${formatNumber(confidence)}%.`
+          : `${formatNumber(mappedRequests)} mapped request${mappedRequests === 1 ? "" : "s"} suggest a ${text(signal.illness)} trend in the last ${illnessSignalWindowDays} days, ${formatChange(growthPercent)} versus the previous window. Supporting medicines: ${supportSummary}.`;
+        const recommendation = trend === "new"
+          ? "Review recent patient complaints and verify if related medicines should be monitored more closely."
+          : "Review recent patient complaints and prepare the commonly associated medicines if the trend continues.";
+
+        pushNotification({
+          id: `illness-signal-${illnessKey}`,
+          category: "Disease Signal",
+          priority,
+          title,
+          body,
+          source: "Illness Analytics",
+          recommendation
+        });
+      });
 
     previousMap.forEach((previousEntry, notificationId) => {
       if (activeIds.has(notificationId)) return;

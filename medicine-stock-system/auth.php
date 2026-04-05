@@ -17,6 +17,88 @@ function mss_auth_session_name(): string
     return 'mss_session';
 }
 
+function mss_auth_token_cookie_name(): string
+{
+    return 'mss_auth_token';
+}
+
+function mss_auth_cookie_path(): string
+{
+    $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? '/'));
+    $path = str_replace('\\', '/', dirname($scriptName));
+    if ($path === '' || $path === '.' || $path === '\\') {
+        return '/';
+    }
+
+    return rtrim($path, '/') . '/';
+}
+
+function mss_auth_is_secure_request(): bool
+{
+    $https = strtolower(trim((string) ($_SERVER['HTTPS'] ?? '')));
+    if ($https !== '' && $https !== 'off' && $https !== '0') {
+        return true;
+    }
+
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    return $forwardedProto === 'https';
+}
+
+function mss_auth_set_cookie(string $name, string $value, int $expiresAt = 0): void
+{
+    if (headers_sent()) {
+        return;
+    }
+
+    $options = [
+        'expires' => $expiresAt,
+        'path' => mss_auth_cookie_path(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+    if (mss_auth_is_secure_request()) {
+        $options['secure'] = true;
+    }
+
+    setcookie($name, $value, $options);
+    $_COOKIE[$name] = $value;
+}
+
+function mss_auth_read_session_token(): string
+{
+    $sessionToken = trim((string) ($_SESSION['mss_auth_token'] ?? ''));
+    if ($sessionToken !== '') {
+        return $sessionToken;
+    }
+
+    return trim((string) ($_COOKIE[mss_auth_token_cookie_name()] ?? ''));
+}
+
+function mss_auth_assign_session_token(string $token = ''): string
+{
+    $resolvedToken = trim($token) !== '' ? trim($token) : mss_auth_uid('msssess');
+    $_SESSION['mss_auth_token'] = $resolvedToken;
+    mss_auth_set_cookie(mss_auth_token_cookie_name(), $resolvedToken);
+
+    return $resolvedToken;
+}
+
+function mss_auth_resolve_session_token(bool $rotate = false): string
+{
+    if ($rotate) {
+        return mss_auth_assign_session_token(mss_auth_uid('msssess'));
+    }
+
+    $existingToken = mss_auth_read_session_token();
+    return mss_auth_assign_session_token($existingToken);
+}
+
+function mss_auth_clear_session_token(): void
+{
+    unset($_SESSION['mss_auth_token']);
+    mss_auth_set_cookie(mss_auth_token_cookie_name(), '', time() - 42000);
+}
+
 function mss_auth_start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -339,6 +421,7 @@ function mss_auth_user_payload(array $user): array
         'status' => (string) ($user['status'] ?? ''),
         'normalizedRole' => mss_auth_user_role($user),
         'homePath' => mss_auth_user_home($user),
+        'requiresCredentialUpdate' => mss_auth_user_requires_credential_update($user),
         'credentialsUpdatedAt' => (string) ($user['credentials_updated_at'] ?? ''),
         'createdAt' => (string) ($user['created_at'] ?? ''),
         'createdBy' => (string) ($user['created_by'] ?? ''),
@@ -364,6 +447,185 @@ function mss_auth_user_role(array $user): string
 /**
  * @param array<string, mixed> $user
  */
+function mss_auth_user_requires_credential_update(array $user): bool
+{
+    return mss_auth_user_role($user) === 'staff'
+        && trim((string) ($user['credentials_updated_at'] ?? $user['credentialsUpdatedAt'] ?? '')) === '';
+}
+
+function mss_auth_clear_session_state(): void
+{
+    unset(
+        $_SESSION['mss_user_id'],
+        $_SESSION['mss_signed_in_at'],
+        $_SESSION['mss_recent_password_verification_user_id'],
+        $_SESSION['mss_recent_password_verification_at']
+    );
+    mss_auth_clear_session_token();
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function mss_auth_mark_session_authenticated(array $user, string $signedInAt = ''): void
+{
+    $_SESSION['mss_user_id'] = (string) ($user['id'] ?? '');
+    $_SESSION['mss_signed_in_at'] = mss_auth_resolve_session_started_at($user, $signedInAt);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function mss_auth_resolve_session_started_at(array $user, string $fallback = ''): string
+{
+    $resolvedStartedAt = trim($fallback);
+    $resolvedTimestamp = $resolvedStartedAt !== '' ? strtotime($resolvedStartedAt) : false;
+    $credentialsUpdatedAt = trim((string) ($user['credentials_updated_at'] ?? $user['credentialsUpdatedAt'] ?? ''));
+    $credentialsTimestamp = $credentialsUpdatedAt !== '' ? strtotime($credentialsUpdatedAt) : false;
+
+    if ($credentialsTimestamp !== false && ($resolvedTimestamp === false || $credentialsTimestamp > $resolvedTimestamp)) {
+        return date('Y-m-d H:i:s', $credentialsTimestamp);
+    }
+
+    if ($resolvedTimestamp !== false) {
+        return date('Y-m-d H:i:s', $resolvedTimestamp);
+    }
+
+    return mss_auth_now();
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function mss_auth_mark_recent_password_verification(PDO $pdo, array $user): void
+{
+    $userId = trim((string) ($user['id'] ?? ''));
+    if ($userId === '') {
+        return;
+    }
+
+    $verifiedAt = mss_auth_now();
+    $_SESSION['mss_recent_password_verification_user_id'] = $userId;
+    $_SESSION['mss_recent_password_verification_at'] = $verifiedAt;
+
+    mss_auth_touch_session($pdo, $user);
+    $sessionToken = mss_auth_read_session_token();
+    if ($sessionToken === '') {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE `mss_sessions`
+         SET `password_verified_at` = :verified_at,
+             `updated_at` = :updated_at
+         WHERE `session_token` = :token
+           AND `user_id` = :user_id'
+    );
+    $stmt->execute([
+        ':verified_at' => $verifiedAt,
+        ':updated_at' => $verifiedAt,
+        ':token' => $sessionToken,
+        ':user_id' => $userId,
+    ]);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function mss_auth_has_recent_password_verification(PDO $pdo, array $user): bool
+{
+    $userId = trim((string) ($user['id'] ?? ''));
+    $verifiedUserId = trim((string) ($_SESSION['mss_recent_password_verification_user_id'] ?? ''));
+    if ($userId !== '' && $verifiedUserId !== '' && $userId === $verifiedUserId) {
+        $verifiedAt = trim((string) ($_SESSION['mss_recent_password_verification_at'] ?? ''));
+        if (mss_auth_recent_password_verification_is_valid($verifiedAt)) {
+            return true;
+        }
+    }
+
+    if ($userId === '') {
+        return false;
+    }
+
+    $sessionToken = mss_auth_read_session_token();
+    if ($sessionToken === '') {
+        return false;
+    }
+
+    $session = mss_auth_find_session_by_token($pdo, $sessionToken);
+    if (!is_array($session) || trim((string) ($session['user_id'] ?? '')) !== $userId) {
+        return false;
+    }
+
+    return mss_auth_recent_password_verification_is_valid((string) ($session['password_verified_at'] ?? ''));
+}
+
+function mss_auth_recent_password_verification_is_valid(string $verifiedAt): bool
+{
+    $verifiedAt = trim($verifiedAt);
+    if ($verifiedAt === '') {
+        return false;
+    }
+
+    $verifiedTimestamp = strtotime($verifiedAt);
+    if ($verifiedTimestamp === false) {
+        return false;
+    }
+
+    return $verifiedTimestamp >= (time() - 600);
+}
+
+function mss_auth_clear_recent_password_verification(PDO $pdo): void
+{
+    unset(
+        $_SESSION['mss_recent_password_verification_user_id'],
+        $_SESSION['mss_recent_password_verification_at']
+    );
+
+    $sessionToken = mss_auth_read_session_token();
+    if ($sessionToken === '') {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE `mss_sessions`
+         SET `password_verified_at` = NULL
+         WHERE `session_token` = :token'
+    );
+    $stmt->execute([':token' => $sessionToken]);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function mss_auth_credentials_changed_after_timestamp(array $user, string $sessionStartedAt): bool
+{
+    $credentialsUpdatedAt = trim((string) ($user['credentials_updated_at'] ?? ''));
+    if ($credentialsUpdatedAt === '') {
+        return false;
+    }
+
+    $credentialsUpdatedTimestamp = strtotime($credentialsUpdatedAt);
+    if ($credentialsUpdatedTimestamp === false) {
+        return false;
+    }
+
+    $sessionStartedAt = trim($sessionStartedAt);
+    if ($sessionStartedAt === '') {
+        return false;
+    }
+
+    $sessionStartedTimestamp = strtotime($sessionStartedAt);
+    if ($sessionStartedTimestamp === false) {
+        return false;
+    }
+
+    return $credentialsUpdatedTimestamp > $sessionStartedTimestamp;
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
 function mss_auth_user_home(array $user): string
 {
     return match (mss_auth_user_role($user)) {
@@ -379,25 +641,56 @@ function mss_auth_user_home(array $user): string
 function mss_auth_current_user(PDO $pdo): ?array
 {
     $userId = trim((string) ($_SESSION['mss_user_id'] ?? ''));
+    $sessionToken = mss_auth_read_session_token();
+    $session = $sessionToken !== '' ? mss_auth_find_session_by_token($pdo, $sessionToken) : null;
+    if ($userId === '' && is_array($session)) {
+        $userId = trim((string) ($session['user_id'] ?? ''));
+    }
     if ($userId === '') {
         return null;
     }
 
     $user = mss_auth_find_user_by_id($pdo, $userId);
     if (!is_array($user) || trim((string) ($user['status'] ?? '')) !== 'Active') {
-        unset($_SESSION['mss_user_id']);
+        mss_auth_clear_session_state();
         return null;
     }
 
-    $sessionToken = session_id();
-    if ($sessionToken !== '') {
-        $session = mss_auth_find_session_by_token($pdo, $sessionToken);
-        if (mss_auth_credentials_changed_after_session($user, $session)) {
-            unset($_SESSION['mss_user_id']);
+    if (!is_array($session)) {
+        $sessionStartedAt = trim((string) ($_SESSION['mss_signed_in_at'] ?? ''));
+        if (mss_auth_credentials_changed_after_timestamp($user, $sessionStartedAt)) {
+            if (!mss_auth_has_recent_password_verification($pdo, $user)) {
+                mss_auth_clear_session_state();
+                return null;
+            }
+            mss_auth_mark_session_authenticated($user, $user['credentials_updated_at'] ?? mss_auth_now());
+            mss_auth_touch_session($pdo, $user);
+            mss_auth_clear_recent_password_verification($pdo);
+            return $user;
+        }
+        if ($sessionStartedAt !== '') {
+            mss_auth_mark_session_authenticated($user, $sessionStartedAt);
+            mss_auth_touch_session($pdo, $user);
+            return $user;
+        }
+        mss_auth_clear_session_state();
+        return null;
+    }
+
+    $sessionStartedAt = trim((string) ($session['signed_in_at'] ?? $session['created_at'] ?? $session['updated_at'] ?? ''));
+    mss_auth_mark_session_authenticated($user, $sessionStartedAt);
+    mss_auth_assign_session_token($sessionToken);
+    if (mss_auth_credentials_changed_after_session($user, $session)) {
+        if (!mss_auth_has_recent_password_verification($pdo, $user)) {
+            mss_auth_clear_session_state();
             $stmt = $pdo->prepare('DELETE FROM `mss_sessions` WHERE `session_token` = :token');
             $stmt->execute([':token' => $sessionToken]);
             return null;
         }
+        mss_auth_mark_session_authenticated($user, $user['credentials_updated_at'] ?? mss_auth_now());
+        mss_auth_touch_session($pdo, $user);
+        mss_auth_clear_recent_password_verification($pdo);
+        return $user;
     }
 
     return $user;
@@ -428,28 +721,8 @@ function mss_auth_credentials_changed_after_session(array $user, ?array $session
     if (!is_array($session)) {
         return false;
     }
-
-    $credentialsUpdatedAt = trim((string) ($user['credentials_updated_at'] ?? ''));
-    if ($credentialsUpdatedAt === '') {
-        return false;
-    }
-
-    $credentialsUpdatedTimestamp = strtotime($credentialsUpdatedAt);
-    if ($credentialsUpdatedTimestamp === false) {
-        return false;
-    }
-
     $sessionStartedAt = trim((string) ($session['signed_in_at'] ?? $session['created_at'] ?? $session['updated_at'] ?? ''));
-    if ($sessionStartedAt === '') {
-        return false;
-    }
-
-    $sessionStartedTimestamp = strtotime($sessionStartedAt);
-    if ($sessionStartedTimestamp === false) {
-        return false;
-    }
-
-    return $credentialsUpdatedTimestamp > $sessionStartedTimestamp;
+    return mss_auth_credentials_changed_after_timestamp($user, $sessionStartedAt);
 }
 
 /**
@@ -467,12 +740,17 @@ function mss_auth_require_user(PDO $pdo): array
 
 function mss_auth_touch_session(PDO $pdo, array $user, string $ipAddress = '', string $locationLabel = '', string $deviceLabel = ''): void
 {
-    $token = session_id();
+    $token = mss_auth_resolve_session_token();
     if ($token === '') {
         return;
     }
 
     $now = mss_auth_now();
+    $signedInAt = trim((string) ($_SESSION['mss_signed_in_at'] ?? ''));
+    if ($signedInAt === '') {
+        $signedInAt = $now;
+        $_SESSION['mss_signed_in_at'] = $signedInAt;
+    }
     $resolvedLocationLabel = mss_auth_request_location_label($locationLabel);
     $resolvedDeviceLabel = trim($deviceLabel) !== '' ? trim($deviceLabel) : 'Web Browser';
     $stmt = $pdo->prepare(
@@ -490,6 +768,7 @@ function mss_auth_touch_session(PDO $pdo, array $user, string $ipAddress = '', s
             `location_label` = VALUES(`location_label`),
             `device_label` = VALUES(`device_label`),
             `ip_address` = VALUES(`ip_address`),
+            `signed_in_at` = VALUES(`signed_in_at`),
             `last_seen_at` = VALUES(`last_seen_at`),
             `updated_at` = VALUES(`updated_at`)'
     );
@@ -504,11 +783,35 @@ function mss_auth_touch_session(PDO $pdo, array $user, string $ipAddress = '', s
         ':location_label' => $resolvedLocationLabel,
         ':device_label' => $resolvedDeviceLabel,
         ':ip_address' => $ipAddress,
-        ':signed_in_at' => $now,
+        ':signed_in_at' => $signedInAt,
         ':last_seen_at' => $now,
-        ':created_at' => $now,
+        ':created_at' => $signedInAt,
         ':updated_at' => $now,
     ]);
+}
+
+function mss_auth_refresh_current_session(PDO $pdo, array $user, string $ipAddress = '', string $locationLabel = '', string $deviceLabel = '', bool $rotate = false): void
+{
+    $previousToken = mss_auth_read_session_token();
+
+    if ($rotate) {
+        session_regenerate_id(true);
+        mss_auth_assign_session_token(mss_auth_uid('msssess'));
+        if ($previousToken !== '') {
+            $deleteSession = $pdo->prepare('DELETE FROM `mss_sessions` WHERE `session_token` = :token');
+            $deleteSession->execute([':token' => $previousToken]);
+        }
+    } else {
+        mss_auth_resolve_session_token();
+    }
+
+    $sessionStartedAt = trim((string) ($_SESSION['mss_signed_in_at'] ?? ''));
+    if ($rotate || $sessionStartedAt === '') {
+        $sessionStartedAt = mss_auth_now();
+    }
+    mss_auth_mark_session_authenticated($user, $sessionStartedAt);
+    mss_auth_touch_session($pdo, $user, $ipAddress, $locationLabel, $deviceLabel);
+    mss_auth_clear_recent_password_verification($pdo);
 }
 
 /**
@@ -526,12 +829,10 @@ function mss_auth_attempt_login(PDO $pdo, string $username, string $password, st
 
     $user = mss_auth_find_user_by_username_exact($pdo, $username);
     if (!is_array($user)) {
-        $caseInsensitiveUser = mss_auth_find_user_by_username($pdo, $username);
-        if (is_array($caseInsensitiveUser) && trim((string) ($caseInsensitiveUser['username'] ?? '')) !== $username) {
-            mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: username casing mismatch.', $caseInsensitiveUser, $ipAddress);
-        } else {
-            mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: username not found.', null, $ipAddress);
-        }
+        $user = mss_auth_find_user_by_username($pdo, $username);
+    }
+    if (!is_array($user)) {
+        mss_auth_record_login_attempt($pdo, false, $username, 'Login failed: username not found.', null, $ipAddress);
         throw new RuntimeException('Invalid username or password.');
     }
 
@@ -545,9 +846,7 @@ function mss_auth_attempt_login(PDO $pdo, string $username, string $password, st
         throw new RuntimeException('This account is inactive.');
     }
 
-    $_SESSION['mss_user_id'] = (string) $user['id'];
-    session_regenerate_id(true);
-    mss_auth_touch_session($pdo, $user, $ipAddress);
+    mss_auth_refresh_current_session($pdo, $user, $ipAddress, '', '', true);
     mss_auth_record_login_attempt($pdo, true, $username, 'Login successful.', $user, $ipAddress);
 
     return mss_auth_user_payload($user);
@@ -555,13 +854,14 @@ function mss_auth_attempt_login(PDO $pdo, string $username, string $password, st
 
 function mss_auth_logout(PDO $pdo): void
 {
-    $token = session_id();
+    $token = mss_auth_read_session_token();
     if ($token !== '') {
         $stmt = $pdo->prepare('DELETE FROM `mss_sessions` WHERE `session_token` = :token');
         $stmt->execute([':token' => $token]);
     }
 
     $_SESSION = [];
+    mss_auth_clear_session_token();
     if (ini_get('session.use_cookies')) {
         $params = session_get_cookie_params();
         setcookie(session_name(), '', time() - 42000, $params['path'] ?? '/', $params['domain'] ?? '', (bool) ($params['secure'] ?? false), (bool) ($params['httponly'] ?? true));
@@ -625,6 +925,13 @@ function mss_page_require_auth(array $allowedRoles = []): array
     ))));
     if ($resolvedAllowedRoles !== [] && !in_array(mss_auth_user_role($user), $resolvedAllowedRoles, true)) {
         mss_page_redirect(mss_auth_user_home($user));
+    }
+
+    if (mss_auth_user_requires_credential_update($user)) {
+        $scriptName = strtolower(basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')));
+        if ($scriptName !== 'staff.php') {
+            mss_page_redirect('staff.php#my-settings');
+        }
     }
 
     return $user;

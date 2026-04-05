@@ -755,12 +755,6 @@
       { match: /(pain|inflammation)/i, accent: "gold", icon: "bi bi-bandaid" },
       { match: /(vitamin|supplement|wellness)/i, accent: "gold", icon: "bi bi-capsule" }
     ];
-    const resolvePatternLabel = (movement) => {
-      const category = text(movement?.diseaseCategory);
-      const illness = text(movement?.illness);
-      if (category && keyOf(category) !== "others") return category;
-      return illness || category || "Unspecified";
-    };
     const resolvePatternVisual = (label, index) => {
       const matched = diseaseVisuals.find((visual) => visual.match.test(label));
       if (matched) return matched;
@@ -772,17 +766,39 @@
     const analytics = prefetchedAnalytics && typeof prefetchedAnalytics === "object"
       ? prefetchedAnalytics
       : null;
+    const mode = text(analytics?.mode) || "recorded";
+    const panelNote = text(analytics?.panelNote);
     const diseaseSignals = analytics
       ? (Array.isArray(analytics.patterns) ? analytics.patterns : [])
       : [];
     const medicineSignals = analytics
       ? (Array.isArray(analytics.medicines) ? analytics.medicines : [])
       : [];
+    const inferredMode = mode === "inferred";
+
+    setText(
+      "diseasePatternSubtitle",
+      inferredMode
+        ? "Cabarian, Ligao City - Possible illness signals from medicine activity"
+        : "Cabarian, Ligao City - Common Illness Trend"
+    );
+    setText(
+      "diseasePatternChartCaption",
+      inferredMode
+        ? "Recent medicines contributing to the current signal"
+        : "Series and request frequency"
+    );
 
     if (!diseaseSignals.length) {
+      const emptyParts = [
+        text(analytics?.emptyMessage || "No disease pattern data yet. Start recording dispense cases to build this analysis.")
+      ];
+      if (panelNote && keyOf(panelNote) !== keyOf(emptyParts[0])) {
+        emptyParts.push(panelNote);
+      }
       setHTML(
         "diseasePatternList",
-        `<div class="text-muted small">${esc(analytics?.emptyMessage || "No disease pattern data yet. Start recording dispense cases to build this analysis.")}</div>`
+        `<div class="text-muted small">${esc(emptyParts.join(" "))}</div>`
       );
     } else {
       setHTML(
@@ -790,6 +806,24 @@
         diseaseSignals
           .map((signal, index) => {
             const visual = resolvePatternVisual(signal.illness, index);
+            const signalRequests = Math.max(1, Math.round(toNumber(signal.requests)));
+            const confidence = Math.max(0, Math.round(toNumber(signal.confidence)));
+            const growthPercent = toNumber(signal.growthPercent);
+            const trend = keyOf(signal.trend);
+            const supportSummary = text(signal.supportingMedicineSummary);
+            const detailParts = inferredMode
+              ? [
+                `${formatNumber(signalRequests)} mapped request${signalRequests === 1 ? "" : "s"}`,
+                trend === "new"
+                  ? "New signal this 30d"
+                  : `${formatChange(growthPercent)} vs prev 30d`,
+                supportSummary ? `Support: ${supportSummary}` : ""
+              ].filter(Boolean)
+              : [`${formatNumber(signalRequests)} recorded case${signalRequests === 1 ? "" : "s"}`];
+            const metricIcon = inferredMode
+              ? (trend === "easing" ? "bi bi-arrow-down-right" : trend === "steady" ? "bi bi-arrow-left-right" : "bi bi-arrow-up-right")
+              : "bi bi-arrow-up-right";
+            const metricValue = inferredMode ? `${formatNumber(confidence)}%` : formatNumber(signalRequests);
             return `
               <article class="pattern-case-card pattern-case-card--${visual.accent}">
                 <div class="pattern-case-card__icon">
@@ -797,11 +831,11 @@
                 </div>
                 <div class="pattern-case-card__copy">
                   <strong>${esc(signal.illness)}</strong>
-                  <span>${formatNumber(signal.requests)} recorded case${signal.requests === 1 ? "" : "s"}</span>
+                  <span>${esc(detailParts.join(" | "))}</span>
                 </div>
                 <div class="pattern-case-card__metric">
-                  <i class="bi bi-arrow-up-right"></i>
-                  <span>${formatNumber(signal.requests)}</span>
+                  <i class="${metricIcon}"></i>
+                  <span>${esc(metricValue)}</span>
                 </div>
               </article>
             `;
