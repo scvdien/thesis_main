@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = mss_page_require_auth(['staff']);
+$requiresCredentialUpdate = mss_auth_user_requires_credential_update($authUser);
 $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $notificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/notifications.css');
 $staffCssVersion = (string) @filemtime(__DIR__ . '/assets/css/staff.css');
@@ -34,7 +35,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <link rel="stylesheet" href="assets/css/staff.css?v=<?= urlencode($staffCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
 </head>
-<body class="admin-dashboard-page">
+<body class="admin-dashboard-page" data-requires-credential-update="<?= $requiresCredentialUpdate ? 'true' : 'false' ?>">
   <div id="wrapper">
     <div id="content-area">
       <aside id="sidebar">
@@ -49,7 +50,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
         <div class="menu">
           <a href="#staff-dashboard" class="active"><i class="bi bi-speedometer2"></i>Dashboard</a>
           <a href="#patient-profiles"><i class="bi bi-person-vcard"></i>Patient Profiles</a>
-          <a href="dispensing-records.php?role=staff"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
+          <a href="dispensing-records.php?role=staff" id="staffDispensingRecordsLink"><i class="bi bi-journal-medical"></i>Dispensing Records</a>
           <a href="#notifications" id="staffSidebarNotifications"><i class="bi bi-bell"></i>Notifications<span class="staff-notification-badge d-none" id="staffSidebarNotificationBadge">0</span></a>
           <a href="#my-settings"><i class="bi bi-gear"></i>Settings</a>
           <a href="#" class="text-danger" id="logoutLink"><i class="bi bi-box-arrow-right"></i>Logout</a>
@@ -392,10 +393,10 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <div class="staff-credentials-panel d-none" id="settingsCredentialsPanel">
                 <div class="section-head section-head-split staff-credentials-editor-head">
                   <div>
-                    <h5>Change Staff Credentials</h5>
+                    <h5 id="settingsEditorTitle">Change Staff Credentials</h5>
                   </div>
                   <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge bg-success-subtle text-success credentials-badge">Security</span>
+                    <span class="badge bg-success-subtle text-success credentials-badge" id="settingsEditorStatusChip">Security</span>
                   </div>
                 </div>
 
@@ -416,11 +417,16 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                   </div>
 
                   <div>
+                    <label for="settingsCurrentPassword" class="form-label" id="settingsCurrentPasswordLabel">Current Temporary Password</label>
+                    <input type="password" id="settingsCurrentPassword" class="form-control" placeholder="Enter current temporary password" minlength="8">
+                  </div>
+
+                  <div>
                     <label for="settingsPassword" class="form-label">New Password</label>
                     <input type="password" id="settingsPassword" class="form-control" placeholder="Enter new password" minlength="8">
                   </div>
 
-                  <div class="account-field-right">
+                  <div>
                     <label for="settingsConfirmPassword" class="form-label">Confirm New Password</label>
                     <input type="password" id="settingsConfirmPassword" class="form-control" placeholder="Confirm password" minlength="8">
                   </div>

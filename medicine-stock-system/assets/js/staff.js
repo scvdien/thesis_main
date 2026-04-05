@@ -4,6 +4,7 @@
     : null;
   const NOTIFICATION_RUNTIME_STORAGE_PREFIX = "mss_notification_runtime_state_v1";
   const STATE_ENDPOINT = "state-api.php";
+  const AUTH_ENDPOINT = "auth-api.php";
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
     movements: "mss_inventory_movements_v1",
@@ -106,16 +107,21 @@
     settingsCredentialsPanel: byId("settingsCredentialsPanel"),
     settingsForm: byId("settingsForm"),
     settingsStatusChip: byId("settingsStatusChip"),
+    settingsEditorStatusChip: byId("settingsEditorStatusChip"),
+    settingsEditorTitle: byId("settingsEditorTitle"),
     settingsChangeBtn: byId("settingsChangeBtn"),
     settingsCancelBtn: byId("settingsCancelBtn"),
     settingsFullName: byId("settingsFullName"),
     settingsUsername: byId("settingsUsername"),
+    settingsCurrentPasswordLabel: byId("settingsCurrentPasswordLabel"),
+    settingsCurrentPassword: byId("settingsCurrentPassword"),
     settingsPassword: byId("settingsPassword"),
     settingsConfirmPassword: byId("settingsConfirmPassword"),
     settingsSubmitBtn: byId("settingsSubmitBtn"),
     settingsNotice: byId("settingsNotice"),
     settingsContact: byId("settingsContact"),
-    settingsRole: byId("settingsRole")
+    settingsRole: byId("settingsRole"),
+    staffDispensingRecordsLink: byId("staffDispensingRecordsLink")
   };
   const staffNavLinks = Array.from(document.querySelectorAll("#sidebar .menu a[href^='#']"));
   const staffSections = Array.from(document.querySelectorAll("[data-staff-section]"));
@@ -194,6 +200,14 @@
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const text = (value) => String(value ?? "").trim();
   const keyOf = (value) => text(value).toLowerCase();
+  let requiresCredentialUpdate = !!(
+    currentAuthUser
+    && keyOf(currentAuthUser.normalizedRole || currentAuthUser.role) === "staff"
+    && (
+      currentAuthUser.requiresCredentialUpdate === true
+      || text(currentAuthUser.credentialsUpdatedAt) === ""
+    )
+  );
   const parseNotificationOccurrenceId = (value) => {
     const notificationId = text(value);
     if (!notificationId) return { alertKey: "", occurrenceIndex: 0 };
@@ -302,6 +316,18 @@
     }
     return payload;
   };
+
+  const refreshCurrentSession = async ({ rotate = false, locationLabel = "" } = {}) => requestJson(AUTH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "refresh_current_session",
+      rotate,
+      locationLabel
+    })
+  });
 
   const relativeTime = (value) => {
     const timestamp = new Date(value).getTime();
@@ -531,7 +557,6 @@
     movements: cloneEntries(state.movements),
     residentAccounts: cloneEntries(state.residentAccounts),
     users: cloneEntries(state.users),
-    sessions: cloneEntries(state.sessions),
     logs: cloneEntries(state.activityLogs),
     notifications: state.notifications.map((entry) => normalizeNotification(entry)),
     notificationReadState: normalizeReadState(state.notificationReadState),
@@ -987,6 +1012,7 @@
       accountType: role === USER_ROLE_ADMIN ? USER_ROLE_ADMIN : USER_ROLE_BHW,
       status: text(entry.status) || "Active",
       password: String(entry.password || ""),
+      credentialsUpdatedAt: text(entry.credentialsUpdatedAt),
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
       updatedBy: text(entry.updatedBy) || "System Seed"
@@ -1126,6 +1152,52 @@
 
   const getCurrentBhwSession = (userId) => getStoredSessions().find((session) => text(session.userId) === text(userId)) || null;
 
+  const hasPendingCredentialUpdate = (user = null) => {
+    const source = user && typeof user === "object" ? user : getCurrentBhwUser();
+    if (!source) {
+      return requiresCredentialUpdate;
+    }
+    return text(source.role) !== USER_ROLE_ADMIN && text(source.credentialsUpdatedAt) === "";
+  };
+
+  const setCredentialStatusChipState = (chip, required = false) => {
+    if (!chip) return;
+    chip.textContent = required ? "Required" : "Security";
+    chip.classList.toggle("bg-success-subtle", !required);
+    chip.classList.toggle("text-success", !required);
+    chip.classList.toggle("bg-warning-subtle", required);
+    chip.classList.toggle("text-warning", required);
+  };
+
+  const syncSettingsUiMode = (user = null) => {
+    const isRequiredMode = hasPendingCredentialUpdate(user);
+    setCredentialStatusChipState(refs.settingsStatusChip, isRequiredMode);
+    setCredentialStatusChipState(refs.settingsEditorStatusChip, isRequiredMode);
+    if (refs.settingsEditorTitle) {
+      refs.settingsEditorTitle.textContent = isRequiredMode
+        ? "Update Temporary Password"
+        : "Change Staff Credentials";
+    }
+    if (refs.settingsSubmitBtn) {
+      refs.settingsSubmitBtn.innerHTML = isRequiredMode
+        ? '<i class="bi bi-shield-check"></i>Update & Continue'
+        : '<i class="bi bi-shield-check"></i>Save Credentials';
+    }
+    if (refs.settingsCurrentPasswordLabel) {
+      refs.settingsCurrentPasswordLabel.textContent = isRequiredMode
+        ? "Current Temporary Password"
+        : "Current Password";
+    }
+    if (refs.settingsCurrentPassword) {
+      refs.settingsCurrentPassword.placeholder = isRequiredMode
+        ? "Enter current temporary password"
+        : "Enter current password";
+      refs.settingsCurrentPassword.required = false;
+    }
+    refs.settingsCancelBtn?.classList.toggle("d-none", isRequiredMode);
+    refs.settingsChangeBtn?.classList.toggle("d-none", isRequiredMode);
+  };
+
   const setSettingsEditorOpen = (open) => {
     refs.settingsSummaryView?.classList.toggle("d-none", open);
     refs.settingsCredentialsPanel?.classList.toggle("d-none", !open);
@@ -1241,6 +1313,41 @@
     document.body.classList.remove("sidebar-open");
   };
 
+  const focusCredentialUpdateField = () => {
+    window.setTimeout(() => {
+      if (refs.settingsCurrentPassword) {
+        refs.settingsCurrentPassword.focus();
+        return;
+      }
+      if (refs.settingsPassword) {
+        refs.settingsPassword.focus();
+        return;
+      }
+      refs.settingsUsername?.focus();
+    }, 120);
+  };
+
+  const forceCredentialUpdateFlow = ({ focus = true } = {}) => {
+    setActiveSection("my-settings");
+    if (history.replaceState) {
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}#my-settings`);
+    }
+    renderSettings();
+    setSettingsEditorOpen(true);
+    setSettingsNotice("Enter your current temporary password, then set a new password to continue.", "danger");
+    closeMobileSidebar();
+    if (focus) {
+      focusCredentialUpdateField();
+    }
+  };
+
+  const blockPendingCredentialAccess = (target = "") => {
+    if (!requiresCredentialUpdate) return false;
+    if (target === "my-settings") return false;
+    forceCredentialUpdateFlow();
+    return true;
+  };
+
   const releaseInitialStaffSectionBootState = () => {
     document.documentElement.classList.remove("staff-section-booting");
     document.documentElement.removeAttribute("data-staff-initial-section");
@@ -1272,6 +1379,7 @@
 
   const openSection = (sectionId) => {
     if (!sectionId) return;
+    if (blockPendingCredentialAccess(sectionId)) return;
     setActiveSection(sectionId);
     if (history.replaceState) {
       history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${sectionId}`);
@@ -2214,6 +2322,9 @@
 
   const toggleResidentForm = (forceOpen = null) => {
     const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !state.residentFormOpen;
+    if (shouldOpen && blockPendingCredentialAccess("patient-profiles")) {
+      return;
+    }
     state.residentFormOpen = shouldOpen;
 
     if (residentFormModal) {
@@ -2712,10 +2823,11 @@
     const user = getCurrentBhwUser();
 
     if (!user) {
-      if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Security";
+      syncSettingsUiMode(null);
       refs.settingsForm?.reset();
       if (refs.settingsFullName) refs.settingsFullName.value = "";
       if (refs.settingsUsername) refs.settingsUsername.value = "";
+      if (refs.settingsCurrentPassword) refs.settingsCurrentPassword.value = "";
       if (refs.settingsPassword) refs.settingsPassword.value = "";
       if (refs.settingsConfirmPassword) refs.settingsConfirmPassword.value = "";
       if (refs.settingsContact) refs.settingsContact.value = "";
@@ -2727,14 +2839,19 @@
       return;
     }
 
-    if (refs.settingsStatusChip) refs.settingsStatusChip.textContent = "Security";
+    syncSettingsUiMode(user);
     if (refs.settingsFullName) refs.settingsFullName.value = user.fullName || "";
     if (refs.settingsUsername) refs.settingsUsername.value = user.username || "";
+    if (refs.settingsCurrentPassword) refs.settingsCurrentPassword.value = "";
     if (refs.settingsPassword) refs.settingsPassword.value = "";
     if (refs.settingsConfirmPassword) refs.settingsConfirmPassword.value = "";
     if (refs.settingsContact) refs.settingsContact.value = user.contact || "";
     if (refs.settingsRole) refs.settingsRole.value = roleName(user.role);
-    setSettingsNotice("Staff account only.");
+    setSettingsNotice(
+      hasPendingCredentialUpdate(user)
+        ? "Enter your current temporary password, then create a new password to continue."
+        : "Enter your current password to save staff credentials."
+    );
 
     setSettingsDisabled(false);
     renderTopbarAccount();
@@ -3042,10 +3159,12 @@
     }
 
     const currentUser = users[userIndex];
+    const requiresUpdate = hasPendingCredentialUpdate(currentUser) || requiresCredentialUpdate;
     const snapshot = createStaffStateSnapshot();
     const previousName = currentUser.fullName;
     const fullName = text(refs.settingsFullName?.value);
     const username = text(refs.settingsUsername?.value);
+    const currentPassword = String(refs.settingsCurrentPassword?.value || "");
     const password = String(refs.settingsPassword?.value || "");
     const confirm = String(refs.settingsConfirmPassword?.value || "");
     const profileChanged = fullName !== text(currentUser.fullName) || username !== text(currentUser.username);
@@ -3056,8 +3175,25 @@
       return;
     }
 
+    if (requiresUpdate && !currentPassword) {
+      setSettingsNotice("Enter your current temporary password first.", "danger");
+      focusCredentialUpdateField();
+      return;
+    }
+
+    if (requiresUpdate && !passwordChanged) {
+      setSettingsNotice("Enter and confirm a new password to continue.", "danger");
+      return;
+    }
+
     if (!profileChanged && !passwordChanged) {
       setSettingsNotice("No changes to save yet.", "danger");
+      return;
+    }
+
+    if (!currentPassword) {
+      setSettingsNotice("Enter your current password first.", "danger");
+      focusCredentialUpdateField();
       return;
     }
 
@@ -3084,6 +3220,27 @@
         setSettingsNotice("Password and confirmation do not match.", "danger");
         return;
       }
+    }
+
+    try {
+      await requestJson(AUTH_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "verify_current_password",
+          currentPassword
+        })
+      });
+    } catch (error) {
+      if (refs.settingsCurrentPassword) refs.settingsCurrentPassword.value = "";
+      setSettingsNotice(
+        error instanceof Error ? error.message : "Unable to verify your current password right now.",
+        "danger"
+      );
+      focusCredentialUpdateField();
+      return;
     }
 
     const updatedAt = nowIso();
@@ -3165,9 +3322,45 @@
       return;
     }
 
+    let sessionRefreshFailed = false;
+    try {
+      await refreshCurrentSession({
+        rotate: passwordChanged,
+        locationLabel: "Staff Credentials"
+      });
+    } catch (error) {
+      sessionRefreshFailed = true;
+      console.error("Unable to refresh the current BHW session after saving credentials.", error);
+    }
+
     state.currentUserId = nextUser.id;
+    requiresCredentialUpdate = false;
+    if (currentAuthUser && typeof currentAuthUser === "object") {
+      currentAuthUser.fullName = nextUser.fullName;
+      currentAuthUser.username = nextUser.username;
+      currentAuthUser.contact = nextUser.contact || "";
+      currentAuthUser.updatedAt = nextUser.updatedAt;
+      currentAuthUser.updatedBy = nextUser.updatedBy;
+      currentAuthUser.credentialsUpdatedAt = nextUser.credentialsUpdatedAt || updatedAt;
+      currentAuthUser.requiresCredentialUpdate = false;
+    }
     renderSettings();
     setSettingsEditorOpen(false);
+    if (requiresUpdate) {
+      openSection("staff-dashboard");
+      showTransientSuccess({
+        title: "Credentials Updated",
+        body: "Password updated successfully. You can now use the BHW dashboard.",
+        fallback: "Password updated successfully."
+      });
+      if (sessionRefreshFailed) {
+        showNotice("Password updated successfully. Continue using the dashboard with your new credentials.", "warning");
+      }
+      return;
+    }
+    if (sessionRefreshFailed) {
+      showNotice("Credentials updated successfully. Continue using the dashboard with your new credentials.", "warning");
+    }
     showTransientSuccess({
       title: "Credentials Updated",
       body: "Staff credentials updated successfully.",
@@ -3180,6 +3373,10 @@
   refs.logoutLink?.addEventListener("click", (event) => {
     event.preventDefault();
     logoutModal?.show();
+  });
+  refs.staffDispensingRecordsLink?.addEventListener("click", (event) => {
+    if (!blockPendingCredentialAccess("dispensing-records")) return;
+    event.preventDefault();
   });
 
   window.addEventListener("resize", () => {
@@ -3514,7 +3711,11 @@
     clearNotice();
     openSection("my-settings");
     renderSettings();
-    setSettingsEditorOpen(false);
+    setSettingsEditorOpen(requiresCredentialUpdate);
+    if (requiresCredentialUpdate) {
+      focusCredentialUpdateField();
+      return;
+    }
     window.setTimeout(() => refs.settingsChangeBtn?.focus(), 120);
   });
   staffNavLinks.forEach((link) => {
@@ -3525,13 +3726,22 @@
       openSection(targetId);
       if (targetId === "my-settings") {
         renderSettings();
-        setSettingsEditorOpen(false);
+        setSettingsEditorOpen(requiresCredentialUpdate);
+        if (requiresCredentialUpdate) {
+          focusCredentialUpdateField();
+        }
       }
     });
   });
 
   window.addEventListener("hashchange", () => {
-    setActiveSection(text(window.location.hash).replace(/^#/, ""));
+    const targetId = text(window.location.hash).replace(/^#/, "");
+    if (blockPendingCredentialAccess(targetId)) return;
+    setActiveSection(targetId);
+    if (targetId === "my-settings") {
+      renderSettings();
+      setSettingsEditorOpen(requiresCredentialUpdate);
+    }
   });
 
   const initializeStaffPage = async () => {
@@ -3549,7 +3759,12 @@
     renderPatientProfiles();
     renderHistory();
     renderStaffNotifications();
-    setActiveSection(text(window.location.hash).replace(/^#/, "") || "staff-dashboard");
+    const initialSectionId = text(window.location.hash).replace(/^#/, "") || "staff-dashboard";
+    if (requiresCredentialUpdate) {
+      forceCredentialUpdateFlow({ focus: false });
+      return;
+    }
+    setActiveSection(initialSectionId);
   };
 
   hydrateNotificationRuntimeCache();

@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS `mss_sessions` (
   `location_label` VARCHAR(120) NOT NULL DEFAULT '',
   `device_label` VARCHAR(120) NOT NULL DEFAULT '',
   `ip_address` VARCHAR(64) NOT NULL DEFAULT '',
+  `password_verified_at` DATETIME NULL,
   `signed_in_at` DATETIME NOT NULL,
   `last_seen_at` DATETIME NOT NULL,
   `created_at` DATETIME NOT NULL,
@@ -369,6 +370,12 @@ SQL,
         $pdo->exec($statement);
     }
 
+    mss_ensure_table_column(
+        $pdo,
+        'mss_sessions',
+        'password_verified_at',
+        "ALTER TABLE `mss_sessions` ADD COLUMN `password_verified_at` DATETIME NULL AFTER `ip_address`"
+    );
     mss_ensure_table_column(
         $pdo,
         'mss_inventory_records',

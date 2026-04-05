@@ -1,5 +1,6 @@
 (() => {
   const STATE_ENDPOINT = "state-api.php";
+  const AUTH_ENDPOINT = "auth-api.php";
   const PRESENCE_ENDPOINT = `${STATE_ENDPOINT}?scope=presence`;
   const ACTIVE_USERS_REFRESH_MS = 30000;
   const currentAuthUser = typeof window.MSS_AUTH_USER === "object" && window.MSS_AUTH_USER
@@ -155,6 +156,18 @@
 
     return payload;
   };
+
+  const refreshCurrentSession = async ({ rotate = false, locationLabel = "" } = {}) => requestJson(AUTH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "refresh_current_session",
+      rotate,
+      locationLabel
+    })
+  });
 
   const resolveLogActionType = (value = {}) => {
     const explicitType = keyOf(value.actionType || value.type);
@@ -901,12 +914,12 @@
     if (usernameExists(username)) return void showNotice("Username already exists. Please use another username.", "danger");
 
     const timestamp = nowIso();
-    const user = { id: uid(), fullName, username, contact, accountType, role, status: "Active", password, credentialsUpdatedAt: timestamp, createdAt: timestamp, createdBy: actorName(), updatedAt: timestamp, updatedBy: actorName() };
+    const user = { id: uid(), fullName, username, contact, accountType, role, status: "Active", password, credentialsUpdatedAt: "", createdAt: timestamp, createdBy: actorName(), updatedAt: timestamp, updatedBy: actorName() };
     state.users.push(user);
-    addLog({ action: "Created BHW account", actionType: "created", target: user.fullName, details: `BHW access was provisioned for @${user.username}.`, category: "BHW" });
+    addLog({ action: "Created BHW account", actionType: "created", target: user.fullName, details: `Temporary BHW access was provisioned for @${user.username}. Password change is required on first login.`, category: "BHW" });
     await saveAndRender();
     refs.createAccountForm?.reset();
-    showNotice(`BHW account created successfully for ${user.fullName}.`);
+    showNotice(`Temporary BHW account created successfully for ${user.fullName}.`);
   };
 
   const handleEditAccount = async (event) => {
@@ -999,8 +1012,22 @@
       setNotice(refs.nurseSettingsNotice, "account-helper", error instanceof Error ? error.message : "Unable to save admin credentials right now.", "danger");
       return;
     }
+    let sessionRefreshFailed = false;
+    try {
+      await refreshCurrentSession({
+        rotate: hasPasswordChange,
+        locationLabel: "Settings Module"
+      });
+    } catch (error) {
+      sessionRefreshFailed = true;
+      console.error("Unable to refresh the current admin session after saving credentials.", error);
+    }
     syncNurseSettingsForm();
-    showNotice("Admin credentials updated successfully.");
+    showNotice(
+      sessionRefreshFailed
+        ? "Admin credentials updated successfully. Continue using the dashboard with your new credentials."
+        : "Admin credentials updated successfully."
+    );
   };
 
   const handleChangePassword = async (event) => {
@@ -1028,11 +1055,12 @@
     }
     user.username = username;
     user.password = password;
-    user.credentialsUpdatedAt = nowIso();
+    user.credentialsUpdatedAt = "";
     user.updatedAt = nowIso();
     user.updatedBy = actorName();
-    addLog({ action: "Reset BHW credentials", actionType: "security", target: user.fullName, details: `Username and password were reset for @${user.username}.`, category: "Security" });
-    setNotice(refs.resetCredentialsNotice, "small mt-3", "Credentials updated.", "success");
+    removeSession(user.id);
+    addLog({ action: "Reset BHW credentials", actionType: "security", target: user.fullName, details: `Temporary username and password were reset for @${user.username}. Password change is required on next login.`, category: "Security" });
+    setNotice(refs.resetCredentialsNotice, "small mt-3", "Temporary credentials updated. BHW must change them on next login.", "success");
     try {
       await saveAndRender();
     } catch (error) {

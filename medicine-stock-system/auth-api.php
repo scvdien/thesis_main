@@ -50,6 +50,60 @@ try {
         ]);
     }
 
+    if ($action === 'verify_current_password') {
+        $user = mss_auth_require_user($pdo);
+        $currentPassword = (string) ($input['currentPassword'] ?? $_POST['current_password'] ?? '');
+
+        if ($currentPassword === '') {
+            mss_api_error('Enter your current password first.', 422);
+        }
+
+        if (!password_verify($currentPassword, (string) ($user['password_hash'] ?? ''))) {
+            mss_api_error('Current password is incorrect.', 401);
+        }
+
+        mss_auth_mark_recent_password_verification($pdo, $user);
+
+        mss_api_respond([
+            'success' => true,
+            'message' => 'Current password verified.',
+            'user' => mss_auth_user_payload($user),
+        ]);
+    }
+
+    if ($action === 'refresh_current_session') {
+        $rotate = filter_var($input['rotate'] ?? $_POST['rotate'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $locationLabel = trim((string) ($input['locationLabel'] ?? $_POST['location_label'] ?? ''));
+        $sessionToken = mss_auth_read_session_token();
+        $session = $sessionToken !== '' ? mss_auth_find_session_by_token($pdo, $sessionToken) : null;
+        $sessionUserId = trim((string) ($_SESSION['mss_user_id'] ?? ($session['user_id'] ?? '')));
+        if ($sessionUserId === '') {
+            mss_api_error('Authentication required.', 401);
+        }
+
+        $freshUser = mss_auth_find_user_by_id($pdo, $sessionUserId);
+        if (!is_array($freshUser) || trim((string) ($freshUser['status'] ?? '')) !== 'Active') {
+            mss_auth_clear_session_state();
+            mss_api_error('Authentication required.', 401);
+        }
+
+        if (is_array($session)
+            && mss_auth_credentials_changed_after_session($freshUser, $session)
+            && !mss_auth_has_recent_password_verification($pdo, $freshUser)
+        ) {
+            mss_auth_clear_session_state();
+            mss_api_error('Authentication required.', 401);
+        }
+
+        mss_auth_refresh_current_session($pdo, $freshUser, mss_api_client_ip(), $locationLabel, '', $rotate);
+
+        mss_api_respond([
+            'success' => true,
+            'message' => 'Session refreshed successfully.',
+            'user' => mss_auth_user_payload($freshUser),
+        ]);
+    }
+
     if ($action === 'setup_admin') {
         $username = trim((string) ($input['username'] ?? $_POST['username'] ?? ''));
         $password = (string) ($input['password'] ?? $_POST['password'] ?? '');
