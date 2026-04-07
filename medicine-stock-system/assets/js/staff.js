@@ -1634,8 +1634,11 @@
     text(medicine.unit)
   ].join(" ").toLowerCase();
   const isActiveMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
+  const isExpiredMedicine = (medicine) => daysUntil(medicine?.expiryDate) < 0;
   const getActiveMedicines = () => state.inventory.filter(isActiveMedicine);
-  const getSortedMedicines = () => [...getActiveMedicines()].sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
+  const getSortedMedicines = ({ includeExpired = true } = {}) => [...getActiveMedicines()]
+    .filter((medicine) => includeExpired || !isExpiredMedicine(medicine))
+    .sort((left, right) => medicineLabel(left).localeCompare(medicineLabel(right)));
   const movementConditionLabel = (movement) => {
     const diseaseCategory = text(movement?.diseaseCategory);
     const illness = text(movement?.illness);
@@ -2609,7 +2612,7 @@
         : "Select patient first";
     }
     if (refs.dispenseMedicine) refs.dispenseMedicine.disabled = !hasResident;
-    if (refs.dispenseSubmitBtn) refs.dispenseSubmitBtn.disabled = !hasResident;
+    syncDispenseSubmitState();
     renderMedicineSearchResults();
     renderStockPreview();
   };
@@ -2690,9 +2693,26 @@
     }).join("");
   };
 
+  const syncDispenseSubmitState = () => {
+    if (!refs.dispenseSubmitBtn) return;
+    const hasResident = Boolean(findResidentAccount(state.selectedResidentId));
+    const medicine = findMedicine(text(refs.dispenseMedicine?.value));
+    refs.dispenseSubmitBtn.disabled = !hasResident || Boolean(medicine && isExpiredMedicine(medicine));
+  };
+
   const updateDispenseMedicineSelection = (medicineId, { syncInput = true } = {}) => {
     if (!refs.dispenseMedicine) return;
     const nextMedicine = findMedicine(text(medicineId));
+
+    if (nextMedicine && isExpiredMedicine(nextMedicine)) {
+      refs.dispenseMedicine.value = "";
+      if (syncInput && refs.dispenseMedicineSearch) refs.dispenseMedicineSearch.value = "";
+      showNotice(`${medicineLabel(nextMedicine)} is already expired and cannot be dispensed.`, "danger");
+      renderMedicineSearchResults();
+      renderStockPreview();
+      return;
+    }
+
     refs.dispenseMedicine.value = nextMedicine?.id || "";
     if (syncInput && refs.dispenseMedicineSearch) {
       refs.dispenseMedicineSearch.value = nextMedicine ? medicineLabel(nextMedicine) : "";
@@ -2710,12 +2730,19 @@
       return;
     }
 
-    const medicines = getSortedMedicines();
+    const medicines = getSortedMedicines({ includeExpired: false });
     const query = keyOf(refs.dispenseMedicineSearch?.value);
     const selectedMedicine = findMedicine(text(refs.dispenseMedicine?.value));
+    const hasExpiredMatch = getSortedMedicines()
+      .some((medicine) => isExpiredMedicine(medicine) && (!query || medicineSearchText(medicine).includes(query)));
 
     if (!medicines.length) {
-      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No medicine available in inventory.</div>';
+      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No non-expired medicine available in inventory.</div>';
+      return;
+    }
+
+    if (selectedMedicine && isExpiredMedicine(selectedMedicine)) {
+      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">Expired medicines cannot be dispensed. Choose a non-expired stock item.</div>';
       return;
     }
 
@@ -2741,7 +2768,9 @@
       .slice(0, 6);
 
     if (!matches.length) {
-      refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No matching medicine found in inventory.</div>';
+      refs.dispenseMedicineResults.innerHTML = hasExpiredMatch
+        ? '<div class="staff-empty">Expired medicines cannot be dispensed. Choose a non-expired stock item.</div>'
+        : '<div class="staff-empty">No matching medicine found in inventory.</div>';
       return;
     }
 
@@ -2765,7 +2794,7 @@
   const renderMedicineOptions = () => {
     if (!refs.dispenseMedicine) return;
     const current = text(refs.dispenseMedicine.value);
-    const medicines = getSortedMedicines();
+    const medicines = getSortedMedicines({ includeExpired: false });
 
     refs.dispenseMedicine.innerHTML = [
       '<option value="">Select medicine</option>',
@@ -2784,6 +2813,7 @@
 
   const renderStockPreview = () => {
     if (!refs.dispenseStockPreview) return;
+    syncDispenseSubmitState();
     const resident = findResidentAccount(state.selectedResidentId);
 
     if (!resident) {
@@ -2802,6 +2832,15 @@
 
     const status = getStatus(medicine);
     refs.dispenseStockPreview.className = `staff-stock-preview staff-stock-preview--${status.tone}`;
+
+    if (isExpiredMedicine(medicine)) {
+      refs.dispenseStockPreview.innerHTML = `
+        <strong>${esc(medicineLabel(medicine))} is expired</strong>
+        <span>Expired medicines cannot be dispensed. Exp ${esc(formatDate(medicine.expiryDate))} | ${esc(medicine.location || "Main Cabinet")}</span>
+      `;
+      return;
+    }
+
     refs.dispenseStockPreview.innerHTML = `
       <strong>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)} available</strong>
       <span>${esc(status.label)} | Exp ${esc(formatDate(medicine.expiryDate))} | ${esc(medicine.location || "Main Cabinet")}</span>
@@ -3046,6 +3085,11 @@
 
     if (quantity <= 0) {
       showNotice("Enter a valid quantity to dispense.", "danger");
+      return;
+    }
+
+    if (isExpiredMedicine(medicine)) {
+      showNotice("Expired medicine cannot be dispensed.", "danger");
       return;
     }
 

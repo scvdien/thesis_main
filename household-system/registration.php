@@ -539,6 +539,35 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   </div>
 </div>
 
+<!-- Saving Household Overlay -->
+<div id="savingHouseholdModal" class="saving-household-overlay" hidden aria-hidden="true" aria-modal="true" role="dialog">
+  <div class="saving-household-dialog">
+    <div class="modern-modal text-center saving-household-modal">
+      <div class="modal-icon saving-household-icon mb-3" aria-hidden="true">
+        <div class="spinner-border saving-household-spinner" role="status"></div>
+      </div>
+      <h5 class="modal-title mb-2" id="savingHouseholdModalTitle">Saving Household</h5>
+      <p class="mb-0" id="savingHouseholdModalMessage">Please wait while we save this household record.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Duplicate Household Modal -->
+<div class="modal fade" id="duplicateHouseholdModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modern-modal text-center duplicate-household-modal">
+      <div class="modal-icon duplicate-household-icon mb-3 text-warning">
+        <i class="bi bi-exclamation-circle-fill fs-1"></i>
+      </div>
+      <h5 class="modal-title mb-2" id="duplicateHouseholdModalTitle">Household Already Exists</h5>
+      <p class="mb-3" id="duplicateHouseholdModalMessage">This household record already exists.</p>
+      <div class="d-flex justify-content-center gap-2 flex-wrap">
+        <button type="button" class="btn btn-primary btn-modern" data-bs-dismiss="modal">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Load Existing Household Modal -->
 <div class="modal fade" id="loadHouseholdModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg load-household-dialog">

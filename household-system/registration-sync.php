@@ -22,6 +22,29 @@ function reg_error(int $statusCode, string $message): never
     ]);
 }
 
+final class RegDuplicateHouseholdException extends RuntimeException
+{
+    /** @var array<string, mixed> */
+    private $duplicate;
+
+    /**
+     * @param array<string, mixed> $duplicate
+     */
+    public function __construct(array $duplicate, string $message)
+    {
+        parent::__construct($message);
+        $this->duplicate = $duplicate;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getDuplicate(): array
+    {
+        return is_array($this->duplicate) ? $this->duplicate : [];
+    }
+}
+
 function reg_text(mixed $value, int $maxLength = 255): string
 {
     $text = trim((string) $value);
@@ -848,6 +871,63 @@ function reg_parse_year_value(mixed $value): int
     return reg_valid_record_year($year) ? $year : 0;
 }
 
+function reg_duplicate_key_part(mixed $value, int $maxLength = 220): string
+{
+    $text = reg_text($value, $maxLength);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = strtolower($text);
+    $text = preg_replace('/\s+/u', ' ', $text);
+    if (!is_string($text)) {
+        return strtolower(reg_text($value, $maxLength));
+    }
+
+    return trim($text);
+}
+
+/**
+ * @param array<string, mixed> $record
+ * @param array<string, mixed> $head
+ */
+function reg_household_head_name_key(array $record, array $head = []): string
+{
+    $headName = reg_text($record['head_name'] ?? '', 180);
+    if ($headName === '') {
+        $headName = trim(implode(' ', array_filter([
+            reg_text($head['first_name'] ?? '', 80),
+            reg_text($head['middle_name'] ?? '', 80),
+            reg_text($head['last_name'] ?? '', 80),
+            reg_text($head['extension_name'] ?? '', 80),
+        ])));
+    }
+
+    return reg_duplicate_key_part($headName, 220);
+}
+
+/**
+ * @param array<string, mixed> $record
+ * @param array<string, mixed> $head
+ */
+function reg_household_address_key(array $record, array $head = []): string
+{
+    return reg_duplicate_key_part($record['address'] ?? ($head['address'] ?? ''), 220);
+}
+
+/**
+ * @param array<string, mixed> $record
+ */
+function reg_household_record_year_from_record(array $record): int
+{
+    $recordYear = reg_parse_year_value($record['record_year'] ?? 0);
+    if (reg_valid_record_year($recordYear)) {
+        return $recordYear;
+    }
+
+    return reg_household_record_year(reg_text($record['household_id'] ?? '', 64));
+}
+
 function reg_household_code_for_year(string $householdCode, int $targetYear): string
 {
     if (!reg_valid_record_year($targetYear)) {
@@ -917,7 +997,7 @@ function reg_identity_birthday_part(mixed $value): string
 /**
  * @param array<string, mixed> $head
  */
-function reg_household_identity(array $head): string
+function reg_household_identity_core(array $head): string
 {
     $firstName = reg_identity_part($head['first_name'] ?? '');
     $lastName = reg_identity_part($head['last_name'] ?? '');
@@ -925,9 +1005,207 @@ function reg_household_identity(array $head): string
     if ($firstName === '' || $lastName === '' || $birthday === '') {
         return '';
     }
+
+    return implode('|', [$firstName, $lastName, $birthday]);
+}
+
+/**
+ * @param array<string, mixed> $head
+ */
+function reg_household_identity_full(array $head): string
+{
+    $firstName = reg_identity_part($head['first_name'] ?? '');
+    $lastName = reg_identity_part($head['last_name'] ?? '');
+    $birthday = reg_identity_birthday_part($head['birthday'] ?? '');
+    if ($firstName === '' || $lastName === '' || $birthday === '') {
+        return '';
+    }
+
     $middleName = reg_identity_part($head['middle_name'] ?? '');
     $extensionName = reg_identity_part($head['extension_name'] ?? '');
     return implode('|', [$firstName, $middleName, $lastName, $extensionName, $birthday]);
+}
+
+/**
+ * @param array<int, string> $values
+ * @return array<int, string>
+ */
+function reg_unique_text_values(array $values): array
+{
+    $seen = [];
+    $unique = [];
+
+    foreach ($values as $value) {
+        if (!is_string($value) || $value === '') {
+            continue;
+        }
+        if (isset($seen[$value])) {
+            continue;
+        }
+        $seen[$value] = true;
+        $unique[] = $value;
+    }
+
+    return $unique;
+}
+
+/**
+ * @param array<string, mixed> $record
+ */
+function reg_household_duplicate_keys(array $record): array
+{
+    $head = is_array($record['head'] ?? null) ? $record['head'] : [];
+    $identityCore = reg_household_identity_core($head);
+    $identityFull = reg_household_identity_full($head);
+    $headName = reg_household_head_name_key($record, $head);
+    $zone = reg_duplicate_key_part(
+        reg_normalize_zone_text($record['zone'] ?? ($head['zone'] ?? '')),
+        80
+    );
+    $address = reg_household_address_key($record, $head);
+    $firstName = reg_identity_part($head['first_name'] ?? '');
+    $lastName = reg_identity_part($head['last_name'] ?? '');
+
+    $keys = [];
+
+    if ($identityCore !== '') {
+        $keys[] = 'identity_core|' . $identityCore;
+
+        if ($identityFull !== '' && $identityFull !== $identityCore) {
+            $keys[] = 'identity_full|' . $identityFull;
+        }
+
+        if ($address !== '') {
+            $keys[] = 'identity_address|' . $identityCore . '|' . $address . '|' . $zone;
+        } elseif ($zone !== '') {
+            $keys[] = 'identity_zone|' . $identityCore . '|' . $zone;
+        }
+    }
+
+    if ($firstName !== '' && $lastName !== '') {
+        if ($address !== '') {
+            $keys[] = 'name_address|' . $firstName . '|' . $lastName . '|' . $address . '|' . $zone;
+        }
+        if ($zone !== '') {
+            $keys[] = 'name_zone|' . $firstName . '|' . $lastName . '|' . $zone;
+        }
+    }
+
+    if ($headName !== '' && $address !== '') {
+        $keys[] = 'head_address|' . $headName . '|' . $address . '|' . $zone;
+    }
+
+    if ($headName !== '' && $zone !== '') {
+        $keys[] = 'head_zone|' . $headName . '|' . $zone;
+    }
+
+    return reg_unique_text_values($keys);
+}
+
+/**
+ * @param array<string, mixed> $record
+ */
+function reg_household_duplicate_key(array $record): string
+{
+    $keys = reg_household_duplicate_keys($record);
+    return $keys[0] ?? '';
+}
+
+/**
+ * @param array<string, mixed> $record
+ */
+function reg_household_duplicate_lock_name(array $record): string
+{
+    $recordYear = reg_household_record_year_from_record($record);
+    $duplicateKey = reg_household_duplicate_key($record);
+    if (!reg_valid_record_year($recordYear) || $duplicateKey === '') {
+        return '';
+    }
+
+    return sprintf('reg_hh_dup_%04d_%s', $recordYear, sha1($duplicateKey));
+}
+
+function reg_acquire_advisory_lock(PDO $pdo, string $lockName, int $timeoutSeconds = 10): bool
+{
+    if ($lockName === '') {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT GET_LOCK(:lock_name, :timeout_seconds)');
+        $stmt->bindValue('lock_name', $lockName, PDO::PARAM_STR);
+        $stmt->bindValue('timeout_seconds', $timeoutSeconds, PDO::PARAM_INT);
+        $stmt->execute();
+        return (string) $stmt->fetchColumn() === '1';
+    } catch (Throwable) {
+        return false;
+    }
+}
+
+function reg_release_advisory_lock(PDO $pdo, string $lockName): void
+{
+    if ($lockName === '') {
+        return;
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT RELEASE_LOCK(:lock_name)');
+        $stmt->execute(['lock_name' => $lockName]);
+    } catch (Throwable) {
+        // Ignore release failures so the main response can continue.
+    }
+}
+
+/**
+ * @param array<string, mixed> $duplicate
+ */
+function reg_duplicate_household_message(array $duplicate): string
+{
+    $duplicateYear = reg_text($duplicate['year'] ?? '', 10);
+    return $duplicateYear !== ''
+        ? "Household already exists for {$duplicateYear}. Duplicate entries are not allowed."
+        : 'Household already exists. Duplicate entries are not allowed.';
+}
+
+/**
+ * @param array<string, mixed> $duplicate
+ * @return array<string, mixed>
+ */
+function reg_duplicate_household_payload(array $duplicate): array
+{
+    return [
+        'success' => false,
+        'code' => 'duplicate_household',
+        'error' => reg_duplicate_household_message($duplicate),
+        'duplicate' => $duplicate,
+    ];
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @return array<string, mixed>
+ */
+function reg_duplicate_record_from_household_row(array $row): array
+{
+    $rowRecord = reg_json_decode_assoc((string) ($row['record_data_json'] ?? ''));
+    $existingHead = reg_json_decode_assoc((string) ($row['head_data_json'] ?? ''));
+    if (!is_array($rowRecord)) {
+        $rowRecord = [];
+    }
+    if (!isset($rowRecord['head']) || !is_array($rowRecord['head'])) {
+        $rowRecord['head'] = $existingHead;
+    }
+    if (!array_key_exists('head_name', $rowRecord)) {
+        $rowRecord['head_name'] = (string) ($row['head_name'] ?? '');
+    }
+    if (!array_key_exists('zone', $rowRecord)) {
+        $rowRecord['zone'] = reg_normalize_zone_text($row['zone'] ?? ($existingHead['zone'] ?? ''));
+    }
+    if (!array_key_exists('address', $rowRecord) && array_key_exists('address', $existingHead)) {
+        $rowRecord['address'] = $existingHead['address'];
+    }
+
+    return $rowRecord;
 }
 
 /**
@@ -936,19 +1214,17 @@ function reg_household_identity(array $head): string
  */
 function reg_find_duplicate_household(PDO $pdo, array $record, string $excludeHouseholdCode = ''): ?array
 {
-    $head = is_array($record['head'] ?? null) ? $record['head'] : [];
-    $identity = reg_household_identity($head);
-    if ($identity === '') {
+    $duplicateKeys = reg_household_duplicate_keys($record);
+    if (count($duplicateKeys) === 0) {
         return null;
     }
 
-    $targetHouseholdCode = reg_text($record['household_id'] ?? '', 64);
-    $targetYear = reg_household_year_from_code($targetHouseholdCode);
-    if ($targetYear === '') {
+    $targetYear = reg_household_record_year_from_record($record);
+    if (!reg_valid_record_year($targetYear)) {
         return null;
     }
 
-    $sql = 'SELECT `household_code`, `head_name`, `zone`, `head_data_json`, `created_at`, `updated_at`
+    $sql = 'SELECT `household_code`, `record_year`, `head_name`, `zone`, `head_data_json`, `record_data_json`, `created_at`, `updated_at`
             FROM `registration_households`';
     $params = [];
     $where = [];
@@ -956,8 +1232,9 @@ function reg_find_duplicate_household(PDO $pdo, array $record, string $excludeHo
         $where[] = '`household_code` <> :exclude_household_code';
         $params['exclude_household_code'] = $excludeHouseholdCode;
     }
-    $where[] = '`household_code` LIKE :year_prefix';
-    $params['year_prefix'] = "HH-{$targetYear}-%";
+    $where[] = '(`record_year` = :record_year OR (`record_year` = 0 AND `household_code` LIKE :year_prefix))';
+    $params['record_year'] = $targetYear;
+    $params['year_prefix'] = sprintf('HH-%04d-%%', $targetYear);
     if (count($where) > 0) {
         $sql .= ' WHERE ' . implode(' AND ', $where);
     }
@@ -971,16 +1248,21 @@ function reg_find_duplicate_household(PDO $pdo, array $record, string $excludeHo
         if (!is_array($row)) {
             continue;
         }
-        $existingHead = reg_json_decode_assoc((string) ($row['head_data_json'] ?? ''));
-        $existingIdentity = reg_household_identity($existingHead);
-        if ($existingIdentity === '' || $existingIdentity !== $identity) {
+
+        $rowRecord = reg_duplicate_record_from_household_row($row);
+        $existingDuplicateKeys = reg_household_duplicate_keys($rowRecord);
+        if (count($existingDuplicateKeys) === 0) {
             continue;
         }
+        if (count(array_intersect($duplicateKeys, $existingDuplicateKeys)) === 0) {
+            continue;
+        }
+
         return [
             'household_id' => (string) ($row['household_code'] ?? ''),
             'head_name' => (string) ($row['head_name'] ?? ''),
             'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
-            'year' => $targetYear,
+            'year' => (string) (reg_parse_year_value($row['record_year'] ?? 0) ?: $targetYear),
             'created_at' => (string) ($row['created_at'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
         ];
@@ -1090,13 +1372,17 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         'updated_at' => $syncedAt,
         'server_synced_at' => $syncedAt,
     ];
+    $duplicateLockName = reg_household_duplicate_lock_name($recordForStore);
 
     $startedTransaction = false;
-    if (!$pdo->inTransaction()) {
-        $pdo->beginTransaction();
-        $startedTransaction = true;
-    }
     try {
+        reg_acquire_advisory_lock($pdo, $duplicateLockName);
+
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $startedTransaction = true;
+        }
+
         $findStmt = $pdo->prepare(
             'SELECT `id` FROM `registration_households`
              WHERE `household_code` = :household_code
@@ -1105,6 +1391,14 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $findStmt->execute(['household_code' => $householdCode]);
         $existing = $findStmt->fetch(PDO::FETCH_ASSOC);
         $householdDbId = is_array($existing) ? (int) ($existing['id'] ?? 0) : 0;
+
+        $duplicate = reg_find_duplicate_household($pdo, $recordForStore, $householdCode);
+        if (is_array($duplicate)) {
+            throw new RegDuplicateHouseholdException(
+                $duplicate,
+                reg_duplicate_household_message($duplicate)
+            );
+        }
 
         if ($householdDbId > 0) {
             $updateStmt = $pdo->prepare(
@@ -1287,6 +1581,8 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             $pdo->rollBack();
         }
         throw $exception;
+    } finally {
+        reg_release_advisory_lock($pdo, $duplicateLockName);
     }
 }
 
@@ -1503,6 +1799,15 @@ function reg_rollover_households(PDO $pdo, int $targetYear, int $sourceYear, arr
                 'created_at' => $syncedAt,
                 'updated_at' => $syncedAt,
             ];
+
+            $existingDuplicate = reg_find_duplicate_household($pdo, $rolloverRecord, $targetHouseholdCode);
+            if (is_array($existingDuplicate)) {
+                $skipped += 1;
+                if (count($skippedIds) < 10) {
+                    $skippedIds[] = (string) ($existingDuplicate['household_id'] ?? $targetHouseholdCode);
+                }
+                continue;
+            }
 
             reg_upsert_household($pdo, $rolloverRecord, $authUser);
 
@@ -1733,6 +2038,63 @@ function reg_list_households(PDO $pdo): array
     }
 
     return $payload;
+}
+
+function reg_list_household_duplicate_index(PDO $pdo): array
+{
+    $limit = max(1, min(500, (int) ($_GET['limit'] ?? 250)));
+    $offset = max(0, (int) ($_GET['offset'] ?? 0));
+    $recordYear = reg_parse_year_value($_GET['year'] ?? 0);
+
+    if (!reg_valid_record_year($recordYear)) {
+        return [
+            'items' => [],
+            'count' => 0,
+            'limit' => $limit,
+            'offset' => $offset,
+            'has_more' => false,
+        ];
+    }
+
+    $sql = 'SELECT `household_code`, `record_year`, `head_name`, `zone`, `head_data_json`, `record_data_json`, `created_at`, `updated_at`
+            FROM `registration_households`
+            WHERE `record_year` = :record_year
+            ORDER BY `updated_at` DESC, `id` DESC LIMIT ' . $limit . ' OFFSET ' . $offset;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['record_year' => $recordYear]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $items = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $rowRecord = reg_duplicate_record_from_household_row($row);
+        $duplicateKeys = reg_household_duplicate_keys($rowRecord);
+        if (count($duplicateKeys) === 0) {
+            continue;
+        }
+
+        $items[] = [
+            'household_id' => (string) ($row['household_code'] ?? ''),
+            'record_year' => (int) ($row['record_year'] ?? 0),
+            'head_name' => (string) ($row['head_name'] ?? ''),
+            'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
+            'created_at' => (string) ($row['created_at'] ?? ''),
+            'updated_at' => (string) ($row['updated_at'] ?? ''),
+            'duplicate_keys' => $duplicateKeys,
+        ];
+    }
+
+    return [
+        'items' => $items,
+        'count' => count($rows),
+        'limit' => $limit,
+        'offset' => $offset,
+        'has_more' => count($rows) === $limit,
+    ];
 }
 
 function reg_list_household_years(PDO $pdo): array
@@ -2117,6 +2479,9 @@ try {
         if ($action === 'list_households') {
             reg_respond(200, ['success' => true, 'data' => reg_list_households($pdo)]);
         }
+        if ($action === 'list_household_duplicate_index') {
+            reg_respond(200, ['success' => true, 'data' => reg_list_household_duplicate_index($pdo)]);
+        }
         if ($action === 'list_household_years') {
             reg_respond(200, ['success' => true, 'data' => ['years' => reg_list_household_years($pdo)]]);
         }
@@ -2190,16 +2555,7 @@ try {
         }
         $duplicate = reg_find_duplicate_household($pdo, $record, $householdCode);
         if (is_array($duplicate)) {
-            $duplicateYear = reg_text($duplicate['year'] ?? '', 10);
-            $message = $duplicateYear !== ''
-                ? "Household already exists for {$duplicateYear}. Do you want to replace this household?"
-                : 'Household already exists. Do you want to replace this household?';
-            reg_respond(409, [
-                'success' => false,
-                'code' => 'duplicate_household',
-                'error' => $message,
-                'duplicate' => $duplicate,
-            ]);
+            reg_respond(409, reg_duplicate_household_payload($duplicate));
         }
         $wasExisting = reg_household_exists($pdo, $householdCode);
         $memberRows = reg_normalize_members($record['members'] ?? []);
@@ -2326,6 +2682,8 @@ try {
     }
 
     reg_error(400, 'Unsupported action.');
+} catch (RegDuplicateHouseholdException $exception) {
+    reg_respond(409, reg_duplicate_household_payload($exception->getDuplicate()));
 } catch (Throwable $exception) {
     reg_error(500, reg_friendly_server_error($exception));
 }

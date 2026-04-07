@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const PRESERVE_DRAFT_FLAG_KEY = "registration_preserve_draft";
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
+  const DUPLICATE_INDEX_CACHE_KEY = "household_registration_duplicate_index";
   const LAST_SYNC_KEY = "household_registration_last_sync_at";
   const LAST_SYNC_ERROR_KEY = "household_registration_last_sync_error";
   const PRESENCE_ENDPOINT = "auth-presence.php";
@@ -33,11 +34,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         HEAD_KEY,
         REGISTRATION_RECORDS_KEY,
         SYNC_QUEUE_KEY,
+        DUPLICATE_INDEX_CACHE_KEY,
         LAST_SYNC_KEY,
         LAST_SYNC_ERROR_KEY
       ])
     : window.localStorage;
   const SYNC_ENDPOINT = "registration-sync.php";
+  const DUPLICATE_INDEX_PAGE_SIZE = 250;
+  const DUPLICATE_INDEX_CACHE_TTL_MS = 5 * 60 * 1000;
   const USERS_API_ENDPOINT = "users-api.php";
   const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
   const CREDENTIAL_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
@@ -104,6 +108,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveModalTitle = saveModalEl ? saveModalEl.querySelector(".modal-title") : null;
   const saveModalDescription = saveModalEl ? saveModalEl.querySelector("p") : null;
   const saveConfirm = document.getElementById("saveConfirm");
+  const savingHouseholdModalEl = document.getElementById("savingHouseholdModal");
+  const savingHouseholdModalTitle = document.getElementById("savingHouseholdModalTitle");
+  const savingHouseholdModalMessage = document.getElementById("savingHouseholdModalMessage");
+  const duplicateHouseholdModalEl = document.getElementById("duplicateHouseholdModal");
+  const duplicateHouseholdModal = duplicateHouseholdModalEl ? new bootstrap.Modal(duplicateHouseholdModalEl) : null;
+  const duplicateHouseholdModalTitle = document.getElementById("duplicateHouseholdModalTitle");
+  const duplicateHouseholdModalMessage = document.getElementById("duplicateHouseholdModalMessage");
   const loadExistingBtn = document.getElementById("loadExistingBtn");
   const loadHouseholdModalEl = document.getElementById("loadHouseholdModal");
   const loadHouseholdModal = loadHouseholdModalEl ? new bootstrap.Modal(loadHouseholdModalEl) : null;
@@ -149,9 +160,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   let syncSuccessExpiresAt = 0;
   let syncSuccessTimerId = null;
   let syncToastHideTimerId = null;
+  let savingHouseholdHideTimerId = null;
   let pendingActionBusy = false;
   let loadHouseholdRequestToken = 0;
   let staffCredentialSaveBusy = false;
+  const duplicateIndexRefreshPromises = new Map();
   const LOAD_HOUSEHOLD_MIN_QUERY_LENGTH = 2;
 
   const buildEditModeReturnUrl = () => {
@@ -304,6 +317,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateSyncStatus();
       updateLoadExistingButtonVisibility();
       if (isAppOnline()) {
+        warmDuplicateIndexForYear(targetRecordYear);
         flushSyncQueue({ showSuccessState: true });
       }
     });
@@ -363,11 +377,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!value || typeof value !== "object") return null;
     const householdId = String(value.household_id || "").trim();
     if (!householdId) return null;
+    const yearValue = String(value.year || value.record_year || "").trim();
+    const source = String(value.source || "").trim().toLowerCase();
     return {
       household_id: householdId,
       head_name: String(value.head_name || "").trim(),
       zone: String(value.zone || "").trim(),
-      year: String(value.year || "").trim(),
+      year: yearValue,
+      source,
       created_at: String(value.created_at || "").trim(),
       updated_at: String(value.updated_at || "").trim()
     };
@@ -587,7 +604,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       ? String(error.message || "").trim()
       : String(fallbackMessage || "").trim();
     if (code === "duplicate_household") {
-      message = "Household already exists in database. Resolve this in Sync Center Pending.";
+      message = "Household already exists in database. Duplicate entries are not allowed.";
     }
     return buildSyncIssue({
       message: message || "Unable to sync right now.",
@@ -724,6 +741,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
+  const readObjectFromStorage = (key) => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const writeObjectToStorage = (key, value) => {
+    try {
+      const normalized = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      localStorage.setItem(key, JSON.stringify(normalized));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   const getRegistrationRecords = () => readArrayFromStorage(REGISTRATION_RECORDS_KEY);
   const setRegistrationRecords = (records) => writeArrayToStorage(REGISTRATION_RECORDS_KEY, records);
   const getSyncQueue = () => readArrayFromStorage(SYNC_QUEUE_KEY);
@@ -842,6 +877,46 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const normalizeIdentityPart = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  const normalizeIdentityBirthdayPart = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    }
+
+    const monthFirstMatch = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (monthFirstMatch) {
+      const month = Number.parseInt(monthFirstMatch[1] || "", 10);
+      const day = Number.parseInt(monthFirstMatch[2] || "", 10);
+      let year = Number.parseInt(monthFirstMatch[3] || "", 10);
+      if (Number.isFinite(year) && year >= 0 && year < 100) {
+        year += year >= 70 ? 1900 : 2000;
+      }
+      if (
+        Number.isInteger(month)
+        && Number.isInteger(day)
+        && Number.isInteger(year)
+        && month >= 1
+        && month <= 12
+        && day >= 1
+        && day <= 31
+        && year >= 1900
+        && year <= 2100
+      ) {
+        return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+    }
+
+    const parsedTimestamp = Date.parse(raw);
+    if (Number.isFinite(parsedTimestamp)) {
+      return new Date(parsedTimestamp).toISOString().slice(0, 10);
+    }
+
+    return normalizeIdentityPart(raw);
+  };
 
   const getHouseholdYearFromId = (householdId) => {
     const match = String(householdId || "").trim().match(/^HH-(\d{4})-\d+$/i);
@@ -965,10 +1040,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     return candidates.sort((left, right) => getRecordTimestamp(right) - getRecordTimestamp(left))[0] || null;
   };
 
-  const getHouseholdIdentity = (head = {}) => {
+  const getHouseholdIdentityCore = (head = {}) => {
     const firstName = normalizeIdentityPart(head.first_name);
     const lastName = normalizeIdentityPart(head.last_name);
-    const birthday = normalizeIdentityPart(head.birthday);
+    const birthday = normalizeIdentityBirthdayPart(head.birthday);
+    if (!firstName || !lastName || !birthday) {
+      return "";
+    }
+    return [firstName, lastName, birthday].join("|");
+  };
+
+  const getHouseholdIdentityFull = (head = {}) => {
+    const firstName = normalizeIdentityPart(head.first_name);
+    const lastName = normalizeIdentityPart(head.last_name);
+    const birthday = normalizeIdentityBirthdayPart(head.birthday);
     if (!firstName || !lastName || !birthday) {
       return "";
     }
@@ -977,9 +1062,80 @@ document.addEventListener("DOMContentLoaded", async () => {
     return [firstName, middleName, lastName, extensionName, birthday].join("|");
   };
 
+  const uniqueNonEmptyStrings = (values = []) => {
+    const seen = new Set();
+    return values.filter((value) => {
+      const text = String(value || "").trim();
+      if (!text || seen.has(text)) {
+        return false;
+      }
+      seen.add(text);
+      return true;
+    });
+  };
+
+  const getHouseholdDuplicateKeys = (record = {}) => {
+    if (!record || typeof record !== "object") return [];
+    const head = record.head && typeof record.head === "object" ? record.head : {};
+    const identityCore = getHouseholdIdentityCore(head);
+    const identityFull = getHouseholdIdentityFull(head);
+    const headName = normalizeIdentityPart(buildHeadNameFromRecord(record));
+    const zone = normalizeIdentityPart(normalizeZoneLabel(record.zone || head.zone));
+    const address = normalizeIdentityPart(record.address || head.address);
+    const firstName = normalizeIdentityPart(head.first_name);
+    const lastName = normalizeIdentityPart(head.last_name);
+    const keys = [];
+
+    if (identityCore) {
+      keys.push(`identity_core|${identityCore}`);
+      if (identityFull && identityFull !== identityCore) {
+        keys.push(`identity_full|${identityFull}`);
+      }
+      if (address) {
+        keys.push(`identity_address|${identityCore}|${address}|${zone}`);
+      } else if (zone) {
+        keys.push(`identity_zone|${identityCore}|${zone}`);
+      }
+    }
+
+    if (firstName && lastName) {
+      if (address) {
+        keys.push(`name_address|${firstName}|${lastName}|${address}|${zone}`);
+      }
+      if (zone) {
+        keys.push(`name_zone|${firstName}|${lastName}|${zone}`);
+      }
+    }
+
+    if (headName && address) {
+      keys.push(`head_address|${headName}|${address}|${zone}`);
+    }
+
+    if (headName && zone) {
+      keys.push(`head_zone|${headName}|${zone}`);
+    }
+
+    return uniqueNonEmptyStrings(keys);
+  };
+
+  const getHouseholdDuplicateKey = (record = {}) => {
+    const keys = getHouseholdDuplicateKeys(record);
+    return keys[0] || "";
+  };
+
+  const recordsShareDuplicateKey = (leftRecord, rightRecord) => {
+    const leftKeys = getHouseholdDuplicateKeys(leftRecord);
+    const rightKeys = getHouseholdDuplicateKeys(rightRecord);
+    if (leftKeys.length === 0 || rightKeys.length === 0) {
+      return false;
+    }
+    const rightLookup = new Set(rightKeys);
+    return leftKeys.some((key) => rightLookup.has(key));
+  };
+
   const findDuplicateHouseholdRecord = (record) => {
-    const identity = getHouseholdIdentity(record?.head || {});
-    if (!identity) {
+    const duplicateKeys = getHouseholdDuplicateKeys(record);
+    if (duplicateKeys.length === 0) {
       return null;
     }
     const currentId = String(record?.household_id || "").trim();
@@ -994,13 +1150,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (itemId && currentId && itemId === currentId) return false;
       const itemYear = getHouseholdYearFromId(itemId);
       if (!itemYear || itemYear !== currentYear) return false;
-      return getHouseholdIdentity(item.head || {}) === identity;
+      return recordsShareDuplicateKey(item, record);
     }) || null;
   };
 
   const findDuplicatePendingSyncRecord = (record) => {
-    const identity = getHouseholdIdentity(record?.head || {});
-    if (!identity) {
+    const duplicateKeys = getHouseholdDuplicateKeys(record);
+    if (duplicateKeys.length === 0) {
       return null;
     }
     const currentId = String(record?.household_id || "").trim();
@@ -1015,8 +1171,225 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (itemId && currentId && itemId === currentId) return false;
       const itemYear = getHouseholdYearFromId(itemId);
       if (!itemYear || itemYear !== currentYear) return false;
-      return getHouseholdIdentity(item.head || {}) === identity;
+      return recordsShareDuplicateKey(item, record);
     }) || null;
+  };
+
+  const normalizeDuplicateIndexItem = (item = {}) => {
+    if (!item || typeof item !== "object") return null;
+    const householdId = String(item.household_id || "").trim();
+    if (!householdId) return null;
+    const recordYearRaw = Number.parseInt(String(item.record_year || getHouseholdYearFromId(householdId)), 10);
+    const recordYear = isValidRecordYear(recordYearRaw) ? recordYearRaw : 0;
+    const duplicateKeys = uniqueNonEmptyStrings(Array.isArray(item.duplicate_keys) ? item.duplicate_keys : []);
+    if (duplicateKeys.length === 0) {
+      return null;
+    }
+    return {
+      household_id: householdId,
+      record_year: recordYear,
+      head_name: String(item.head_name || "").trim(),
+      zone: normalizeZoneLabel(item.zone || ""),
+      created_at: String(item.created_at || "").trim(),
+      updated_at: String(item.updated_at || "").trim(),
+      duplicate_keys: duplicateKeys
+    };
+  };
+
+  const normalizeDuplicateIndexCache = (value = {}) => {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const sourceYears = source.years && typeof source.years === "object" && !Array.isArray(source.years)
+      ? source.years
+      : {};
+    const years = {};
+
+    Object.entries(sourceYears).forEach(([yearKey, entry]) => {
+      const normalizedYear = Number.parseInt(String(yearKey || "").trim(), 10);
+      if (!isValidRecordYear(normalizedYear)) {
+        return;
+      }
+      const sourceEntry = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+      const items = Array.isArray(sourceEntry.items)
+        ? sourceEntry.items.map((item) => normalizeDuplicateIndexItem(item)).filter(Boolean)
+        : [];
+      years[String(normalizedYear)] = {
+        synced_at: String(sourceEntry.synced_at || "").trim(),
+        items
+      };
+    });
+
+    return { years };
+  };
+
+  const getDuplicateIndexCache = () => normalizeDuplicateIndexCache(readObjectFromStorage(DUPLICATE_INDEX_CACHE_KEY));
+  const setDuplicateIndexCache = (value) => writeObjectToStorage(DUPLICATE_INDEX_CACHE_KEY, normalizeDuplicateIndexCache(value));
+
+  const getDuplicateIndexCacheEntry = (year) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear)) {
+      return { synced_at: "", items: [] };
+    }
+    const cache = getDuplicateIndexCache();
+    const entry = cache.years[String(safeYear)];
+    if (!entry || typeof entry !== "object") {
+      return { synced_at: "", items: [] };
+    }
+    return {
+      synced_at: String(entry.synced_at || "").trim(),
+      items: Array.isArray(entry.items) ? entry.items : []
+    };
+  };
+
+  const setDuplicateIndexCacheEntry = (year, items = []) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear)) {
+      return;
+    }
+    const cache = getDuplicateIndexCache();
+    cache.years[String(safeYear)] = {
+      synced_at: new Date().toISOString(),
+      items: Array.isArray(items)
+        ? items.map((item) => normalizeDuplicateIndexItem(item)).filter(Boolean)
+        : []
+    };
+    setDuplicateIndexCache(cache);
+  };
+
+  const upsertDuplicateIndexCacheRecord = (record = {}) => {
+    const normalizedRecord = normalizeDuplicateIndexItem(record);
+    if (!normalizedRecord) {
+      return;
+    }
+    const existingEntry = getDuplicateIndexCacheEntry(normalizedRecord.record_year);
+    const items = Array.isArray(existingEntry.items) ? [...existingEntry.items] : [];
+    const index = items.findIndex((item) => String(item?.household_id || "").trim() === normalizedRecord.household_id);
+    if (index >= 0) {
+      items[index] = normalizedRecord;
+    } else {
+      items.unshift(normalizedRecord);
+    }
+    setDuplicateIndexCacheEntry(normalizedRecord.record_year, items);
+  };
+
+  const getDuplicateIndexKeysFromRecord = (record = {}) => {
+    if (record && typeof record === "object" && Array.isArray(record.duplicate_keys)) {
+      return uniqueNonEmptyStrings(record.duplicate_keys);
+    }
+    return getHouseholdDuplicateKeys(record);
+  };
+
+  const duplicateIndexItemsShareKey = (leftRecord, rightRecord) => {
+    const leftKeys = getDuplicateIndexKeysFromRecord(leftRecord);
+    const rightKeys = getDuplicateIndexKeysFromRecord(rightRecord);
+    if (leftKeys.length === 0 || rightKeys.length === 0) {
+      return false;
+    }
+    const rightLookup = new Set(rightKeys);
+    return leftKeys.some((key) => rightLookup.has(key));
+  };
+
+  const findDuplicateCachedHouseholdRecord = (record) => {
+    const currentId = String(record?.household_id || "").trim();
+    const recordYear = Number.parseInt(String(record?.record_year || getHouseholdYearFromId(currentId)), 10);
+    if (!isValidRecordYear(recordYear)) {
+      return null;
+    }
+    const cacheEntry = getDuplicateIndexCacheEntry(recordYear);
+    return cacheEntry.items.find((item) => {
+      const itemId = String(item?.household_id || "").trim();
+      if (itemId && currentId && itemId === currentId) return false;
+      return duplicateIndexItemsShareKey(item, record);
+    }) || null;
+  };
+
+  const fetchDuplicateIndexPage = async ({ year, limit = DUPLICATE_INDEX_PAGE_SIZE, offset = 0 } = {}) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear)) {
+      return { items: [], count: 0, limit, offset, has_more: false };
+    }
+
+    const params = new URLSearchParams({
+      action: "list_household_duplicate_index",
+      year: String(safeYear),
+      limit: String(limit),
+      offset: String(offset)
+    });
+
+    const response = await fetch(`${SYNC_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload || payload.success !== true) {
+      const message = payload && payload.error
+        ? String(payload.error)
+        : `Unable to load household duplicate index (${response.status}).`;
+      throw new Error(message);
+    }
+
+    return payload.data && typeof payload.data === "object"
+      ? payload.data
+      : { items: [], count: 0, limit, offset, has_more: false };
+  };
+
+  const refreshDuplicateIndexForYear = async (year, { force = false } = {}) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear) || !isAppOnline()) {
+      return getDuplicateIndexCacheEntry(safeYear).items;
+    }
+
+    const cacheEntry = getDuplicateIndexCacheEntry(safeYear);
+    const cachedAt = Date.parse(String(cacheEntry.synced_at || ""));
+    if (!force && cacheEntry.synced_at && Number.isFinite(cachedAt) && (Date.now() - cachedAt) < DUPLICATE_INDEX_CACHE_TTL_MS) {
+      return cacheEntry.items;
+    }
+
+    const cacheKey = String(safeYear);
+    if (duplicateIndexRefreshPromises.has(cacheKey)) {
+      return duplicateIndexRefreshPromises.get(cacheKey);
+    }
+
+    const refreshPromise = (async () => {
+      let offset = 0;
+      let keepLoading = true;
+      const collected = [];
+
+      while (keepLoading) {
+        const data = await fetchDuplicateIndexPage({
+          year: safeYear,
+          limit: DUPLICATE_INDEX_PAGE_SIZE,
+          offset
+        });
+        const pageItems = Array.isArray(data?.items)
+          ? data.items.map((item) => normalizeDuplicateIndexItem(item)).filter(Boolean)
+          : [];
+        collected.push(...pageItems);
+
+        const count = Number.parseInt(String(data?.count || pageItems.length), 10) || pageItems.length;
+        keepLoading = Boolean(data?.has_more) && count > 0;
+        offset += count;
+      }
+
+      setDuplicateIndexCacheEntry(safeYear, collected);
+      return getDuplicateIndexCacheEntry(safeYear).items;
+    })().finally(() => {
+      duplicateIndexRefreshPromises.delete(cacheKey);
+    });
+
+    duplicateIndexRefreshPromises.set(cacheKey, refreshPromise);
+    return refreshPromise;
+  };
+
+  const warmDuplicateIndexForYear = (year, options = {}) => {
+    void refreshDuplicateIndexForYear(year, options).catch(() => {});
   };
 
   const upsertRegistrationRecord = (record) => {
@@ -1119,6 +1492,106 @@ document.addEventListener("DOMContentLoaded", async () => {
       syncToastHideTimerId = null;
     }, 2000);
   };
+
+  const showSavingHouseholdModal = ({ updating = false } = {}) => {
+    if (!savingHouseholdModalEl) return;
+    if (savingHouseholdHideTimerId) {
+      window.clearTimeout(savingHouseholdHideTimerId);
+      savingHouseholdHideTimerId = null;
+    }
+    if (savingHouseholdModalTitle) {
+      savingHouseholdModalTitle.textContent = updating ? "Updating Household" : "Saving Household";
+    }
+    if (savingHouseholdModalMessage) {
+      savingHouseholdModalMessage.textContent = updating
+        ? "Please wait while we update this household record."
+        : "Please wait while we save this household record.";
+    }
+    savingHouseholdModalEl.hidden = false;
+    savingHouseholdModalEl.setAttribute("aria-hidden", "false");
+    savingHouseholdModalEl.classList.add("is-visible");
+    document.body.classList.add("saving-household-open");
+  };
+
+  const hideSavingHouseholdModal = async () => {
+    if (!savingHouseholdModalEl) {
+      return;
+    }
+    if (savingHouseholdHideTimerId) {
+      window.clearTimeout(savingHouseholdHideTimerId);
+      savingHouseholdHideTimerId = null;
+    }
+    const isVisible = savingHouseholdModalEl.classList.contains("is-visible") || !savingHouseholdModalEl.hidden;
+    savingHouseholdModalEl.classList.remove("is-visible");
+    savingHouseholdModalEl.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("saving-household-open");
+    if (!isVisible) {
+      savingHouseholdModalEl.hidden = true;
+      return;
+    }
+    await new Promise((resolve) => {
+      savingHouseholdHideTimerId = window.setTimeout(() => {
+        savingHouseholdModalEl.hidden = true;
+        savingHouseholdHideTimerId = null;
+        resolve();
+      }, 180);
+    });
+  };
+
+  const showDuplicateHouseholdModal = (duplicate = {}) => {
+    const duplicateId = String(duplicate?.household_id || "").trim();
+    const duplicateHeadName = String(duplicate?.head_name || "").trim() || "this household";
+    const duplicateYear = String(duplicate?.year || "").trim();
+    const duplicateSource = String(duplicate?.source || "").trim().toLowerCase();
+    const yearText = duplicateYear ? ` for ${duplicateYear}` : "";
+    const idText = duplicateId ? ` (${duplicateId})` : "";
+    const isPendingDuplicate = duplicateSource === "pending_queue";
+    const titleText = isPendingDuplicate ? "Household Already Pending" : "Household Already Exists";
+    const messageText = isPendingDuplicate
+      ? (duplicateId
+        ? `Household record for ${duplicateHeadName}${idText}${yearText} is already in the pending sync queue. Review the pending item instead of saving a duplicate.`
+        : `Household record for ${duplicateHeadName}${yearText} is already in the pending sync queue. Review the pending item instead of saving a duplicate.`)
+      : (duplicateId
+        ? `Household record for ${duplicateHeadName}${idText}${yearText} already exists. Please check the existing household instead of saving a duplicate.`
+        : `Household record for ${duplicateHeadName}${yearText} already exists. Please check the existing household instead of saving a duplicate.`);
+
+    if (!duplicateHouseholdModal || !duplicateHouseholdModalEl) {
+      showSyncToast(
+        isPendingDuplicate
+          ? (duplicateId
+            ? `Household record for ${duplicateHeadName}${idText} is already pending sync.`
+            : `Household record for ${duplicateHeadName}${yearText} is already pending sync.`)
+          : (duplicateId
+            ? `Household record for ${duplicateHeadName}${idText} already exists.`
+            : `Household record for ${duplicateHeadName}${yearText} already exists.`),
+        "warning",
+        titleText
+      );
+      return;
+    }
+
+    if (duplicateHouseholdModalTitle) {
+      duplicateHouseholdModalTitle.textContent = titleText;
+    }
+    if (duplicateHouseholdModalMessage) {
+      duplicateHouseholdModalMessage.textContent = messageText;
+    }
+    duplicateHouseholdModal.show();
+  };
+
+  const cleanupModalArtifactsIfIdle = () => {
+    if (document.querySelector(".modal.show")) {
+      return;
+    }
+    document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.remove());
+    document.body.classList.remove("modal-open");
+    if (!savingHouseholdModalEl || savingHouseholdModalEl.hidden || !savingHouseholdModalEl.classList.contains("is-visible")) {
+      document.body.classList.remove("saving-household-open");
+    }
+    document.body.style.removeProperty("padding-right");
+  };
+
+  duplicateHouseholdModalEl?.addEventListener("hidden.bs.modal", cleanupModalArtifactsIfIdle);
 
   const ensureMemberRequirementForSave = (memberCount, { closeSaveModal = false } = {}) => {
     if (Number(memberCount) > 0) {
@@ -1603,169 +2076,156 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const saveRegistration = async () => {
     let record = buildRegistrationRecord();
+    let duplicateNotice = null;
     clearSyncSuccessState();
     if (!ensureMemberRequirementForSave(Array.isArray(record.members) ? record.members.length : 0, { closeSaveModal: true })) {
       return false;
     }
 
-    await syncConnectivityState({ force: true });
+    showSavingHouseholdModal({ updating: isEditMode });
+    try {
+      await syncConnectivityState({ force: true });
 
-    if (!isEditMode && !isAppOnline()) {
-      const duplicatePending = findDuplicatePendingSyncRecord(record);
-      if (duplicatePending) {
-        const duplicateId = String(duplicatePending?.household_id || "").trim();
-        const duplicateLabel = String(duplicatePending?.head_name || "").trim() || "this household";
-        const shouldReplaceOffline = await askPendingActionConfirm({
-          title: "Offline Household Already Exists",
-          message: duplicateId
-            ? `A matching offline household already exists for ${duplicateLabel} (${duplicateId}). Do you want to replace that offline household with this new data?`
-            : `A matching offline household already exists for ${duplicateLabel}. Do you want to replace that offline household with this new data?`,
-          confirmLabel: "Replace",
-          confirmTone: "primary"
-        });
-        if (!shouldReplaceOffline) {
-          showSyncToast("Save cancelled. Existing offline household retained.", "info", "Cancelled");
+      if (!isEditMode) {
+        if (isAppOnline()) {
+          warmDuplicateIndexForYear(record.record_year);
+        }
+
+        const pendingDuplicate = findDuplicatePendingSyncRecord(record);
+        if (pendingDuplicate) {
+          duplicateNotice = normalizeDuplicateMeta({
+            ...pendingDuplicate,
+            source: "pending_queue"
+          }) || {
+            household_id: String(pendingDuplicate?.household_id || "").trim(),
+            head_name: String(pendingDuplicate?.head_name || "").trim(),
+            year: String(pendingDuplicate?.year || "").trim(),
+            source: "pending_queue"
+          };
           return false;
         }
-
-        const previousHouseholdId = String(record.household_id || "").trim();
-        const targetHouseholdId = duplicateId || previousHouseholdId;
-        record = {
-          ...record,
-          household_id: targetHouseholdId,
-          mode: "replace",
-          created_at: String(duplicatePending?.created_at || record.created_at || ""),
-          updated_at: new Date().toISOString()
-        };
-
-        if (previousHouseholdId && targetHouseholdId && previousHouseholdId !== targetHouseholdId) {
-          removeRegistrationRecord(previousHouseholdId);
-          removeSyncRecord(previousHouseholdId);
-        }
       }
-    }
 
-    upsertRegistrationRecord(record);
-    let queuedByOffline = false;
-    let queuedByError = false;
-    let syncErrorMessage = "";
+      upsertRegistrationRecord(record);
+      let queuedByOffline = false;
+      let queuedByError = false;
+      let syncErrorMessage = "";
 
-    if (isAppOnline()) {
-      syncInProgress = true;
-      updateSyncStatus();
-      try {
-        let syncPayload = null;
+      if (isAppOnline()) {
+        syncInProgress = true;
+        updateSyncStatus();
         try {
-          syncPayload = await syncRecordToServer(record);
-        } catch (error) {
-          const statusCode = Number(error?.status || 0);
-          const errorCode = String(error?.code || error?.payload?.code || "").toLowerCase();
-          const duplicate = error?.payload?.duplicate && typeof error.payload.duplicate === "object"
-            ? error.payload.duplicate
-            : null;
-          const duplicateHouseholdId = String(duplicate?.household_id || "").trim();
+          let syncPayload = null;
+          try {
+            syncPayload = await syncRecordToServer(record);
+          } catch (error) {
+            const statusCode = Number(error?.status || 0);
+            const errorCode = String(error?.code || error?.payload?.code || "").toLowerCase();
+            const duplicate = error?.payload?.duplicate && typeof error.payload.duplicate === "object"
+              ? error.payload.duplicate
+              : null;
 
-          if (statusCode === 409 && errorCode === "duplicate_household" && duplicateHouseholdId) {
-            const duplicateLabel = String(duplicate?.head_name || "existing household").trim() || "existing household";
-            const shouldReplace = await askPendingActionConfirm({
-              title: "Replace Existing Household?",
-              message: `A household record already exists for ${duplicateLabel} (${duplicateHouseholdId}). Do you want to replace the existing household?`,
-              confirmLabel: "Replace",
-              confirmTone: "primary"
-            });
-            if (!shouldReplace) {
+            if (statusCode === 409 && errorCode === "duplicate_household") {
               if (!isEditMode) {
                 removeRegistrationRecord(record.household_id);
                 removeSyncRecord(record.household_id);
               }
-              showSyncToast("Save cancelled. Existing household retained.", "info", "Cancelled");
+              duplicateNotice = normalizeDuplicateMeta({
+                ...(duplicate && typeof duplicate === "object" ? duplicate : {}),
+                source: "database"
+              }) || {
+                household_id: String(duplicate?.household_id || "").trim(),
+                head_name: String(duplicate?.head_name || "").trim(),
+                year: String(duplicate?.year || "").trim(),
+                source: "database"
+              };
               return false;
+            } else {
+              throw error;
             }
+          }
 
+          const syncedHouseholdId = String(syncPayload?.household_id || "").trim();
+          if (syncedHouseholdId && syncedHouseholdId !== String(record.household_id || "").trim()) {
             const previousHouseholdId = String(record.household_id || "").trim();
             record = {
               ...record,
-              household_id: duplicateHouseholdId,
-              mode: "replace",
-              created_at: String(duplicate?.created_at || record.created_at || "")
+              household_id: syncedHouseholdId
             };
-            if (previousHouseholdId && previousHouseholdId !== duplicateHouseholdId) {
-              removeRegistrationRecord(previousHouseholdId);
-              removeSyncRecord(previousHouseholdId);
-            }
+            removeRegistrationRecord(previousHouseholdId);
+            removeSyncRecord(previousHouseholdId);
             upsertRegistrationRecord(record);
-            syncPayload = await syncRecordToServer(record);
-          } else {
-            throw error;
           }
-        }
 
-        const syncedHouseholdId = String(syncPayload?.household_id || "").trim();
-        if (syncedHouseholdId && syncedHouseholdId !== String(record.household_id || "").trim()) {
-          const previousHouseholdId = String(record.household_id || "").trim();
-          record = {
-            ...record,
-            household_id: syncedHouseholdId
-          };
-          removeRegistrationRecord(previousHouseholdId);
-          removeSyncRecord(previousHouseholdId);
-          upsertRegistrationRecord(record);
+          removeSyncRecord(record.household_id);
+          setLastSyncedAt(new Date().toISOString());
+          setLastSyncError("");
+          upsertDuplicateIndexCacheRecord({
+            household_id: String(record.household_id || "").trim(),
+            record_year: Number.parseInt(String(record.record_year || ""), 10) || targetRecordYear,
+            head_name: String(record.head_name || buildHeadNameFromRecord(record) || "").trim(),
+            zone: normalizeZoneLabel(record.zone || record?.head?.zone || ""),
+            created_at: String(record.created_at || "").trim(),
+            updated_at: String(record.updated_at || new Date().toISOString()).trim(),
+            duplicate_keys: getHouseholdDuplicateKeys(record)
+          });
+        } catch (error) {
+          queuedByError = true;
+          const syncIssue = buildSyncIssueFromError(error, "Unable to sync right now.");
+          syncErrorMessage = String(syncIssue?.message || "Unable to sync right now.").trim();
+          const failedId = String(record?.household_id || "").trim();
+          setLastSyncError(failedId ? `${failedId}: ${syncErrorMessage}` : syncErrorMessage);
+          upsertSyncRecord(
+            withSyncIssue(
+              record,
+              syncIssue
+            )
+          );
+        } finally {
+          syncInProgress = false;
+          updateSyncStatus();
         }
-
-        removeSyncRecord(record.household_id);
-        setLastSyncedAt(new Date().toISOString());
-        setLastSyncError("");
-      } catch (error) {
-        queuedByError = true;
-        const syncIssue = buildSyncIssueFromError(error, "Unable to sync right now.");
-        syncErrorMessage = String(syncIssue?.message || "Unable to sync right now.").trim();
-        const failedId = String(record?.household_id || "").trim();
-        setLastSyncError(failedId ? `${failedId}: ${syncErrorMessage}` : syncErrorMessage);
-        upsertSyncRecord(
-          withSyncIssue(
-            record,
-            syncIssue
-          )
-        );
-      } finally {
-        syncInProgress = false;
+      } else {
+        queuedByOffline = true;
+        upsertSyncRecord(withSyncIssue(record, null));
         updateSyncStatus();
       }
-    } else {
-      queuedByOffline = true;
-      upsertSyncRecord(withSyncIssue(record, null));
-      updateSyncStatus();
-    }
 
-    if (!isEditMode) {
-      clearRegistration();
-    } else {
-      saveHeadData();
-      renderMembers();
-    }
+      if (!isEditMode) {
+        clearRegistration();
+      } else {
+        saveHeadData();
+        renderMembers();
+      }
 
-    if (isAppOnline() && !queuedByError) {
-      await flushSyncQueue({ showSuccessState: true });
-    }
+      if (isAppOnline() && !queuedByError) {
+        await flushSyncQueue({ showSuccessState: true });
+      }
 
-    const pendingCount = getSyncQueue().length;
-    if (!queuedByOffline && !queuedByError && pendingCount === 0 && !syncSuccessMessage) {
-      showSyncSuccessState("Sync successfully.");
-    }
-    if (queuedByOffline) {
-      showSyncToast(`Saved locally as ${record.household_id}. Offline mode is active; data will sync when online.`, "warning", "Saved Offline");
+      const pendingCount = getSyncQueue().length;
+      if (!queuedByOffline && !queuedByError && pendingCount === 0 && !syncSuccessMessage) {
+        showSyncSuccessState("Sync successfully.");
+      }
+      if (queuedByOffline) {
+        showSyncToast(`Saved locally as ${record.household_id}. Offline mode is active; data will sync when online.`, "warning", "Saved Offline");
+        return true;
+      }
+      if (queuedByError) {
+        showSyncToast(`Saved locally as ${record.household_id}. Sync failed (${syncErrorMessage}) so this household was queued.`, "danger", "Sync Failed");
+        return true;
+      }
+      if (pendingCount > 0) {
+        showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. ${pendingCount} other pending household${pendingCount === 1 ? "" : "s"} remain in queue.`, "info", "Saved");
+        return true;
+      }
+      showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. Household ID: ${record.household_id}.`, "success", "Saved");
       return true;
+    } finally {
+      await hideSavingHouseholdModal();
+      if (duplicateNotice) {
+        showDuplicateHouseholdModal(duplicateNotice);
+      }
     }
-    if (queuedByError) {
-      showSyncToast(`Saved locally as ${record.household_id}. Sync failed (${syncErrorMessage}) so this household was queued.`, "danger", "Sync Failed");
-      return true;
-    }
-    if (pendingCount > 0) {
-      showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. ${pendingCount} other pending household${pendingCount === 1 ? "" : "s"} remain in queue.`, "info", "Saved");
-      return true;
-    }
-    showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. Household ID: ${record.household_id}.`, "success", "Saved");
-    return true;
   };
 
   const renderPreview = () => {
@@ -2685,6 +3145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateLoadExistingButtonVisibility();
     await syncConnectivityState({ force: true });
     updateSyncStatus();
+    warmDuplicateIndexForYear(targetRecordYear, { force: true });
     flushSyncQueue({ showSuccessState: true });
   });
 
@@ -2698,12 +3159,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (document.hidden) return;
     void syncConnectivityState({ force: true }).then(() => {
       updateSyncStatus();
+      if (isAppOnline()) {
+        warmDuplicateIndexForYear(targetRecordYear);
+      }
     });
   });
 
   window.addEventListener("focus", () => {
     void syncConnectivityState({ force: true }).then(() => {
       updateSyncStatus();
+      if (isAppOnline()) {
+        warmDuplicateIndexForYear(targetRecordYear);
+      }
     });
   });
 
@@ -2875,6 +3342,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await syncConnectivityState({ force: true });
   updateSyncStatus();
   if (isAppOnline()) {
+    warmDuplicateIndexForYear(targetRecordYear, { force: true });
     flushSyncQueue({ showSuccessState: true });
   }
 
