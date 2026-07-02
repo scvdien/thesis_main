@@ -1936,6 +1936,9 @@ footer.page-footer{
     justify-content:center;
   }
   .content-header{
+    position:sticky;
+    top:calc(env(safe-area-inset-top, 0px) + 8px);
+    z-index:1030;
     flex-direction:column;
     align-items:flex-start;
   }
