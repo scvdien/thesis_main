@@ -52,6 +52,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 <head>
 <meta charset="utf-8">
 <title>Settings | Barangay Captain Dashboard</title>
+<link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="<?= htmlspecialchars($settingsCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
 

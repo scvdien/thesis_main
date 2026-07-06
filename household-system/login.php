@@ -119,6 +119,7 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title><?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> - Login</title>
+  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">

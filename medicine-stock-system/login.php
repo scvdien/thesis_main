@@ -10,6 +10,7 @@ $loginJsVersion = (string) @filemtime(__DIR__ . '/assets/js/login-scripts.js');
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ligao City Coastal RHU - Login</title>
+  <link rel="icon" type="image/png" href="assets/img/CityHealthOffice_LOGO.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

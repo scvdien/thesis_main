@@ -49,6 +49,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
 <head>
 <meta charset="utf-8">
 <title>Admin Dashboard</title>
+<link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <!-- Bootstrap CSS -->

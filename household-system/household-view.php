@@ -40,6 +40,7 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <title>Household Details | Admin</title>
+  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">

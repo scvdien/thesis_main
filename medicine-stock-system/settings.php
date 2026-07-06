@@ -12,6 +12,7 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Settings - Ligao City Coastal RHU</title>
+  <link rel="icon" type="image/png" href="assets/img/CityHealthOffice_LOGO.png">
   <script>
     (() => {
       const validPanels = new Set(["nurse-credentials", "manage-staff", "active-users", "activity-logs"]);

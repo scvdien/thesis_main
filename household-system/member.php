@@ -41,6 +41,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
   <meta name="theme-color" content="#0d6efd">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Add Household Member</title>
+  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">

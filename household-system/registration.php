@@ -64,6 +64,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   <meta name="theme-color" content="#0d6efd">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Household Registration</title>
+  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">

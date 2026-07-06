@@ -15,6 +15,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Barangay Health Worker Dashboard - Ligao City Coastal RHU</title>
+  <link rel="icon" type="image/png" href="assets/img/CityHealthOffice_LOGO.png">
   <script>
     (() => {
       const validSections = new Set(["staff-dashboard", "patient-profiles", "dispense-medicine", "notifications", "my-settings"]);
