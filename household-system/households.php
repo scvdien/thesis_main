@@ -41,6 +41,7 @@ if ($brandSidebarLabel === '') {
   $brandSidebarLabel = $brandFooterLabel;
 }
 $systemLabel = trim($brandFooterLabel . ' Online Household Information Management System');
+$siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -54,7 +55,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site-style.css">
+<link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
 <body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
@@ -126,7 +127,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
                 <th>Zone</th>
                 <th>Members</th>
                 <th>Last Updated</th>
-                <th class="text-end">Action</th>
+                <th class="text-center">Action</th>
               </tr>
             </thead>
             <tbody id="householdsTableBody">
@@ -140,13 +141,12 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
           </table>
         </div>
       </section>
+      <!-- FOOTER -->
+      <footer class="footer text-muted">
+        &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+      </footer>
     </main>
   </div>
-
-  <!-- FOOTER -->
-  <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
-  </footer>
   </div>
 
   <!-- HOUSEHOLD DETAILS MODAL -->

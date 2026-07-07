@@ -2801,6 +2801,49 @@ try {
         ]);
     }
 
+    if ($action === 'remove_admin_account') {
+        users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
+
+        $adminAccount = users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY);
+        if (!is_array($adminAccount)) {
+            users_api_error(404, 'Admin account not found.');
+        }
+
+        $adminAccountId = (int) ($adminAccount['id'] ?? 0);
+        $adminUsername = (string) ($adminAccount['username'] ?? '');
+        $adminFullName = (string) ($adminAccount['full_name'] ?? '');
+
+        $stmt = $pdo->prepare('DELETE FROM `users` WHERE `id` = :id AND `role` = :role LIMIT 1');
+        $stmt->execute([
+            'id' => $adminAccountId,
+            'role' => AUTH_ROLE_SECRETARY,
+        ]);
+
+        if ($stmt->rowCount() === 0) {
+            users_api_error(404, 'Admin account not found.');
+        }
+
+        users_api_audit_log(
+            $authUser,
+            'settings_admin_account_removed',
+            'deleted',
+            'Removed admin account.',
+            'user',
+            $adminUsername !== '' ? $adminUsername : (string) $adminAccountId,
+            [
+                'target_role' => AUTH_ROLE_SECRETARY,
+                'target_user_id' => $adminAccountId,
+                'target_full_name' => $adminFullName,
+            ]
+        );
+
+        users_api_respond(200, [
+            'success' => true,
+            'message' => 'Admin account removed. You can create a new admin account.',
+            'data' => users_api_settings_payload($pdo, $authUser),
+        ]);
+    }
+
     if ($action === 'set_admin_status') {
         users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
 

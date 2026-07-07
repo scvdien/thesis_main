@@ -1649,7 +1649,7 @@
     const weakestSupplier = [...suppliers].sort((left, right) => left.onTimeRate - right.onTimeRate)[0];
 
     const dominantShare = percent(dominantTrend.annualRequests, sum(illnessRanked.map((item) => item.annualRequests)));
-    const forecastNote = `MA ${formatNumber(movingAverage)} | ES ${formatNumber(exponentialSmoothing)} from the last 12 months of dispensing and prescription demand`;
+    const forecastNote = `MA ${formatNumber(movingAverage)} | ES ${formatNumber(exponentialSmoothing)} from the last 12 months of dispensing, prescription, and medicine release demand`;
 
     const alerts = [];
     const reorderAlert = reorderRows.find((row) => row.action === "Request Now");
@@ -1669,7 +1669,7 @@
       label: "Demand Forecast",
       icon: "bi bi-graph-up-arrow",
       title: `${formatNumber(combinedForecast)} units projected next cycle`,
-      body: `Historical sales, dispensing, and prescription activity suggest the next cycle demand will stay near ${formatNumber(combinedForecast)} units. ${forecastNote}.`,
+      body: `Historical dispensing, prescription, and medicine release activity suggest the next cycle demand will stay near ${formatNumber(combinedForecast)} units. ${forecastNote}.`,
       meta: "Moving average and exponential smoothing"
     });
 

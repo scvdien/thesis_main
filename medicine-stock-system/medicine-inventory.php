@@ -7,6 +7,7 @@ $medicineInventoryCssVersion = (string) @filemtime(__DIR__ . '/assets/css/medici
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $medicineInventoryJsVersion = (string) @filemtime(__DIR__ . '/assets/js/medicine-inventory.js');
 $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -344,6 +345,6 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
   <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
   <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/medicine-inventory.js?v=<?= urlencode($medicineInventoryJsVersion) ?>"></script>
-  <script src="assets/js/system-notifications.js"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>

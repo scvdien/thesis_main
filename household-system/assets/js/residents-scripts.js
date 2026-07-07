@@ -397,11 +397,13 @@ const renderResidentsTable = () => {
           <td>${escapeHtml(displayHouseholdId || '-')}</td>
           <td>${escapeHtml(zone)}</td>
           <td>${escapeHtml(displayUpdated)}</td>
-          <td class="text-end">
+          <td class="text-center">
             <button class="btn btn-outline-primary btn-sm resident-view-btn"
               data-resident-id="${escapeHtml(displayResidentId)}"
-              data-base-resident-id="${escapeHtml(residentId)}">
-              <i class="bi bi-eye"></i> View
+              data-base-resident-id="${escapeHtml(residentId)}"
+              title="View resident"
+              aria-label="View resident">
+              <i class="bi bi-eye" aria-hidden="true"></i>
             </button>
           </td>
         </tr>

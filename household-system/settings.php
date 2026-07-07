@@ -313,21 +313,24 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               <div class="small text-muted mt-3" id="adminAccountActionNotice">No admin account created yet.</div>
             </section>
 
-            <section class="settings-section" id="deactivate-admin-account">
-              <div class="settings-section-head">
-                <div>
-                  <h5 class="mb-1">Deactivate Admin Account</h5>
-                  <p class="small text-muted mb-0">Disable admin login access temporarily.</p>
-                </div>
-                <span class="badge bg-warning-subtle text-warning">Access</span>
-              </div>
+            <section class="settings-section" id="remove-admin-account">
               <div class="settings-list">
                 <div class="settings-list-item">
                   <div class="item-info">
-                    <div class="fw-semibold">Deactivate Admin</div>
+                    <div class="fw-semibold">Admin Account Actions</div>
                   </div>
-                  <div class="form-check form-switch ms-auto">
-                    <input class="form-check-input" type="checkbox" id="adminAccountDeactivateToggle">
+                  <div class="dropdown ms-auto">
+                    <button class="btn btn-outline-primary" type="button" id="adminAccountActionsBtn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Admin actions">
+                      <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end p-2" aria-labelledby="adminAccountActionsBtn">
+                      <button type="button" class="dropdown-item rounded-2 text-warning" id="adminAccountDeactivateBtn">
+                        <i class="bi bi-pause-circle"></i> Deactivate Admin
+                      </button>
+                      <button type="button" class="dropdown-item rounded-2 text-danger" id="adminAccountRemoveBtn">
+                        <i class="bi bi-trash3"></i> Remove Admin
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -562,7 +565,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <span class="badge bg-success-subtle text-success" id="backupHealthBadge">Healthy</span>
             </div>
-            <div class="settings-callout" id="backupDatabaseCompatCard">
+            <div class="settings-callout d-none" id="backupDatabaseCompatCard">
               <i class="bi bi-hdd-stack"></i>
               <div class="w-100">
                 <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
@@ -578,7 +581,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
                 </div>
               </div>
             </div>
-            <div class="settings-callout" id="backupEnvironmentCard">
+            <div class="settings-callout d-none" id="backupEnvironmentCard">
               <i class="bi bi-cpu"></i>
               <div class="w-100">
                 <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
@@ -661,13 +664,12 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 
         </div>
       </div>
+      <!-- FOOTER -->
+      <footer class="footer text-muted">
+        &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+      </footer>
     </main>
   </div>
-
-  <!-- FOOTER -->
-  <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
-  </footer>
 
   <!-- MODERN LOGOUT MODAL -->
   <div class="modal fade" id="logoutModal" tabindex="-1" aria-hidden="true">
@@ -698,6 +700,40 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="adminAccountResetConfirmBtn">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMOVE ADMIN ACCOUNT MODAL -->
+  <div class="modal fade" id="adminAccountRemoveConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-danger">
+          <i class="bi bi-trash3-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Remove Admin Account</h5>
+        <p class="mb-3" id="adminAccountRemoveConfirmText">Remove the current admin account? This cannot be undone, but audit trail records will remain.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="adminAccountRemoveConfirmBtn">Remove Account</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN ACCESS CONFIRM MODAL -->
+  <div class="modal fade" id="adminAccountStatusConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-warning" id="adminAccountStatusConfirmIcon">
+          <i class="bi bi-pause-circle-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2" id="adminAccountStatusConfirmTitle">Confirm Admin Access Change</h5>
+        <p class="mb-3" id="adminAccountStatusConfirmText">Confirm admin account access change?</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning btn-modern" id="adminAccountStatusConfirmBtn">Continue</button>
         </div>
       </div>
     </div>

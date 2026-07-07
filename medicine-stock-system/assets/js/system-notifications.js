@@ -21,6 +21,7 @@
     medium: 6000,
     low: 5000
   };
+  const NOTIFICATION_BRAND_LOGO = "assets/img/CityHealthOffice_LOGO.png";
   const DEFAULT_NOTIFICATION_MESSAGE = "Review the medicine notification.";
 
   const text = (value) => String(value ?? "").trim();
@@ -657,6 +658,37 @@
     return `${baseBody} Recommendation: ${recommendation}`;
   };
 
+  const notificationSidebarLinks = () => Array.from(document.querySelectorAll("#sidebar .menu a"))
+    .filter((link) => {
+      const href = text(link.getAttribute("href")).toLowerCase();
+      return href === "notifications.php" || href.endsWith("/notifications.php");
+    });
+
+  const ensureNotificationSidebarBadges = () => notificationSidebarLinks().map((link) => {
+    let badge = link.querySelector(".mss-notification-nav-badge");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "mss-notification-nav-badge d-none";
+      link.appendChild(badge);
+    }
+    return { link, badge };
+  });
+
+  const updateNotificationSidebarBadges = (notifications = state.notifications) => {
+    const unreadCount = notifications
+      .map((entry) => normalizeNotification(entry))
+      .filter((entry) => !entry.read && !entry.resolved)
+      .length;
+    const displayCount = unreadCount > 99 ? "99+" : formatNumber(unreadCount);
+
+    ensureNotificationSidebarBadges().forEach(({ link, badge }) => {
+      link.classList.toggle("has-notification", unreadCount > 0);
+      badge.textContent = displayCount;
+      badge.classList.toggle("d-none", unreadCount <= 0);
+      badge.setAttribute("aria-label", unreadCount > 0 ? `${displayCount} unread notifications` : "No unread notifications");
+    });
+  };
+
   const normalizeNotificationPreferences = (entry = {}) => ({
     soundEnabled: entry?.soundEnabled !== false
   });
@@ -800,6 +832,9 @@
     if (nextState.notificationResolvedState && typeof nextState.notificationResolvedState === "object" && !Array.isArray(nextState.notificationResolvedState)) {
       payload.notificationResolvedState = normalizeResolvedState(nextState.notificationResolvedState);
     }
+    if (Array.isArray(nextState.notifications)) {
+      payload.notifications = nextState.notifications.map((notification) => normalizeNotification(notification));
+    }
 
     try {
       window.localStorage.setItem(notificationRuntimeStorageKey(), JSON.stringify(payload));
@@ -822,6 +857,12 @@
     }
     if (cached.notificationResolvedState && typeof cached.notificationResolvedState === "object" && !Array.isArray(cached.notificationResolvedState)) {
       state.notificationResolvedState = normalizeResolvedState(cached.notificationResolvedState);
+    }
+    if (Array.isArray(cached.notifications)) {
+      state.notifications = applyReadStateToNotifications(
+        applyResolvedStateToNotifications(cached.notifications.map(normalizeNotification), state.notificationResolvedState),
+        state.notificationReadState
+      );
     }
   };
 
@@ -940,6 +981,7 @@
     );
     state.notifications = applyReadStateToNotifications(hydratedNotifications, state.notificationReadState);
     syncNotificationRuntimeCache({
+      notifications: state.notifications,
       notificationPopupState: state.notificationPopupState,
       notificationDismissedState: state.notificationDismissedState,
       notificationReadState: state.notificationReadState,
@@ -1556,6 +1598,7 @@
     toast.innerHTML = `
       <div class="mss-system-toast__inner">
         <div class="mss-system-toast__head">
+          <img class="mss-system-toast__logo" src="${esc(NOTIFICATION_BRAND_LOGO)}" alt="" aria-hidden="true">
           <div class="flex-grow-1">
             <div class="mss-system-toast__eyebrow">
               <span class="mss-system-toast__dot" aria-hidden="true"></span>
@@ -1627,6 +1670,7 @@
           const monitoringSnapshot = buildMonitoringSnapshot(notifications);
           state.notifications = notifications;
           state.monitoringSnapshot = monitoringSnapshot;
+          updateNotificationSidebarBadges(notifications);
           const popupState = readMap(POPUP_STATE_KEY);
           const activeNotifications = notifications.filter((notification) => !notification.resolved);
           const activeNotificationMap = new Map(activeNotifications.map((notification) => [notification.id, notification]));
@@ -1661,6 +1705,13 @@
           }
 
           writeMap(POPUP_STATE_KEY, popupState);
+          syncNotificationRuntimeCache({
+            notifications,
+            notificationPopupState: popupState,
+            notificationDismissedState: state.notificationDismissedState,
+            notificationReadState: state.notificationReadState,
+            notificationResolvedState: state.notificationResolvedState
+          });
           await persistNotificationsToServer(notifications);
           window.dispatchEvent(new CustomEvent("mss:notifications-synced", {
             detail: {
@@ -1725,7 +1776,9 @@
       state.notificationReadState
     );
     state.monitoringSnapshot = buildMonitoringSnapshot(state.notifications);
+    updateNotificationSidebarBadges(state.notifications);
     syncNotificationRuntimeCache({
+      notifications: state.notifications,
       notificationPopupState: state.notificationPopupState,
       notificationDismissedState: state.notificationDismissedState,
       notificationReadState: state.notificationReadState,
@@ -1753,10 +1806,12 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       ensureSoundToggle();
+      updateNotificationSidebarBadges();
       void syncNotifications({ showToasts: true });
     }, { once: true });
   } else {
     ensureSoundToggle();
+    updateNotificationSidebarBadges();
     void syncNotifications({ showToasts: true });
   }
 })();

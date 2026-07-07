@@ -57,6 +57,8 @@ h1,h2,h3,h4,h5,h6{
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  display:flex;
+  flex-direction:column;
 }
 #sidebar.collapsed{
   width:0;
@@ -107,6 +109,12 @@ h1,h2,h3,h4,h5,h6{
   transition:.2s;
   font-weight:500;
 }
+.menu{
+  display:flex;
+  flex:1;
+  flex-direction:column;
+  min-height:0;
+}
 .menu a i{font-size:18px}
 .menu a:hover{
   background:rgba(255,255,255,0.14);
@@ -119,6 +127,9 @@ h1,h2,h3,h4,h5,h6{
 }
 .menu a.text-danger{
   color:#fecaca !important;
+  margin-top:auto;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,0.22);
 }
 .menu a.text-danger:hover{
   background:rgba(239,68,68,0.16);
@@ -127,15 +138,17 @@ h1,h2,h3,h4,h5,h6{
 
 #main{
   flex:1;
-  padding:24px;
+  padding:24px 24px 0;
   min-width:0;
+  display:flex;
+  flex-direction:column;
 }
 
 .topbar{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  margin-bottom:22px;
+  margin-bottom:14px;
   flex-wrap: wrap;
   background: var(--surface);
   border:1px solid var(--border);
@@ -170,6 +183,9 @@ h1,h2,h3,h4,h5,h6{
 .topbar .topbar-actions .btn .topbar-btn-label{
   display:inline-block;
   line-height:1;
+}
+.topbar-title-mobile{
+  display:none;
 }
 .topbar-rollover-status{
   display:inline-flex;
@@ -378,6 +394,9 @@ h1,h2,h3,h4,h5,h6{
   padding:16px;
   margin-top:24px;
   box-shadow:var(--shadow);
+}
+.topbar + .module{
+  margin-top:0;
 }
 .module-header{
   display:flex;
@@ -756,10 +775,18 @@ h1,h2,h3,h4,h5,h6{
 .admin-account .admin-created-state{
   display:none;
 }
+.admin-account #remove-admin-account{
+  display:none;
+  overflow:visible;
+  z-index:5;
+}
 .admin-account.is-created .admin-create-fields{
   display:none;
 }
 .admin-account.is-created .admin-created-state{
+  display:block;
+}
+.admin-account.is-created #remove-admin-account{
   display:block;
 }
 .settings-section::after{
@@ -1780,10 +1807,15 @@ body.role-can-edit .role-secretary-only{
   background:#f8fbff;
 }
 .household-table-wrap .view-household{
+  width:30px;
+  height:30px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   border-radius:999px;
-  font-size:0.85rem;
+  font-size:0.8rem;
   font-weight:600;
-  padding:6px 14px;
+  padding:0;
 }
 .household-table-wrap .view-household.btn-outline-primary:hover{
   background:#edf5ff;
@@ -1871,10 +1903,15 @@ body.role-can-edit .role-secretary-only{
   padding:5px 9px;
 }
 .resident-table-wrap .resident-view-btn{
+  width:30px;
+  height:30px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   border-radius:999px;
-  font-size:0.85rem;
+  font-size:0.8rem;
   font-weight:600;
-  padding:6px 14px;
+  padding:0;
 }
 .resident-table-wrap .resident-view-btn.btn-outline-primary:hover{
   background:#edf5ff;
@@ -1883,6 +1920,7 @@ body.role-can-edit .role-secretary-only{
 }
 
 footer.footer {
+  margin-top:auto;
   padding: 14px 0;
   background: transparent;
   border-top: 1px solid var(--border);
@@ -2066,7 +2104,63 @@ footer.footer {
 }
 @media(max-width:768px){
   .stat-grid, .age-grid, .chart-grid{grid-template-columns:1fr;}
-  .topbar{flex-direction: column; align-items: flex-start; gap:10px;}
+  .topbar{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:12px;
+    padding:14px;
+  }
+  .topbar-title-row{
+    width:100%;
+    align-items:center !important;
+    gap:12px !important;
+  }
+  .topbar-title-row h4{
+    flex:1;
+    min-width:0;
+    font-size:1.35rem;
+    line-height:1.25;
+    text-align:left;
+  }
+  .topbar-title-full{
+    display:none;
+  }
+  .topbar-title-mobile{
+    display:inline;
+  }
+  .topbar-title-row .toggle-btn{
+    flex:0 0 auto;
+    width:38px;
+    height:38px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    margin-top:0;
+    border:1px solid rgba(15, 76, 107, 0.16);
+    border-radius:12px;
+    background:rgba(15, 76, 107, 0.06);
+    color:var(--accent);
+  }
+  .topbar-control-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    width:100%;
+  }
+  .topbar-control-row .form-select{
+    width:auto !important;
+    min-width:110px;
+    height:48px;
+  }
+  .topbar-control-row .btn{
+    height:48px;
+    margin-left:0 !important;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:0 18px;
+  }
   .chart-grid .card-box{
     height:300px;
     min-height:300px;
@@ -2365,7 +2459,7 @@ footer.footer {
     border-top:1px solid #d8e2ed !important;
   }
   .household-table-wrap .stack-table .view-household{
-    width:auto;
+    width:30px;
   }
 
   /* Keep Residents module as horizontal table on mobile */
@@ -2461,6 +2555,15 @@ footer.footer {
   .audit-module .stack-table td::before{
     content:none !important;
     display:none !important;
+  }
+}
+@media(max-width:480px){
+  .topbar-control-row .form-select{
+    flex:0 0 40%;
+    min-width:0;
+  }
+  .topbar-control-row .btn{
+    flex:1 1 auto;
   }
 }
 @media(max-width:992px){

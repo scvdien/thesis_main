@@ -36,6 +36,35 @@
   color:#7a8476;
 }
 
+#sidebar .menu a[href*="notifications.php"]{
+  gap:12px;
+}
+
+#sidebar .menu a .mss-notification-nav-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:22px;
+  height:22px;
+  margin-left:auto;
+  padding:0 7px;
+  border-radius:999px;
+  background:#dc2626;
+  color:#fff;
+  box-shadow:0 0 0 2px rgba(255,255,255,0.22);
+  font-size:0.68rem;
+  font-weight:800;
+  line-height:1;
+}
+
+#sidebar .menu a .mss-notification-nav-badge.d-none{
+  display:none !important;
+}
+
+#sidebar .menu a.has-notification{
+  color:#fff;
+}
+
 .mss-system-toast{
   pointer-events:auto;
   position:relative;
@@ -92,6 +121,18 @@
   display:flex;
   align-items:flex-start;
   gap:12px;
+}
+
+.mss-system-toast__logo{
+  width:38px;
+  height:38px;
+  border-radius:12px;
+  object-fit:contain;
+  flex:0 0 auto;
+  background:#fff;
+  border:1px solid #dbe7d2;
+  padding:4px;
+  box-shadow:0 8px 18px rgba(22, 54, 23, 0.12);
 }
 
 .mss-system-toast__eyebrow{

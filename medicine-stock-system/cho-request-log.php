@@ -5,8 +5,10 @@ $authUser = mss_page_require_auth(['admin']);
 $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $medicineInventoryCssVersion = (string) @filemtime(__DIR__ . '/assets/css/medicine-inventory.css');
 $choRequestLogCssVersion = (string) @filemtime(__DIR__ . '/assets/css/cho-request-log.css');
+$systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $choRequestLogJsVersion = (string) @filemtime(__DIR__ . '/assets/js/cho-request-log.js');
 $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -23,6 +25,7 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
   <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/medicine-inventory.css?v=<?= urlencode($medicineInventoryCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/cho-request-log.css?v=<?= urlencode($choRequestLogCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page">
   <div id="wrapper">
@@ -282,6 +285,7 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
   </script>
   <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
   <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
   <script src="assets/js/cho-request-log.js?v=<?= urlencode($choRequestLogJsVersion) ?>"></script>
 </body>
 </html>

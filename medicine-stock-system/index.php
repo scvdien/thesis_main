@@ -1,10 +1,11 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
-mss_page_require_auth(['admin']);
+$authUser = mss_page_require_auth(['admin']);
 $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -493,9 +494,12 @@ $supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-mo
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script>
+    window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+  </script>
   <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
   <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/admin-dashboard.js?v=20260321-demand-backend"></script>
-  <script src="assets/js/system-notifications.js"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>

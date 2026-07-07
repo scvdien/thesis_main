@@ -228,6 +228,24 @@ const adminAccountResetConfirmModal =
   adminAccountResetConfirmModalEl && window.bootstrap && window.bootstrap.Modal
     ? new window.bootstrap.Modal(adminAccountResetConfirmModalEl)
     : null;
+const adminAccountRemoveBtn = document.getElementById('adminAccountRemoveBtn');
+const adminAccountDeactivateBtn = document.getElementById('adminAccountDeactivateBtn');
+const adminAccountRemoveConfirmModalEl = document.getElementById('adminAccountRemoveConfirmModal');
+const adminAccountRemoveConfirmText = document.getElementById('adminAccountRemoveConfirmText');
+const adminAccountRemoveConfirmBtn = document.getElementById('adminAccountRemoveConfirmBtn');
+const adminAccountRemoveConfirmModal =
+  adminAccountRemoveConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(adminAccountRemoveConfirmModalEl)
+    : null;
+const adminAccountStatusConfirmModalEl = document.getElementById('adminAccountStatusConfirmModal');
+const adminAccountStatusConfirmIcon = document.getElementById('adminAccountStatusConfirmIcon');
+const adminAccountStatusConfirmTitle = document.getElementById('adminAccountStatusConfirmTitle');
+const adminAccountStatusConfirmText = document.getElementById('adminAccountStatusConfirmText');
+const adminAccountStatusConfirmBtn = document.getElementById('adminAccountStatusConfirmBtn');
+const adminAccountStatusConfirmModal =
+  adminAccountStatusConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(adminAccountStatusConfirmModalEl)
+    : null;
 const staffDeleteConfirmModalEl = document.getElementById('staffDeleteConfirmModal');
 const staffDeleteConfirmText = document.getElementById('staffDeleteConfirmText');
 const staffDeleteConfirmBtn = document.getElementById('staffDeleteConfirmBtn');
@@ -264,8 +282,7 @@ let resolveBackupRestoreConfirm = null;
 let pendingDeleteStaffId = '';
 let pendingStaffResetId = '';
 let activeStaffResetId = '';
-
-const adminAccountDeactivateToggle = document.getElementById('adminAccountDeactivateToggle');
+let pendingAdminStatus = '';
 
 const captainCredentialsPanel = document.getElementById('change-password');
 const captainCredentialsCurrentUsername = document.getElementById('captainCredentialsCurrentUsername');
@@ -1065,7 +1082,7 @@ const renderBackupDatabaseSetupState = (databaseSetup) => {
 
   const setup = databaseSetup || normalizeDatabaseSetupStatus(null);
   const listItems = setup.actionItems.length > 0 ? setup.actionItems : setup.details;
-  const shouldHideCard = setup.checked && setup.status === 'healthy';
+  const shouldHideCard = !setup.checked || setup.status === 'healthy';
 
   backupDatabaseCompatCard.classList.toggle('d-none', shouldHideCard);
   if (shouldHideCard) {
@@ -1106,7 +1123,7 @@ const renderBackupEnvironmentState = (environmentStatus) => {
 
   const environment = environmentStatus || normalizeEnvironmentStatus(null);
   const listItems = environment.actionItems.length > 0 ? environment.actionItems : environment.details;
-  const shouldHideCard = environment.checked && environment.status === 'healthy';
+  const shouldHideCard = !environment.checked || environment.status === 'healthy';
 
   backupEnvironmentCard.classList.toggle('d-none', shouldHideCard);
   if (shouldHideCard) {
@@ -3168,10 +3185,8 @@ const renderAdminAccountState = () => {
   if (!hasAccount) {
     if (adminAccountSummaryName) adminAccountSummaryName.textContent = 'Admin Account';
     if (adminAccountSummaryUsername) adminAccountSummaryUsername.textContent = '-';
-    if (adminAccountDeactivateToggle) {
-      adminAccountDeactivateToggle.checked = false;
-      adminAccountDeactivateToggle.disabled = true;
-    }
+    if (adminAccountDeactivateBtn) adminAccountDeactivateBtn.disabled = true;
+    if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = true;
     setAdminAccountStatusBadge('active');
     setAdminAccountNotice('No admin account created yet.', 'muted');
     return;
@@ -3181,10 +3196,17 @@ const renderAdminAccountState = () => {
   if (adminAccountSummaryUsername) adminAccountSummaryUsername.textContent = account.username;
   if (adminAccountResetUsername) adminAccountResetUsername.value = account.username;
 
-  if (adminAccountDeactivateToggle) {
-    adminAccountDeactivateToggle.disabled = false;
-    adminAccountDeactivateToggle.checked = account.status === 'deactivated';
+  if (adminAccountDeactivateBtn) {
+    const isDeactivated = account.status === 'deactivated';
+    adminAccountDeactivateBtn.disabled = false;
+    adminAccountDeactivateBtn.classList.toggle('text-warning', !isDeactivated);
+    adminAccountDeactivateBtn.classList.toggle('text-success', isDeactivated);
+    adminAccountDeactivateBtn.innerHTML = isDeactivated
+      ? '<i class="bi bi-check2-circle"></i> Activate Admin'
+      : '<i class="bi bi-pause-circle"></i> Deactivate Admin';
   }
+
+  if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = false;
 
   setAdminAccountStatusBadge(account.status);
   if (account.status === 'deactivated') {
@@ -3274,29 +3296,132 @@ adminAccountResetConfirmBtn?.addEventListener('click', () => {
   setAdminAccountNotice('Enter new username and password, then save new credentials.', 'muted');
 });
 
-adminAccountDeactivateToggle?.addEventListener('change', async () => {
+const updateAdminAccountStatus = async (nextStatus) => {
   const account = readAdminAccount();
   if (!account) {
-    adminAccountDeactivateToggle.checked = false;
-    adminAccountDeactivateToggle.disabled = true;
     setAdminAccountNotice('Create admin account first before changing access.', 'danger');
     return;
   }
 
-  const previousChecked = account.status === 'deactivated';
-  const status = adminAccountDeactivateToggle.checked ? 'deactivated' : 'active';
+  if (adminAccountDeactivateBtn) adminAccountDeactivateBtn.disabled = true;
   try {
     const response = await runSettingsAction({
       action: 'set_admin_status',
-      status
+      status: nextStatus
     });
     rerenderSettingsPanels();
-    setAdminAccountNotice(response.message || (status === 'active' ? 'Admin account activated.' : 'Admin account deactivated.'), 'success');
+    setAdminAccountNotice(response.message || `Admin account ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`, 'success');
   } catch (error) {
-    adminAccountDeactivateToggle.checked = previousChecked;
     const message = error instanceof Error ? error.message : 'Unable to update admin status right now.';
     setAdminAccountNotice(message, 'danger');
+  } finally {
+    if (adminAccountDeactivateBtn) adminAccountDeactivateBtn.disabled = !hasValidAdminAccount(readAdminAccount());
+    pendingAdminStatus = '';
+    adminAccountStatusConfirmModal?.hide();
   }
+};
+
+adminAccountDeactivateBtn?.addEventListener('click', (event) => {
+  event.preventDefault();
+  const account = readAdminAccount();
+  if (!account) {
+    setAdminAccountNotice('Create admin account first before changing access.', 'danger');
+    return;
+  }
+
+  pendingAdminStatus = account.status === 'deactivated' ? 'active' : 'deactivated';
+  const isActivating = pendingAdminStatus === 'active';
+  if (adminAccountStatusConfirmIcon) {
+    adminAccountStatusConfirmIcon.className = `modal-icon mb-3 ${isActivating ? 'text-success' : 'text-warning'}`;
+    adminAccountStatusConfirmIcon.innerHTML = isActivating
+      ? '<i class="bi bi-check2-circle fs-1"></i>'
+      : '<i class="bi bi-pause-circle-fill fs-1"></i>';
+  }
+  if (adminAccountStatusConfirmTitle) {
+    adminAccountStatusConfirmTitle.textContent = isActivating ? 'Activate Admin Account' : 'Deactivate Admin Account';
+  }
+  if (adminAccountStatusConfirmText) {
+    adminAccountStatusConfirmText.textContent = `${isActivating ? 'Activate' : 'Deactivate'} the admin account for ${account.fullName}?`;
+  }
+  if (adminAccountStatusConfirmBtn) {
+    adminAccountStatusConfirmBtn.textContent = isActivating ? 'Activate Admin' : 'Deactivate Admin';
+    adminAccountStatusConfirmBtn.classList.toggle('btn-success', isActivating);
+    adminAccountStatusConfirmBtn.classList.toggle('btn-warning', !isActivating);
+  }
+
+  if (adminAccountStatusConfirmModal) {
+    adminAccountStatusConfirmModal.show();
+    return;
+  }
+
+  void updateAdminAccountStatus(pendingAdminStatus);
+});
+
+adminAccountStatusConfirmBtn?.addEventListener('click', async () => {
+  if (!pendingAdminStatus) {
+    adminAccountStatusConfirmModal?.hide();
+    return;
+  }
+  await updateAdminAccountStatus(pendingAdminStatus);
+});
+
+adminAccountStatusConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
+  pendingAdminStatus = '';
+});
+
+const removeAdminAccount = async () => {
+  const account = readAdminAccount();
+  if (!account) {
+    adminAccountRemoveConfirmModal?.hide();
+    setAdminAccountNotice('Create admin account first before removing.', 'danger');
+    return;
+  }
+
+  if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = true;
+  try {
+    const response = await runSettingsAction({
+      action: 'remove_admin_account'
+    });
+    rerenderSettingsPanels();
+    hideAdminAccountResetForm();
+    setAdminAccountNotice(response.message || 'Admin account removed. You can create a new admin account.', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to remove admin account right now.';
+    setAdminAccountNotice(message, 'danger');
+  } finally {
+    if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = !hasValidAdminAccount(readAdminAccount());
+    adminAccountRemoveConfirmModal?.hide();
+  }
+};
+
+adminAccountRemoveBtn?.addEventListener('click', (event) => {
+  event.preventDefault();
+  const account = readAdminAccount();
+  if (!account) {
+    setAdminAccountNotice('Create admin account first before removing.', 'danger');
+    return;
+  }
+
+  if (adminAccountRemoveConfirmText) {
+    adminAccountRemoveConfirmText.textContent = `Remove admin account for ${account.fullName}? This cannot be undone, but audit trail records will remain.`;
+  }
+
+  if (adminAccountRemoveConfirmModal) {
+    adminAccountRemoveConfirmModal.show();
+    return;
+  }
+
+  const confirmRemove = window.confirm(`Remove admin account for ${account.fullName}? This cannot be undone.`);
+  if (!confirmRemove) {
+    setAdminAccountNotice('Admin account removal was cancelled.', 'muted');
+    return;
+  }
+
+  void removeAdminAccount();
+});
+
+adminAccountRemoveConfirmBtn?.addEventListener('click', async () => {
+  await removeAdminAccount();
 });
 
 captainCredentialsSaveBtn?.addEventListener('click', async (event) => {

@@ -84,11 +84,14 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
     <!-- MAIN -->
     <main id="main">
       <div class="topbar">
-        <div class="d-flex align-items-center gap-3">
+        <div class="topbar-title-row d-flex align-items-center gap-3">
           <i class="bi bi-list toggle-btn" onclick="toggleSidebar()"></i>
-          <h4 class="mb-0 text-primary">Barangay Captain Dashboard</h4>
+          <h4 class="mb-0 text-primary">
+            <span class="topbar-title-full">Barangay Captain Dashboard</span>
+            <span class="topbar-title-mobile">Captain Dashboard</span>
+          </h4>
         </div>
-        <div>
+        <div class="topbar-control-row">
           <select id="yearSelect" class="form-select d-inline w-auto"></select>
           <button class="btn btn-outline-primary ms-2" id="refreshBtn">
             <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -185,13 +188,12 @@ $dashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/index-scrip
           <div class="chart-legend" id="householdLegend"></div>
         </div>
       </div>
+      <!-- FOOTER -->
+      <footer class="footer text-muted">
+        &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+      </footer>
     </main>
   </div>
-
-  <!-- FOOTER -->
-  <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
-  </footer>
 
   <!-- MODERN REFRESH MODAL -->
   <div class="modal fade" id="refreshModal" tabindex="-1" aria-hidden="true">

@@ -203,7 +203,7 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
                 <th>Household</th>
                 <th>Zone</th>
                 <th>Last Updated</th>
-                <th class="text-end">Action</th>
+                <th class="text-center">Action</th>
               </tr>
             </thead>
             <tbody id="residentsTableBody">
@@ -217,13 +217,12 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
           </table>
         </div>
       </section>
+      <!-- FOOTER -->
+      <footer class="footer text-muted">
+        &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+      </footer>
     </main>
   </div>
-
-  <!-- FOOTER -->
-  <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
-  </footer>
 
   <!-- RESIDENT DETAILS MODAL -->
   <div class="modal fade" id="residentDetailsModal" tabindex="-1" aria-hidden="true">

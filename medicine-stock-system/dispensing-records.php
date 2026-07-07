@@ -120,7 +120,6 @@ if ($requestedRole !== $dispensingRole) {
       </div>
     </div>
   </div>
-
   <div class="modal fade" id="recordHistoryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-xl">
       <div class="modal-content record-history-modal">

@@ -141,13 +141,12 @@ if ($brandSidebarLabel === '') {
           </table>
         </div>
       </section>
+      <!-- FOOTER -->
+      <footer class="footer text-muted">
+        &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
+      </footer>
     </main>
   </div>
-
-  <!-- FOOTER -->
-  <footer class="footer text-muted">
-    &copy; <span id="year"></span> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?>. All rights reserved.
-  </footer>
 
   <!-- REPORT DETAILS MODAL -->
   <div class="modal fade" id="reportModal" tabindex="-1" aria-hidden="true">

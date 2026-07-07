@@ -356,7 +356,7 @@ const renderHouseholdTable = () => {
           <td>${escapeHtml(zoneLabel)}</td>
           <td>${escapeHtml(String(memberCount))}</td>
           <td>${escapeHtml(displayUpdated)}</td>
-          <td class="text-end">
+          <td class="text-center">
             <button class="btn btn-outline-primary btn-sm view-household"
               data-id="${escapeHtml(displayHouseholdId)}"
               data-base-id="${escapeHtml(householdId)}"
@@ -366,8 +366,10 @@ const renderHouseholdTable = () => {
               data-status="Synced"
               data-updated="${escapeHtml(displayUpdated)}"
               data-base-updated="${escapeHtml(baseUpdated)}"
-              data-address="${escapeHtml(zoneLabel)}">
-              <i class="bi bi-eye"></i> View
+              data-address="${escapeHtml(zoneLabel)}"
+              title="View household"
+              aria-label="View household">
+              <i class="bi bi-eye" aria-hidden="true"></i>
             </button>
           </td>
         </tr>

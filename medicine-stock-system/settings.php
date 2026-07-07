@@ -6,6 +6,7 @@ $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-das
 $settingsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/settings.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
+$systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -417,6 +418,6 @@ $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
   </script>
   <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
   <script src="assets/js/settings.js?v=<?= urlencode($settingsJsVersion) ?>"></script>
-  <script src="assets/js/system-notifications.js"></script>
+  <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>
