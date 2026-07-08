@@ -100,6 +100,8 @@ if (stripos($brandLabel, 'barangay') !== 0) {
     $brandLabel = trim('Barangay ' . $brandLabel);
 }
 $accessAreaLabel = $brandCity !== '' ? $brandCity : $brandLabel;
+$brandLabel = 'Cabarian Ligao City';
+$accessAreaLabel = $brandLabel;
 $loginStyleVersion = @filemtime(__DIR__ . '/assets/css/login-style.css');
 $loginStyleHref = 'assets/css/login-style.css' . ($loginStyleVersion ? '?v=' . rawurlencode((string) $loginStyleVersion) : '');
 $panelEyebrow = $setupLocked ? 'Setup Locked' : ($setupRequired ? 'System Setup' : 'Welcome back');

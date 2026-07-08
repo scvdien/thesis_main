@@ -81,9 +81,10 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" class="brand-logo">
+      <img src="assets/img/barangay-cabarian-logo.png" alt="Cabarian Ligao City Logo" class="brand-logo">
       <div>
-        <div class="brand-title"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="brand-title">Cabarian Ligao City</div>
+        <div class="brand-subtitle">Online Household Information Management System</div>
       </div>
     </div>
 
@@ -132,7 +133,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
           </button>
         <?php endif; ?>
         <a href="logout.php" class="btn btn-light btn-sm">
-          <i class="bi bi-box-arrow-right"></i> Logout
+          <i class="bi bi-box-arrow-right"></i> Log out
         </a>
       </div>
     </div>

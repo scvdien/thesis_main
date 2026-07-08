@@ -72,7 +72,7 @@
           { href: "dispensing-records.php?role=staff", icon: "bi bi-journal-medical", label: "Dispensing Records", active: true },
           { href: "staff.php#notifications", icon: "bi bi-bell", label: "Notifications" },
           { href: "staff.php#my-settings", icon: "bi bi-gear", label: "Settings" },
-          { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
+          { href: "#", icon: "bi bi-box-arrow-right", label: "Log out", danger: true, id: "logoutLink" }
         ]
       : [
           { href: "index.php", icon: "bi bi-speedometer2", label: "Dashboard" },
@@ -82,7 +82,7 @@
           { href: "reports.php", icon: "bi bi-file-earmark-text", label: "Reports" },
           { href: "notifications.php", icon: "bi bi-bell", label: "Notifications" },
           { href: "settings.php", icon: "bi bi-gear", label: "Settings" },
-          { href: "#", icon: "bi bi-box-arrow-right", label: "Logout", danger: true, id: "logoutLink" }
+          { href: "#", icon: "bi bi-box-arrow-right", label: "Log out", danger: true, id: "logoutLink" }
         ];
 
     refs.roleMenu.innerHTML = items.map((item) => `

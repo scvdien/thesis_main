@@ -44,7 +44,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           <a href="reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
           <a href="notifications.php" class="active"><i class="bi bi-bell"></i>Notifications</a>
           <a href="settings.php"><i class="bi bi-gear"></i>Settings</a>
-          <a href="#" class="text-danger" id="logoutLink"><i class="bi bi-box-arrow-right"></i>Logout</a>
+          <a href="#" class="text-danger" id="logoutLink"><i class="bi bi-box-arrow-right"></i>Log out</a>
         </div>
       </aside>
 

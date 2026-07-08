@@ -54,8 +54,11 @@ $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css')
     <!-- SIDEBAR -->
     <aside id="sidebar">
       <div class="brand d-flex align-items-center gap-2 mb-3">
-        <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?> Logo" style="width:40px; height:auto;">
-        <span class="fw-bold text-primary"><?= htmlspecialchars($brandSidebarLabel, ENT_QUOTES, 'UTF-8') ?></span>
+        <img src="assets/img/barangay-cabarian-logo.png" alt="Cabarian Ligao City Logo" style="width:40px; height:auto;">
+        <div class="brand-copy">
+          <span class="brand-title fw-bold text-primary">Cabarian Ligao City</span>
+          <span class="brand-subtitle">Online Household Information Management System</span>
+        </div>
       </div>
       <div class="menu">
         <a href="index.php"><i class="bi bi-speedometer2"></i>Dashboard</a>
@@ -63,7 +66,7 @@ $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css')
         <a href="residents.php"><i class="bi bi-people"></i>Residents</a>
         <a href="reports.php"><i class="bi bi-file-earmark-text"></i>Reports</a>
         <a href="settings.php"><i class="bi bi-gear"></i>Settings</a>
-        <a href="#" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a>
+        <a href="#" class="text-danger"><i class="bi bi-box-arrow-right"></i>Log out</a>
       </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
@@ -71,11 +74,11 @@ $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css')
     <!-- MAIN -->
     <main id="main">
       <div class="topbar">
-        <div class="d-flex align-items-center gap-3">
+        <div class="topbar-title-row d-flex align-items-center gap-3">
           <i class="bi bi-list toggle-btn" onclick="toggleSidebar()"></i>
           <h4 class="mb-0 text-primary">System Logs</h4>
         </div>
-        <div class="topbar-actions">
+        <div class="topbar-control-row">
           <button class="btn btn-outline-primary" id="refreshBtn">
             <i class="bi bi-arrow-clockwise"></i> Refresh
           </button>
@@ -188,4 +191,3 @@ $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css')
 
 </body>
 </html>
-
