@@ -1133,7 +1133,7 @@
 
   const drawPdfSignatureSection = (doc, pageWidth, pageHeight, margin, logos, snapshot) => {
     const sectionWidth = pageWidth - (margin * 2);
-    const signatureWidth = (sectionWidth - 36) / 3;
+    const signatureWidth = Math.min(240, sectionWidth * 0.48);
     let currentY = (doc.lastAutoTable?.finalY || 0) + 44;
 
     if (currentY > pageHeight - 110) {
@@ -1145,13 +1145,11 @@
 
     currentY = Math.max(currentY, 140);
     const labels = [
-      { role: "Prepared by", name: snapshot.preparedBy },
-      { role: "Checked by", name: "" },
-      { role: "Approved by", name: "" }
+      { role: "Prepared by", name: snapshot.preparedBy }
     ];
 
-    labels.forEach((item, index) => {
-      const x = margin + (index * (signatureWidth + 18));
+    labels.forEach((item) => {
+      const x = (pageWidth - signatureWidth) / 2;
       const lineY = currentY + 20;
       doc.setDrawColor(125, 137, 119);
       doc.setLineWidth(0.7);

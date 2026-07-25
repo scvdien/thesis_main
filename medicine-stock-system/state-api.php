@@ -311,6 +311,9 @@ function mss_state_log_action_type(array $row): string
     ));
     $explicitType = strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? $row['type'] ?? ''));
 
+    if (in_array($explicitType, ['created', 'updated', 'deleted', 'security', 'access'], true)) {
+        return $explicitType;
+    }
     if ($category === 'security' || preg_match('/password|credential|security/', $actionText) === 1) {
         return 'security';
     }
@@ -324,9 +327,7 @@ function mss_state_log_action_type(array $row): string
         return 'access';
     }
 
-    return in_array($explicitType, ['created', 'updated', 'deleted', 'security', 'access'], true)
-        ? $explicitType
-        : 'updated';
+    return 'updated';
 }
 
 /**
@@ -833,6 +834,18 @@ function mss_state_purge_expired_resolved_notifications(PDO $pdo, ?int $retentio
 
 function mss_state_replace_users(PDO $pdo, array $rows): void
 {
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $role = strtolower(mss_state_text($row['role'] ?? $row['accountType'] ?? ''));
+        $contact = mss_state_text($row['contact'] ?? '');
+        if ($role === 'bhw' && !preg_match('/^\d{11}$/', $contact)) {
+            throw new MSSStateValidationException('Mobile number must contain exactly 11 digits.');
+        }
+    }
+
     $passwordHashes = mss_state_existing_password_hashes($pdo);
     $pdo->exec('DELETE FROM `mss_users`');
 

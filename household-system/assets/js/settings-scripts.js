@@ -318,13 +318,12 @@ const staffAccountsList = document.getElementById('staffAccountsList');
 const activeUsersList = document.getElementById('activeUsersList');
 const activeUsersBadge = document.getElementById('activeUsersBadge');
 const barangayProfilePanel = document.getElementById('barangay-profile');
+const barangayProfileRegionInput = document.getElementById('barangayProfileRegion');
+const barangayProfileProvinceInput = document.getElementById('barangayProfileProvince');
+const barangayProfileCityInput = document.getElementById('barangayProfileCity');
 const barangayProfileNameInput = document.getElementById('barangayProfileName');
-const barangayProfileCodeInput = document.getElementById('barangayProfileCode');
 const barangayProfileCaptainNameInput = document.getElementById('barangayProfileCaptainName');
 const barangayProfileSecretaryNameInput = document.getElementById('barangayProfileSecretaryName');
-const barangayProfileSealBrowseBtn = document.getElementById('barangayProfileSealBrowseBtn');
-const barangayProfileSealDisplayName = document.getElementById('barangayProfileSealDisplayName');
-const barangayProfileSealInput = document.getElementById('barangayProfileSeal');
 const barangayProfileSaveBtn = document.getElementById('barangayProfileSaveBtn');
 const barangayProfileNotice = document.getElementById('barangayProfileNotice');
 const backupRestorePanel = document.getElementById('backup-restore');
@@ -1746,7 +1745,7 @@ const ensureSettingsRolloverYearOptions = (rows = []) => {
   if (!settingsRolloverYearSelect) return;
   const currentValue = normalizeText(settingsRolloverYearSelect.value);
   const currentYear = new Date().getFullYear();
-  const yearSet = new Set([currentYear, currentYear - 1]);
+  const yearSet = new Set([currentYear]);
 
   rows.forEach((row) => {
     const year = getSettingsRolloverRowYear(row);
@@ -2287,24 +2286,23 @@ const renderBarangayProfileState = () => {
   if (!barangayProfilePanel) return;
   const profile = readBarangayProfile() || normalizeBarangayProfile(null);
 
+  if (barangayProfileRegionInput) {
+    barangayProfileRegionInput.value = profile.regionName || '';
+  }
+  if (barangayProfileProvinceInput) {
+    barangayProfileProvinceInput.value = profile.provinceName || '';
+  }
+  if (barangayProfileCityInput) {
+    barangayProfileCityInput.value = profile.cityName || '';
+  }
   if (barangayProfileNameInput) {
     barangayProfileNameInput.value = profile.barangayName || '';
-  }
-  if (barangayProfileCodeInput) {
-    barangayProfileCodeInput.value = profile.barangayCode || '';
   }
   if (barangayProfileCaptainNameInput) {
     barangayProfileCaptainNameInput.value = profile.captainName || '';
   }
   if (barangayProfileSecretaryNameInput) {
     barangayProfileSecretaryNameInput.value = profile.secretaryName || '';
-  }
-  if (barangayProfileSealDisplayName) {
-    const selectedName = String(barangayProfileSealInput?.files?.[0]?.name || '').trim();
-    const savedName = basenameFromPath(profile.officialSealPath || '');
-    const displayName = selectedName || savedName;
-    barangayProfileSealDisplayName.value = displayName || 'No file chosen';
-    barangayProfileSealDisplayName.title = displayName || '';
   }
   if (barangayProfileSaveBtn) {
     barangayProfileSaveBtn.disabled = false;
@@ -2705,7 +2703,7 @@ const ensureSettingsAuditYearOptions = (years = []) => {
   if (!settingsAuditYearFilter) return;
   const currentValue = normalizeText(settingsAuditYearFilter.value);
   const currentYear = new Date().getFullYear();
-  const fallbackYears = [currentYear - 1, currentYear];
+  const fallbackYears = [currentYear];
   const merged = [...new Set([...years, ...fallbackYears])]
     .map((year) => Number(year))
     .filter((year) => Number.isInteger(year) && year > 0)
@@ -3586,88 +3584,43 @@ adminCredentialsStartBtn?.addEventListener('click', (event) => {
 barangayProfileSaveBtn?.addEventListener('click', async (event) => {
   event.preventDefault();
 
+  const regionName = String(barangayProfileRegionInput?.value || '').trim();
+  const provinceName = String(barangayProfileProvinceInput?.value || '').trim();
+  const cityName = String(barangayProfileCityInput?.value || '').trim();
   const barangayName = String(barangayProfileNameInput?.value || '').trim();
-  const barangayCode = String(barangayProfileCodeInput?.value || '').trim();
   const captainName = String(barangayProfileCaptainNameInput?.value || '').trim();
   const secretaryName = String(barangayProfileSecretaryNameInput?.value || '').trim();
-  const selectedSealFile = barangayProfileSealInput?.files?.[0] || null;
 
   const currentProfile = readBarangayProfile() || normalizeBarangayProfile(null);
   const hasChanges =
+    regionName !== currentProfile.regionName ||
+    provinceName !== currentProfile.provinceName ||
+    cityName !== currentProfile.cityName ||
     barangayName !== currentProfile.barangayName ||
-    barangayCode !== currentProfile.barangayCode ||
     captainName !== currentProfile.captainName ||
     secretaryName !== currentProfile.secretaryName;
-  const hasSealChange = !!selectedSealFile;
 
-  if (!hasChanges && !hasSealChange) {
+  if (!hasChanges) {
     setBarangayProfileNotice('No changes to save.', 'muted');
     return;
   }
 
-  if (hasSealChange && selectedSealFile) {
-    const fileType = String(selectedSealFile.type || '').toLowerCase();
-    if (!fileType || !BARANGAY_PROFILE_SEAL_ALLOWED_TYPES.includes(fileType)) {
-      setBarangayProfileNotice('Official seal must be a PNG, JPG, or WEBP image.', 'danger');
-      return;
-    }
-    if (selectedSealFile.size > BARANGAY_PROFILE_SEAL_MAX_SIZE_BYTES) {
-      setBarangayProfileNotice('Official seal image must be 2MB or less.', 'danger');
-      return;
-    }
-  }
-
   try {
-    let response;
-    if (hasSealChange && selectedSealFile) {
-      try {
-        const formData = new FormData();
-        formData.set('action', 'save_barangay_profile');
-        formData.set('barangay_name', barangayName);
-        formData.set('barangay_code', barangayCode);
-        formData.set('captain_name', captainName);
-        formData.set('secretary_name', secretaryName);
-        formData.set('official_seal_file', selectedSealFile);
-        response = await runSettingsMultipartAction(formData);
-      } catch (uploadError) {
-        const sealDataUrl = await readFileAsDataUrl(selectedSealFile);
-        response = await runSettingsAction({
-          action: 'save_barangay_profile',
-          barangay_name: barangayName,
-          barangay_code: barangayCode,
-          captain_name: captainName,
-          secretary_name: secretaryName,
-          official_seal_data: sealDataUrl
-        });
-      }
-    } else {
-      const payload = {
-        action: 'save_barangay_profile',
-        barangay_name: barangayName,
-        barangay_code: barangayCode,
-        captain_name: captainName,
-        secretary_name: secretaryName
-      };
-      response = await runSettingsAction(payload);
-    }
-    if (barangayProfileSealInput) {
-      barangayProfileSealInput.value = '';
-    }
+    const response = await runSettingsAction({
+      action: 'save_barangay_profile',
+      region_name: regionName,
+      province_name: provinceName,
+      city_name: cityName,
+      barangay_name: barangayName,
+      captain_name: captainName,
+      secretary_name: secretaryName
+    });
     rerenderSettingsPanels();
     setBarangayProfileNotice(response.message || 'Barangay profile saved successfully.', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to save barangay profile right now.';
     setBarangayProfileNotice(message, 'danger');
   }
-});
-
-barangayProfileSealInput?.addEventListener('change', () => {
-  renderBarangayProfileState();
-});
-
-barangayProfileSealBrowseBtn?.addEventListener('click', (event) => {
-  event.preventDefault();
-  barangayProfileSealInput?.click();
 });
 
 settingsRolloverYearSelect?.addEventListener('change', () => {
@@ -4010,6 +3963,11 @@ staffCreateBtn?.addEventListener('click', async (event) => {
 
   if (!fullName || !username || !password || !contactNumber) {
     setStaffAccountNotice('Complete all staff account fields before creating.', 'danger');
+    return;
+  }
+  if (!/^\d{11}$/.test(contactNumber)) {
+    setStaffAccountNotice('Mobile number must contain exactly 11 digits.', 'danger');
+    staffCreateContactNumber?.focus();
     return;
   }
   if (!validateStaffPassword(password)) {

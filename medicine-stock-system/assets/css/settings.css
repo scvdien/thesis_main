@@ -942,6 +942,39 @@ html.settings-panel-booting[data-settings-initial-panel="activity-logs"] #activi
   -webkit-line-clamp:3;
   overflow:hidden;
   word-break:break-word;
+  overflow-wrap:anywhere;
+}
+
+.log-detail-wrap{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:start;
+  gap:4px;
+}
+
+.log-detail-wrap.is-expanded .log-detail{
+  display:block;
+  overflow:visible;
+}
+
+.log-detail-toggle{
+  width:20px;
+  height:20px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:#60765c;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  font-size:0.78rem;
+}
+
+.log-detail-toggle:hover,
+.log-detail-toggle:focus{
+  background:#eef6e9;
+  color:#36533a;
 }
 
 .log-chip{

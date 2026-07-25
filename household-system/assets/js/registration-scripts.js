@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const MEMBERS_KEY = "household_members";
   const EDIT_KEY = "household_member_edit_index";
   const HEAD_KEY = "household_head_data";
+  const MEMBER_FORM_DRAFT_KEY = "household_member_form_draft";
   const PRESERVE_DRAFT_FLAG_KEY = "registration_preserve_draft";
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
@@ -32,6 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         MEMBERS_KEY,
         EDIT_KEY,
         HEAD_KEY,
+        MEMBER_FORM_DRAFT_KEY,
         REGISTRATION_RECORDS_KEY,
         SYNC_QUEUE_KEY,
         DUPLICATE_INDEX_CACHE_KEY,
@@ -164,6 +166,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let pendingActionBusy = false;
   let loadHouseholdRequestToken = 0;
   let staffCredentialSaveBusy = false;
+  let suppressHeadDraftSave = false;
   const duplicateIndexRefreshPromises = new Map();
   const LOAD_HOUSEHOLD_MIN_QUERY_LENGTH = 2;
 
@@ -677,6 +680,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const saveHeadData = () => {
     if (!censusForm) return;
+    if (suppressHeadDraftSave) return;
     try {
       localStorage.setItem(HEAD_KEY, JSON.stringify(serializeHeadData()));
     } catch {
@@ -2192,7 +2196,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       if (!isEditMode) {
-        clearRegistration();
+        await clearRegistration();
       } else {
         saveHeadData();
         renderMembers();
@@ -2402,14 +2406,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   };
 
+  const hasMemberFormDraft = () => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(MEMBER_FORM_DRAFT_KEY) || "null");
+      const data = draft && typeof draft === "object" && draft.data && typeof draft.data === "object"
+        ? draft.data
+        : null;
+      if (!data) return false;
+      return Object.values(data).some((value) => String(value || "").trim() !== "");
+    } catch {
+      return false;
+    }
+  };
+
   const hasLocalDraftState = () => {
-    return hasHeadDraft() || getMembers().length > 0;
+    return hasHeadDraft() || getMembers().length > 0 || hasMemberFormDraft();
   };
 
   const clearRegistrationDraftState = async () => {
     await localStorage.removeItem(HEAD_KEY);
     await localStorage.removeItem(MEMBERS_KEY);
     await localStorage.removeItem(EDIT_KEY);
+    await localStorage.removeItem(MEMBER_FORM_DRAFT_KEY);
     try {
       sessionStorage.removeItem(PRESERVE_DRAFT_FLAG_KEY);
     } catch {
@@ -2829,14 +2847,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const clearRegistration = () => {
-    document.getElementById("censusForm").reset();
-    localStorage.removeItem(HEAD_KEY);
-    setMembers([]);
-    renderMembers();
-    updateAddMemberState();
-    updateAgeField();
-    updatePregnantVisibility();
+  const clearRegistration = async () => {
+    suppressHeadDraftSave = true;
+    try {
+      document.getElementById("censusForm").reset();
+      await clearRegistrationDraftState();
+      renderMembers();
+      updateAddMemberState();
+      updateAgeField();
+      updatePregnantVisibility();
+    } finally {
+      suppressHeadDraftSave = false;
+    }
   };
 
   const zoneInput = document.querySelector('input[name="zone"]');
@@ -3325,13 +3347,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await localStorage.ready();
   }
 
-  if (!isEditMode && !consumePreserveDraftFlag()) {
-    await localStorage.removeItem(HEAD_KEY);
-    await localStorage.removeItem(MEMBERS_KEY);
-    await localStorage.removeItem(EDIT_KEY);
-    if (typeof localStorage.flush === "function") {
-      await localStorage.flush();
-    }
+  if (!isEditMode) {
+    consumePreserveDraftFlag();
   }
 
   await hydrateEditModeFromServerIfNeeded();
@@ -3467,8 +3484,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
   if (clearConfirm) {
-    clearConfirm.addEventListener("click", () => {
-      clearRegistration();
+    clearConfirm.addEventListener("click", async () => {
+      await clearRegistration();
       clearModal?.hide();
     });
   }

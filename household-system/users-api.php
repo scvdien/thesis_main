@@ -2937,84 +2937,49 @@ try {
 
         users_api_ensure_barangay_profile_table($pdo);
 
+        $regionName = users_api_text($payload['region_name'] ?? '', 120);
+        $provinceName = users_api_text($payload['province_name'] ?? '', 120);
+        $cityName = users_api_text($payload['city_name'] ?? '', 120);
         $barangayName = users_api_text($payload['barangay_name'] ?? '', 160);
-        $barangayCode = users_api_text($payload['barangay_code'] ?? '', 80);
         $captainName = users_api_uppercase_name($payload['captain_name'] ?? '', 160);
         $secretaryName = users_api_uppercase_name($payload['secretary_name'] ?? '', 160);
-        $sealUpload = users_api_uploaded_official_seal();
-        if (!is_array($sealUpload)) {
-            $sealUpload = users_api_decode_official_seal_data($payload['official_seal_data'] ?? null);
-        }
-
-        $existingSealPath = '';
-        $sealPathStmt = $pdo->prepare(
-            'SELECT `official_seal_path`
-             FROM `barangay_profile`
-             WHERE `id` = 1
-             LIMIT 1'
-        );
-        $sealPathStmt->execute();
-        $existingSealPathRaw = $sealPathStmt->fetchColumn();
-        if (is_string($existingSealPathRaw)) {
-            $existingSealPath = users_api_text($existingSealPathRaw, 255);
-        }
-
-        $officialSealPath = $existingSealPath;
-        if (is_array($sealUpload)) {
-            $sealDirectory = users_api_official_seal_absolute_directory();
-
-            $token = '';
-            try {
-                $token = bin2hex(random_bytes(6));
-            } catch (Throwable $exception) {
-                $token = str_replace('.', '', uniqid('', true));
-            }
-            $fileName = 'official-seal-' . date('YmdHis') . '-' . $token . '.' . $sealUpload['extension'];
-            $absoluteFilePath = $sealDirectory . '/' . $fileName;
-            $savedBytes = @file_put_contents($absoluteFilePath, $sealUpload['binary']);
-            if (!is_int($savedBytes) || $savedBytes <= 0) {
-                users_api_error(500, 'Unable to save official seal image.');
-            }
-            $officialSealPath = users_api_official_seal_storage_prefix() . $fileName;
-        }
-
         $stmt = $pdo->prepare(
             'INSERT INTO `barangay_profile` (
                 `id`,
+                `region_name`,
+                `province_name`,
+                `city_name`,
                 `barangay_name`,
-                `barangay_code`,
                 `captain_name`,
                 `secretary_name`,
-                `official_seal_path`,
                 `updated_at`
              ) VALUES (
                 1,
+                :region_name,
+                :province_name,
+                :city_name,
                 :barangay_name,
-                :barangay_code,
                 :captain_name,
                 :secretary_name,
-                :official_seal_path,
                 CURRENT_TIMESTAMP
              )
              ON DUPLICATE KEY UPDATE
+                `region_name` = VALUES(`region_name`),
+                `province_name` = VALUES(`province_name`),
+                `city_name` = VALUES(`city_name`),
                 `barangay_name` = VALUES(`barangay_name`),
-                `barangay_code` = VALUES(`barangay_code`),
                 `captain_name` = VALUES(`captain_name`),
                 `secretary_name` = VALUES(`secretary_name`),
-                `official_seal_path` = VALUES(`official_seal_path`),
                 `updated_at` = CURRENT_TIMESTAMP'
         );
         $stmt->execute([
+            'region_name' => $regionName,
+            'province_name' => $provinceName,
+            'city_name' => $cityName,
             'barangay_name' => $barangayName,
-            'barangay_code' => $barangayCode,
             'captain_name' => $captainName,
             'secretary_name' => $secretaryName,
-            'official_seal_path' => $officialSealPath,
         ]);
-
-        if (is_array($sealUpload) && $existingSealPath !== '' && $existingSealPath !== $officialSealPath) {
-            users_api_delete_official_seal_file($existingSealPath);
-        }
 
         users_api_audit_log(
             $authUser,
@@ -3024,12 +2989,12 @@ try {
             'barangay_profile',
             '1',
             [
+                'region_name' => $regionName,
+                'province_name' => $provinceName,
+                'city_name' => $cityName,
                 'barangay_name' => $barangayName,
-                'barangay_code' => $barangayCode,
                 'captain_name' => $captainName,
                 'secretary_name' => $secretaryName,
-                'official_seal_path' => $officialSealPath,
-                'official_seal_uploaded' => is_array($sealUpload),
             ]
         );
 
@@ -3325,6 +3290,9 @@ try {
 
         if ($fullName === '' || $username === '' || $password === '' || $contactNumber === '') {
             users_api_error(422, 'Full name, username, password, and contact number are required.');
+        }
+        if (!preg_match('/^\d{11}$/', $contactNumber)) {
+            users_api_error(422, 'Mobile number must contain exactly 11 digits.');
         }
         if (!users_api_password_strong($password)) {
             users_api_error(422, 'Password must be at least 8 characters and include 1 special character.');

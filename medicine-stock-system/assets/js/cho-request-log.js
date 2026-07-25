@@ -449,12 +449,13 @@
           </td>
           <td>
             <div class="request-medicine-list">
-              ${row.items.map((item) => `
+              ${row.items.slice(0, 1).map((item) => `
                 <div class="request-medicine-line">
                   <strong>${esc(item.medicineName)}</strong>
                   <small>${esc(item.genericName || item.unit)}</small>
                 </div>
               `).join("")}
+              ${row.items.length > 1 ? `<small class="request-medicine-more">+${esc(formatNumber(row.items.length - 1))} more — View details</small>` : ""}
             </div>
           </td>
           <td>

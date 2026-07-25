@@ -82,7 +82,8 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           <aside class="card-shell settings-nav">
             <div class="settings-nav-group">
               <div class="settings-nav-title">Account</div>
-              <a href="#nurse-credentials" class="active"><i class="bi bi-shield-lock"></i>Admin Credentials</a>
+              <a href="#nurse-profile" class="active"><i class="bi bi-person-vcard"></i>Nurse Profile</a>
+              <a href="#nurse-credentials"><i class="bi bi-shield-lock"></i>Login Credentials</a>
             </div>
             <div class="settings-nav-group">
               <div class="settings-nav-title">Administration</div>
@@ -96,11 +97,37 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           </aside>
 
           <div class="settings-content">
-            <section class="card-shell settings-panel settings-panel--credentials is-active" id="nurse-credentials">
+            <section class="card-shell settings-panel is-active" id="nurse-profile">
+              <div class="section-head section-head-split">
+                <div>
+                  <h5>Nurse-in-Charge Profile</h5>
+                  <p class="small text-muted mb-0">This name appears as “Prepared by” on generated reports.</p>
+                </div>
+                <span class="badge bg-success-subtle text-success credentials-badge">Profile</span>
+              </div>
+              <form id="nurseProfileForm" class="account-form-grid" autocomplete="off">
+                <div>
+                  <label for="nurseFullName" class="form-label">Full Name</label>
+                  <input type="text" id="nurseFullName" class="form-control" placeholder="Full name" required>
+                </div>
+                <div>
+                  <label for="nurseRoleDisplay" class="form-label">Designation</label>
+                  <input type="text" id="nurseRoleDisplay" class="form-control" value="Nurse-in-Charge" readonly>
+                </div>
+                <div class="account-form-actions">
+                  <div class="account-helper" id="nurseProfileNotice">Used for report preparation and signatures.</div>
+                  <button type="submit" class="btn btn-create-account">
+                    <i class="bi bi-person-check"></i>Save Profile
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section class="card-shell settings-panel settings-panel--credentials" id="nurse-credentials">
               <div class="nurse-credentials-summary" id="nurseCredentialsSummary">
                 <div class="section-head section-head-split">
                   <div>
-                    <h5>Admin Credentials</h5>
+                    <h5>Login Credentials</h5>
                   </div>
                   <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="badge bg-success-subtle text-success credentials-badge">Security</span>
@@ -114,21 +141,13 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <div id="nurseCredentialsPanel" class="d-none">
                 <div class="section-head section-head-split nurse-credentials-editor-head">
                   <div>
-                    <h5>Change Admin Credentials</h5>
+                    <h5>Change Login Credentials</h5>
                   </div>
                   <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="badge bg-success-subtle text-success credentials-badge">Security</span>
                   </div>
                 </div>
                 <form id="nurseSettingsForm" class="account-form-grid" autocomplete="off">
-                  <div>
-                    <label for="nurseFullName" class="form-label">Full Name</label>
-                    <input type="text" id="nurseFullName" class="form-control" placeholder="Full name" required>
-                  </div>
-                  <div>
-                    <label for="nurseRoleDisplay" class="form-label">Role</label>
-                    <input type="text" id="nurseRoleDisplay" class="form-control" value="Nurse-in-Charge" readonly>
-                  </div>
                   <div>
                     <label for="nurseUsername" class="form-label">Username</label>
                     <input type="text" id="nurseUsername" class="form-control" placeholder="Username" required>
@@ -183,7 +202,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                 </div>
                 <div>
                   <label for="accountContact" class="form-label">Contact Number</label>
-                  <input type="text" id="accountContact" class="form-control" placeholder="Enter contact number" required>
+                  <input type="tel" id="accountContact" class="form-control" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Mobile number must contain exactly 11 digits." placeholder="09XXXXXXXXX" required>
                 </div>
                 <div>
                   <label for="accountConfirmPassword" class="form-label">Confirm Password</label>
@@ -322,7 +341,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
             </div>
             <div class="col-md-6">
               <label for="editContact" class="form-label">Contact Number</label>
-              <input type="text" id="editContact" class="form-control" required>
+              <input type="tel" id="editContact" class="form-control" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Mobile number must contain exactly 11 digits." required>
             </div>
             <div class="col-md-6">
               <label for="editRoleDisplay" class="form-label">Role</label>

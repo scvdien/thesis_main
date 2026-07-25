@@ -185,7 +185,7 @@
     if (!yearSelect) return;
 
     const normalized = normalizeAvailableYears(availableYears);
-    const fallback = [currentYear - 1, currentYear];
+    const fallback = [currentYear];
     const targetYear = Number(selectedYear) || currentYear;
     const years = Array.from(new Set([...normalized, ...fallback, targetYear])).sort((a, b) => a - b);
 
@@ -403,7 +403,7 @@
     }
   };
 
-  const updateCharts = (payload) => {
+  const updateCharts = (payload, forceRedraw = false) => {
     const safe = { ...defaultPayload(payload?.year), ...(payload || {}) };
 
     if (charts.age) {
@@ -475,6 +475,17 @@
       charts.household.update();
       renderLegend(charts.household, "householdLegend");
     }
+
+    if (forceRedraw) {
+      window.requestAnimationFrame(() => {
+        Object.values(charts).forEach((chart) => {
+          chart.stop();
+          chart.resize();
+          chart.reset();
+          chart.update();
+        });
+      });
+    }
   };
 
   const updateCards = (payload) => {
@@ -500,6 +511,7 @@
   const fetchAnalytics = async (year) => {
     const params = new URLSearchParams();
     params.set("year", String(Number(year) || currentYear));
+    params.set("_ts", String(Date.now()));
 
     const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
       method: "GET",
@@ -540,14 +552,14 @@
 
       ensureYearOptions(response?.meta?.available_years, payloadYear);
       updateCards(payload);
-      updateCharts(payload);
+      updateCharts(payload, showRefreshModal);
     } catch (error) {
       if (localRequestId !== requestCounter) return;
       console.error("Unable to load dashboard analytics:", error);
       const fallback = defaultPayload(selectedYear);
       ensureYearOptions([], selectedYear);
       updateCards(fallback);
-      updateCharts(fallback);
+      updateCharts(fallback, showRefreshModal);
     } finally {
       if (showRefreshModal && refreshModal) {
         refreshModal.show();
@@ -562,9 +574,17 @@
   }
 
   if (refreshBtn) {
-    refreshBtn.addEventListener("click", () => {
+    refreshBtn.addEventListener("click", async () => {
+      if (refreshBtn.disabled) return;
       const selectedYear = Number(yearSelect?.value) || currentYear;
-      loadDashboardData(selectedYear, true);
+      refreshBtn.disabled = true;
+      refreshBtn.setAttribute("aria-busy", "true");
+      try {
+        await loadDashboardData(selectedYear, true);
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.removeAttribute("aria-busy");
+      }
     });
   }
 

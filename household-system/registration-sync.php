@@ -1314,10 +1314,21 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
 
     $head = is_array($record['head'] ?? null) ? $record['head'] : [];
     $head = reg_normalize_person_text_fields($head);
+    $headContact = reg_text($head['contact'] ?? '', 40);
+    if (!preg_match('/^\d{11}$/', $headContact)) {
+        throw new InvalidArgumentException('Household head contact number must contain exactly 11 digits.');
+    }
+    $head['contact'] = $headContact;
 
     $members = [];
     foreach (reg_normalize_members($record['members'] ?? []) as $memberRow) {
-        $members[] = reg_normalize_person_text_fields($memberRow);
+        $member = reg_normalize_person_text_fields($memberRow);
+        $memberContact = reg_text($member['contact'] ?? '', 40);
+        if ($memberContact !== '' && !preg_match('/^\d{11}$/', $memberContact)) {
+            throw new InvalidArgumentException('Member contact number must contain exactly 11 digits when provided.');
+        }
+        $member['contact'] = $memberContact;
+        $members[] = $member;
     }
     if (count($members) === 0) {
         throw new InvalidArgumentException('At least one household member is required.');

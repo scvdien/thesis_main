@@ -218,7 +218,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
       <div class="card-header section-header">B. Contact & Location</div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4"><label class="form-label required">Contact Number</label><input type="tel" class="form-control" name="contact" required></div>
+          <div class="col-md-4"><label class="form-label required">Contact Number</label><input type="tel" class="form-control" name="contact" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Contact number must contain exactly 11 digits." required></div>
           <div class="col-md-4"><label class="form-label required">Complete Address</label><input type="text" class="form-control" name="address" required></div>
           <div class="col-md-4"><label class="form-label required">Zone</label><input type="text" class="form-control" name="zone" required></div>
           <div class="col-md-4"><label class="form-label">Barangay</label><input type="text" class="form-control" name="barangay"></div>

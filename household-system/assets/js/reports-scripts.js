@@ -43,10 +43,9 @@ const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashb
 document.title = `Reports | ${dashboardLabel}`;
 
 const currentYear = new Date().getFullYear();
-const previousYear = currentYear - 1;
 const yearSelect = document.getElementById('yearSelect');
 if (yearSelect) {
-  [previousYear, currentYear].forEach((y) => {
+  [currentYear].forEach((y) => {
     const option = document.createElement('option');
     option.value = y;
     option.textContent = y;

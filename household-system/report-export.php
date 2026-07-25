@@ -636,11 +636,6 @@ function reportProfileFromUsers(PDO $pdo): array
 function reportProfileData(?PDO $pdo): array
 {
     $profile = reportProfileDefaults();
-    $userNames = [
-        'captain_name' => '',
-        'secretary_name' => '',
-    ];
-
     if ($pdo instanceof PDO) {
         try {
             reportProfileTable($pdo);
@@ -666,17 +661,8 @@ function reportProfileData(?PDO $pdo): array
                 }
             }
         } catch (Throwable $e) {
-            // Profile table is optional; fall back to user account data.
+            // Keep empty values when the barangay profile is unavailable.
         }
-
-        $userNames = reportProfileFromUsers($pdo);
-    }
-
-    if ($profile['captain_name'] === '') {
-        $profile['captain_name'] = $userNames['captain_name'] ?? '';
-    }
-    if ($profile['secretary_name'] === '') {
-        $profile['secretary_name'] = $userNames['secretary_name'] ?? '';
     }
 
     return $profile;
@@ -977,19 +963,6 @@ function annualSignatories(array $profile): array
     $preparedName = signatoryText($profile['secretary_name'] ?? '', 160);
     $approvedName = signatoryText($profile['captain_name'] ?? '', 160);
 
-    if ($preparedName === '') {
-        $preparedName = signatoryText(envValue(['BARANGAY_SECRETARY_NAME'], ''), 160);
-    }
-    if ($approvedName === '') {
-        $approvedName = signatoryText(envValue(['BARANGAY_CAPTAIN_NAME'], ''), 160);
-    }
-    if ($preparedName === '') {
-        $preparedName = 'Not specified';
-    }
-    if ($approvedName === '') {
-        $approvedName = 'Not specified';
-    }
-
     return [
         'prepared' => ['label' => 'Prepared by:', 'name' => $preparedName, 'title' => 'Barangay Secretary'],
         'approved' => ['label' => 'Approved by:', 'name' => $approvedName, 'title' => 'Punong Barangay'],
@@ -1005,22 +978,6 @@ function reportFooterData(array $profile, array $report): array
 {
     $captain = signatoryText($profile['captain_name'] ?? '', 160);
     $secretary = signatoryText($profile['secretary_name'] ?? '', 160);
-    if ($captain === '' || $secretary === '') {
-        $signatories = annualSignatories($profile);
-        if ($captain === '') {
-            $captain = signatoryText(($signatories['approved']['name'] ?? ''), 160);
-        }
-        if ($secretary === '') {
-            $secretary = signatoryText(($signatories['prepared']['name'] ?? ''), 160);
-        }
-    }
-    if ($captain === '') {
-        $captain = 'Not specified';
-    }
-    if ($secretary === '') {
-        $secretary = 'Not specified';
-    }
-
     $dateGenerated = '';
     $metaBlock = normalizeReportMetaBlock($report['meta_block'] ?? null);
     foreach ($metaBlock as $entry) {
@@ -1584,7 +1541,149 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
  *     meta_block:list<array{label:string,value:string}>
  * }|null
  */
-function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $profile): ?array
+/**
+ * @param array<string, mixed> $analytics
+ * @param array<string, string> $profile
+ * @return array<string, mixed>
+ */
+function buildRbiFormCReportData(array $analytics, int $year, array $profile, array $reportMeta = []): array
+{
+    $populationSummary = normalizeAssocArray($analytics['population_summary'] ?? null);
+    $ageDistribution = normalizeAssocArray($analytics['rbi_age_sex_distribution'] ?? null);
+    $sectorDistribution = normalizeAssocArray($analytics['rbi_sector_sex_distribution'] ?? null);
+    $ageLabels = [
+        'Under 5 years old', '5-9 years old', '10-14 years old', '15-19 years old',
+        '20-24 years old', '25-29 years old', '30-34 years old', '35-39 years old',
+        '40-44 years old', '45-49 years old', '50-54 years old', '55-59 years old',
+        '60-64 years old', '65-69 years old', '70-74 years old', '75-79 years old',
+        '80 years old and over',
+    ];
+    $sectorLabels = [
+        'Labor Force',
+        'Unemployed',
+        'Out of School Children (OSC) (6-14 years old)',
+        'Out of School Youth (OSY) (15-24 years old)',
+        'Person with Disabilities (PWDs)',
+        'Overseas Filipino Workers (OFWs)',
+        'Solo Parents',
+        'Indigenous Peoples (IPs)',
+        'Civil Status: Single',
+        ': Married',
+        'Citizenship: Filipino',
+        ': Foreigner',
+        'Senior Citizens',
+        '4Ps Beneficiaries',
+        'Registered Voters',
+        'Pregnant Women',
+        'Persons with Current Illness',
+        'Malnourished Children',
+        'Employment: Employed',
+        'Employment: Self-Employed',
+        'Education: Elementary',
+        'Education: High School',
+        'Education: College',
+        'Education: Vocational',
+    ];
+    $makeRows = static function (array $labels, array $distribution): array {
+        $rows = [];
+        foreach ($labels as $label) {
+            $counts = normalizeAssocArray($distribution[$label] ?? null);
+            $male = payloadCount($counts, ['Male', 'male'], 0);
+            $female = payloadCount($counts, ['Female', 'female'], 0);
+            $rows[] = [$label, nfmt($male), nfmt($female), nfmt($male + $female), ''];
+        }
+        return $rows;
+    };
+
+    $region = text($profile['region_name'] ?? '', 120);
+    $province = text($profile['province_name'] ?? '', 120);
+    $city = text($profile['city_name'] ?? '', 120);
+    $barangay = text($profile['barangay_name'] ?? '', 160);
+    $population = payloadCount($populationSummary, ['total_population', 'total', 'population'], 0);
+    $households = payloadCount($populationSummary, ['households', 'total_households'], 0);
+    $periodText = text($reportMeta['period'] ?? '', 80);
+    $periodTimestamp = $periodText !== '' ? strtotime($periodText) : false;
+    $periodMonth = $periodTimestamp !== false ? (int) date('n', $periodTimestamp) : (int) date('n');
+    $semester = $periodMonth <= 6 ? '1ST Semester' : '2ND Semester';
+    $ageRows = $makeRows($ageLabels, $ageDistribution);
+    $sectorRows = $makeRows($sectorLabels, $sectorDistribution);
+    $householdRows = [];
+    $appendHouseholdRows = static function (string $prefix, mixed $values) use (&$householdRows): void {
+        foreach (normalizeAssocArray($values) as $label => $count) {
+            $cleanLabel = text($label, 120);
+            if ($cleanLabel === '') {
+                continue;
+            }
+            $householdRows[] = [
+                $prefix . $cleanLabel,
+                '',
+                '',
+                nfmt(max(0, toInt($count, 0))),
+                '',
+            ];
+        }
+    };
+    $housingUtilities = normalizeAssocArray($analytics['housing_utilities'] ?? null);
+    $appendHouseholdRows('Households in ', $analytics['household_zone_distribution'] ?? []);
+    $appendHouseholdRows('Household Size: ', $analytics['household_size_distribution'] ?? []);
+    $appendHouseholdRows('Home Ownership: ', $housingUtilities['housing_ownership'] ?? []);
+    $appendHouseholdRows('Water Source: ', $housingUtilities['water_source'] ?? []);
+    $appendHouseholdRows('Toilet Facility: ', $housingUtilities['toilet_type'] ?? []);
+    $appendHouseholdRows('Electricity: ', $housingUtilities['electricity_source'] ?? []);
+    $appendHouseholdRows('Internet Access: ', $housingUtilities['internet_access'] ?? []);
+
+    return [
+        'template' => 'rbi_form_c',
+        'year' => $year,
+        'title' => 'ANNUAL MONITORING REPORT',
+        'semester_label' => $semester . ' of CY ' . $year,
+        'region' => $region,
+        'province' => $province,
+        'city' => $city,
+        'barangay' => $barangay,
+        'population' => $population,
+        'households' => $households,
+        'families' => $households,
+        'age_rows' => $ageRows,
+        'sector_rows' => $sectorRows,
+        'household_rows' => $householdRows,
+        'header_lines' => ['ANNUAL MONITORING REPORT'],
+        'sections' => [
+            [
+                'title' => '',
+                'tables' => [[
+                    'title' => 'Population by Age Bracket:',
+                    'columns' => ['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'],
+                    'show_header' => true,
+                    'rows' => $ageRows,
+                ]],
+            ],
+            [
+                'title' => '',
+                'tables' => [[
+                    'title' => 'Population by Sector:',
+                    'columns' => ['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'],
+                    'show_header' => false,
+                    'rows' => $sectorRows,
+                ]],
+            ],
+            [
+                'title' => '',
+                'tables' => [[
+                    'title' => 'Household and Community Profile:',
+                    'columns' => ['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'],
+                    'show_header' => false,
+                    'rows' => $householdRows,
+                ]],
+            ],
+        ],
+        'meta_block' => [
+            ['label' => 'Date Generated', 'value' => date('F j, Y')],
+        ],
+    ];
+}
+
+function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $profile, array $reportMeta = []): ?array
 {
     /** @var array<string, mixed> $populationSummary */
     $populationSummary = normalizeAssocArray($analytics['population_summary'] ?? null);
@@ -1624,6 +1723,10 @@ function buildAnnualReportDataFromAnalytics(array $analytics, int $year, array $
     $female = payloadCount($populationSummary, ['female'], 0);
     $households = payloadCount($populationSummary, ['households', 'total_households'], 0);
     $avgHousehold = payloadFloat($populationSummary, ['average_household_size', 'avg_household_size'], 0.0);
+
+    if (isset($analytics['rbi_age_sex_distribution']) || isset($analytics['rbi_sector_sex_distribution'])) {
+        return buildRbiFormCReportData($analytics, $year, $profile, $reportMeta);
+    }
 
     /** @var array{
      *     population:int,
@@ -2151,14 +2254,167 @@ function buildPdfHtml(array $report, array $profile, string $sealDataUri = ''): 
  * @param array<string, mixed> $report
  * @param array<string, string> $profile
  */
+/**
+ * @param array<string, mixed> $report
+ * @param array<string, string> $profile
+ */
+function renderRbiFormCWithFpdf(array $report, array $profile): string
+{
+    if (!class_exists('FPDF')) {
+        $fpdfFile = __DIR__ . '/vendor/setasign/fpdf/fpdf.php';
+        if (is_file($fpdfFile)) {
+            require_once $fpdfFile;
+        }
+    }
+    if (!class_exists('FPDF')) {
+        respondWithError(500, 'No PDF engine available for RBI Form C.');
+    }
+
+    $pdf = new FPDF('P', 'mm', 'Letter');
+    $pdf->SetMargins(14, 10, 14);
+    $pdf->SetAutoPageBreak(false);
+    $widths = [57.0, 21.0, 21.0, 26.0, 62.0];
+    $tableWidth = array_sum($widths);
+    $ageRows = is_array($report['age_rows'] ?? null) ? $report['age_rows'] : [];
+    $sectorRows = is_array($report['sector_rows'] ?? null) ? $report['sector_rows'] : [];
+    $blankTemplate = ($report['blank_template'] ?? false) === true;
+
+    $drawTableHeader = static function () use ($pdf, $widths): void {
+        $pdf->SetFont('Arial', 'B', 9);
+        drawFpdfRow($pdf, $widths, ['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'], true, '', 3.8, 9.0, 5.0, 14.0);
+    };
+    $drawSection = static function (string $label) use ($pdf, $tableWidth): void {
+        $pdf->SetX(14);
+        $pdf->SetFont('Arial', 'BI', 8.5);
+        $pdf->Cell($tableWidth, 7.0, toPdfText($label), 1, 1, 'L');
+    };
+    $drawRows = static function (array $rows) use ($pdf, $widths): void {
+        foreach ($rows as $row) {
+            $cells = is_array($row) ? array_values($row) : [];
+            $pdf->SetFont('Arial', '', 8.2);
+            drawFpdfRow($pdf, $widths, $cells, false, '', 3.5, 7.0, 5.0, 14.0);
+        }
+    };
+
+    $pdf->AddPage();
+    $pdf->SetXY(14, 14);
+    $pdf->SetFont('Arial', 'B', 11);
+    $pdf->Cell($tableWidth, 5, 'ANNUAL MONITORING REPORT', 0, 1, 'C');
+
+    $pdf->SetXY(17, 32);
+    $profileLines = [
+        ['REGION : ', (string) ($report['region'] ?? '')],
+        ['PROVINCE: ', (string) ($report['province'] ?? '')],
+        ['CITY/MUNICIPALITY: ', (string) ($report['city'] ?? '')],
+        ['BARANGAY: ', (string) ($report['barangay'] ?? '')],
+    ];
+    foreach ($profileLines as [$label, $value]) {
+        $pdf->SetFont('Arial', 'B', 8.5);
+        $labelWidth = $pdf->GetStringWidth(toPdfText($label)) + 1.5;
+        $pdf->Cell($labelWidth, 4.7, toPdfText($label), 0, 0, 'L');
+        $pdf->SetFont('Arial', '', 8.5);
+        $pdf->Cell(100, 4.7, toPdfText($value), 0, 1, 'L');
+        $pdf->SetX(17);
+    }
+    $pdf->Ln(2);
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $pdf->SetX(17);
+    $pdf->Cell(100, 4.7, 'Total No. of Barangay Inhabitants:', 0, 1, 'L');
+    $pdf->SetX(17);
+    $pdf->SetFont('Arial', '', 8.5);
+    $pdf->Cell(100, 4.7, $blankTemplate ? '' : nfmt(toInt($report['population'] ?? 0)), 0, 1, 'L');
+    $pdf->Ln(1);
+    $pdf->SetX(17);
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $householdLabel = 'Total No. of Households: ';
+    $pdf->Cell($pdf->GetStringWidth($householdLabel) + 1.5, 4.7, $householdLabel, 0, 0, 'L');
+    $pdf->SetFont('Arial', '', 8.5);
+    $pdf->Cell(30, 4.7, $blankTemplate ? '' : nfmt(toInt($report['households'] ?? 0)), 0, 1, 'L');
+    $pdf->SetX(17);
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $familyLabel = 'Total No. of Families: ';
+    $pdf->Cell($pdf->GetStringWidth($familyLabel) + 1.5, 4.7, $familyLabel, 0, 0, 'L');
+    $pdf->SetFont('Arial', '', 8.5);
+    $pdf->Cell(30, 4.7, $blankTemplate ? '' : nfmt(toInt($report['families'] ?? 0)), 0, 1, 'L');
+    $pdf->Ln(4);
+
+    $drawTableHeader();
+    $drawSection('Population by Age Bracket:');
+    $drawRows($ageRows);
+    $drawSection('Population by Sector:');
+    $drawRows(array_slice($sectorRows, 0, 3));
+
+    $pdf->AddPage();
+    $pdf->SetXY(14, 12);
+    $drawTableHeader();
+    $drawSection('Population by Sector:');
+    foreach (array_slice($sectorRows, 3) as $row) {
+        $cells = array_values((array) $row);
+        $pdf->SetFont('Arial', '', 8.2);
+        drawFpdfRow($pdf, $widths, $cells, false, '', 3.5, 7.0, 5.0, 14.0);
+    }
+
+    $footer = reportFooterData($profile, $report);
+    $signatureY = $pdf->GetY() + 8.0;
+    $leftX = 18.0;
+    $rightX = 117.0;
+    $columnWidth = 78.0;
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $pdf->SetXY($leftX, $signatureY);
+    $pdf->Cell($columnWidth, 5, 'Prepared by:', 0, 0, 'L');
+    $pdf->SetXY($rightX, $signatureY);
+    $pdf->Cell($columnWidth, 5, 'Submitted by:', 0, 1, 'L');
+    $lineY = $signatureY + 15;
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $pdf->SetXY($leftX, $lineY + 1);
+    $pdf->Cell($columnWidth, 5, toPdfText(strtoupper($footer['secretary'])), 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 1);
+    $pdf->Cell($columnWidth, 5, toPdfText(strtoupper($footer['captain'])), 0, 1, 'C');
+    $pdf->SetFont('Arial', 'B', 8);
+    $pdf->SetXY($leftX, $lineY + 7);
+    $pdf->Cell($columnWidth, 5, 'Barangay Secretary', 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 7);
+    $pdf->Cell($columnWidth, 5, 'Punong Barangay', 0, 1, 'C');
+    $pdf->SetXY($leftX, $lineY + 15);
+    $pdf->Cell($columnWidth, 5, '(Signature over Printed Name)', 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 15);
+    $pdf->Cell($columnWidth, 5, '(Signature over Printed Name)', 0, 1, 'C');
+
+    $dateLabel = $blankTemplate
+        ? ''
+        : (str_starts_with((string) ($report['semester_label'] ?? ''), '1ST')
+            ? 'June 30, ' . reportYearValue($report)
+            : 'December 31, ' . reportYearValue($report));
+    $pdf->SetXY(17, $lineY + 28);
+    $pdf->SetFont('Arial', 'B', 8.5);
+    $pdf->Cell(80, 5, 'Date Accomplished:', 0, 1, 'L');
+    $pdf->SetX(17);
+    $pdf->Cell(80, 5, $dateLabel, 0, 1, 'L');
+    $pdf->SetXY(17, $lineY + 43);
+    $pdf->SetFont('Arial', '', 7.5);
+    $noteLabel = 'Note: ';
+    $noteText = 'This RBI Form C (Annual Monitoring Report) is to be submitted to DILG C/MLGOO as a reference for encoding to BIS-BPS.';
+    $pdf->SetFont('Arial', 'B', 7.5);
+    $noteLabelWidth = $pdf->GetStringWidth($noteLabel);
+    $pdf->Cell($noteLabelWidth, 4, $noteLabel, 0, 0, 'L');
+    $pdf->SetFont('Arial', '', 7.5);
+    $pdf->MultiCell(180 - $noteLabelWidth, 4, $noteText, 0, 'L');
+
+    $binary = $pdf->Output('S');
+    return is_string($binary) ? $binary : '';
+}
+
 function outputPdf(array $report, array $profile): void
 {
     $binary = '';
+    if (($report['template'] ?? '') === 'rbi_form_c') {
+        $binary = renderRbiFormCWithFpdf($report, $profile);
+    }
     $sealAbsolutePath = reportOfficialSealAbsolutePath($profile);
     $sealDataUri = reportOfficialSealDataUri($sealAbsolutePath);
     $dompdfClass = 'Dompdf\\Dompdf';
     $dompdfOptionsClass = 'Dompdf\\Options';
-    if (class_exists($dompdfClass) && class_exists($dompdfOptionsClass)) {
+    if ($binary === '' && class_exists($dompdfClass) && class_exists($dompdfOptionsClass)) {
         $opt = new $dompdfOptionsClass();
         $opt->set('isRemoteEnabled', false);
         $opt->set('isHtml5ParserEnabled', true);
@@ -2167,7 +2423,7 @@ function outputPdf(array $report, array $profile): void
         $dompdf->setPaper('letter', 'portrait');
         $dompdf->render();
         $binary = $dompdf->output();
-    } else {
+    } elseif ($binary === '') {
         $binary = renderReportWithFpdf($report, $sealAbsolutePath, $profile);
     }
     if (!is_string($binary) || $binary === '') {
@@ -2255,6 +2511,162 @@ function renderSheetTable($sheet, int &$row, array $table, string $alignmentClas
  * @param array<string, mixed> $report
  * @param array<string, string> $profile
  */
+function outputRbiFormCSpreadsheet(
+    array $report,
+    array $profile,
+    string $targetPath,
+    bool $sendDownloadHeaders
+): void {
+    $spreadsheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('RBI Form C');
+    $alignmentClass = 'PhpOffice\\PhpSpreadsheet\\Style\\Alignment';
+    $borderClass = 'PhpOffice\\PhpSpreadsheet\\Style\\Border';
+    $pageSetupClass = 'PhpOffice\\PhpSpreadsheet\\Worksheet\\PageSetup';
+    $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(9);
+    $sheet->getDefaultRowDimension()->setRowHeight(18);
+    foreach (['A' => 42, 'B' => 13, 'C' => 13, 'D' => 15, 'E' => 38] as $column => $width) {
+        $sheet->getColumnDimension($column)->setWidth($width);
+    }
+
+    $sheet->setCellValue('A1', 'ANNUAL MONITORING REPORT');
+    $sheet->mergeCells('A1:E1');
+    $sheet->getStyle('A1:E1')->getFont()->setBold(true)->setSize(11);
+    $sheet->getStyle('A1:E1')->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+
+    $profileRows = [
+        ['REGION :', (string) ($report['region'] ?? '')],
+        ['PROVINCE:', (string) ($report['province'] ?? '')],
+        ['CITY/MUNICIPALITY:', (string) ($report['city'] ?? '')],
+        ['BARANGAY:', (string) ($report['barangay'] ?? '')],
+    ];
+    $row = 5;
+    foreach ($profileRows as [$label, $value]) {
+        $sheet->setCellValue("A{$row}", $label);
+        $sheet->setCellValue("B{$row}", $value);
+        $sheet->mergeCells("B{$row}:C{$row}");
+        $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+        $row++;
+    }
+    $row++;
+    $sheet->setCellValue("A{$row}", 'Total No. of Barangay Inhabitants:');
+    $sheet->mergeCells("A{$row}:C{$row}");
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $row++;
+    $sheet->setCellValue("A{$row}", toInt($report['population'] ?? 0));
+    $row += 2;
+    $sheet->setCellValue("A{$row}", 'Total No. of Households:');
+    $sheet->setCellValue("B{$row}", toInt($report['households'] ?? 0));
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $row++;
+    $sheet->setCellValue("A{$row}", 'Total No. of Families:');
+    $sheet->setCellValue("B{$row}", toInt($report['families'] ?? 0));
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $row += 2;
+
+    $tableStart = $row;
+    foreach (['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'] as $index => $header) {
+        $sheet->setCellValueByColumnAndRow($index + 1, $row, $header);
+    }
+    $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $row++;
+    $sheet->setCellValue("A{$row}", 'Population by Age Bracket:');
+    $sheet->mergeCells("A{$row}:E{$row}");
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setItalic(true);
+    $row++;
+    foreach ((array) ($report['age_rows'] ?? []) as $cells) {
+        foreach (array_values((array) $cells) as $index => $value) {
+            $sheet->setCellValueByColumnAndRow($index + 1, $row, $value);
+        }
+        $row++;
+    }
+    $sheet->setCellValue("A{$row}", 'Population by Sector:');
+    $sheet->mergeCells("A{$row}:E{$row}");
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setItalic(true);
+    $row++;
+    $sectorRows = array_values((array) ($report['sector_rows'] ?? []));
+    foreach ($sectorRows as $index => $cells) {
+        foreach (array_values((array) $cells) as $cellIndex => $value) {
+            $sheet->setCellValueByColumnAndRow($cellIndex + 1, $row, $value);
+        }
+        $row++;
+        if ($index === 2) {
+            $sheet->setBreak("A{$row}", PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW);
+        }
+    }
+    $tableEnd = $row - 1;
+    $sheet->getStyle("A{$tableStart}:E{$tableEnd}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_MEDIUM);
+    $sheet->getStyle("A{$tableStart}:E{$tableEnd}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
+    $sheet->getStyle("B{$tableStart}:D{$tableEnd}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+
+    $footer = reportFooterData($profile, $report);
+    $row += 3;
+    $sheet->setCellValue("A{$row}", 'Prepared by:');
+    $sheet->setCellValue("D{$row}", 'Submitted by:');
+    $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
+    $row += 3;
+    $sheet->setCellValue("A{$row}", strtoupper($footer['secretary']));
+    $sheet->mergeCells("A{$row}:B{$row}");
+    $sheet->setCellValue("D{$row}", strtoupper($footer['captain']));
+    $sheet->mergeCells("D{$row}:E{$row}");
+    $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $row++;
+    $sheet->setCellValue("A{$row}", 'Barangay Secretary');
+    $sheet->mergeCells("A{$row}:B{$row}");
+    $sheet->setCellValue("D{$row}", 'Punong Barangay');
+    $sheet->mergeCells("D{$row}:E{$row}");
+    $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $row++;
+    $sheet->setCellValue("A{$row}", '(Signature over Printed Name)');
+    $sheet->mergeCells("A{$row}:B{$row}");
+    $sheet->setCellValue("D{$row}", '(Signature over Printed Name)');
+    $sheet->mergeCells("D{$row}:E{$row}");
+    $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $row += 2;
+    $dateLabel = str_starts_with((string) ($report['semester_label'] ?? ''), '1ST')
+        ? 'June 30, ' . reportYearValue($report)
+        : 'December 31, ' . reportYearValue($report);
+    $sheet->setCellValue("A{$row}", 'Date Accomplished:');
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $row++;
+    $sheet->setCellValue("A{$row}", $dateLabel);
+    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $row += 2;
+    $noteRichText = new PhpOffice\PhpSpreadsheet\RichText\RichText();
+    $noteLabelRun = $noteRichText->createTextRun('Note:');
+    $noteLabelRun->getFont()->setBold(true);
+    $noteRichText->createText(' This RBI Form C (Annual Monitoring Report) is to be submitted to DILG C/MLGOO as a reference for encoding to BIS-BPS.');
+    $sheet->setCellValue("A{$row}", $noteRichText);
+    $sheet->mergeCells("A{$row}:E{$row}");
+    $sheet->getStyle("A{$row}")->getFont()->setBold(false)->setSize(8);
+
+    $sheet->getPageMargins()->setTop(0.35)->setBottom(0.35)->setLeft(0.35)->setRight(0.35);
+    $sheet->getPageSetup()->setOrientation($pageSetupClass::ORIENTATION_PORTRAIT);
+    $sheet->getPageSetup()->setPaperSize($pageSetupClass::PAPERSIZE_LETTER);
+    $sheet->getPageSetup()->setFitToPage(true)->setFitToWidth(1)->setFitToHeight(2);
+    $sheet->getPageSetup()->setPrintArea("A1:E{$row}");
+
+    $writer = new PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $filename = reportFileName($profile, reportYearValue($report), 'xlsx');
+    if ($sendDownloadHeaders) {
+        clearOutputBuffers();
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+    }
+    $writer->save($targetPath);
+    $spreadsheet->disconnectWorksheets();
+    if ($sendDownloadHeaders) {
+        exit;
+    }
+}
+
+/**
+ * @param array<string, mixed> $report
+ * @param array<string, string> $profile
+ */
 function outputSpreadsheet(
     array $report,
     array $profile,
@@ -2263,6 +2675,10 @@ function outputSpreadsheet(
 ): void {
     if (!class_exists('PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
         respondWithError(500, 'PhpSpreadsheet is not available. Run composer install first.');
+    }
+    if (($report['template'] ?? '') === 'rbi_form_c') {
+        outputRbiFormCSpreadsheet($report, $profile, $targetPath, $sendDownloadHeaders);
+        return;
     }
 
     $spreadsheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -2384,6 +2800,10 @@ function outputSpreadsheet(
     }
 }
 
+if (defined('REPORT_EXPORT_LIBRARY_ONLY') && REPORT_EXPORT_LIBRARY_ONLY === true) {
+    return;
+}
+
 if (PHP_SAPI === 'cli') {
     $argvList = $_SERVER['argv'] ?? [];
     $mode = isset($argvList[1]) ? (string) $argvList[1] : '';
@@ -2482,7 +2902,8 @@ if ($payloadYear !== $year) {
 }
 $profilePdo = dbConnection();
 $profile = reportProfileData($profilePdo);
-$report = buildAnnualReportDataFromAnalytics($analyticsPayload, $year, $profile);
+$reportMeta = is_array($payload['report'] ?? null) ? $payload['report'] : [];
+$report = buildAnnualReportDataFromAnalytics($analyticsPayload, $year, $profile, $reportMeta);
 if (!is_array($report)) {
     respondWithError(422, 'Analytics payload is incomplete for report export.');
 }

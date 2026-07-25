@@ -20,6 +20,8 @@
     createAccountForm: byId("createAccountForm"),
     usersList: byId("usersList"),
     usersListNotice: byId("usersListNotice"),
+    nurseProfileForm: byId("nurseProfileForm"),
+    nurseProfileNotice: byId("nurseProfileNotice"),
     nurseSettingsForm: byId("nurseSettingsForm"),
     nurseCredentialsSummary: byId("nurseCredentialsSummary"),
     nurseCredentialsPanel: byId("nurseCredentialsPanel"),
@@ -174,11 +176,11 @@
     const category = keyOf(value.category);
     const actionText = `${text(value.action)} ${text(value.details)}`.toLowerCase();
 
+    if (LOG_ACTION_LABELS[explicitType]) return explicitType;
     if (category === "security" || /password|credential|security/.test(actionText)) return "security";
     if (/created|added|provisioned|registered/.test(actionText)) return "created";
     if (/deleted|removed|archived|expired batch/.test(actionText)) return "deleted";
     if (category === "access" || /login|logout|activate|deactivate|access/.test(actionText)) return "access";
-    if (LOG_ACTION_LABELS[explicitType]) return explicitType;
     return "updated";
   };
 
@@ -211,7 +213,7 @@
   const syncStateFromServer = (serverState = {}) => {
     state.users = Array.isArray(serverState.users) ? serverState.users.map(normalizeUser) : [];
     state.logs = Array.isArray(serverState.logs)
-      ? serverState.logs.map(normalizeLog).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 60)
+      ? serverState.logs.map(normalizeLog).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 250)
       : [];
     state.sessions = Array.isArray(serverState.sessions)
       ? [...serverState.sessions].sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime())
@@ -326,7 +328,7 @@
       ipAddress,
       createdAt
     }));
-    state.logs = state.logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 60);
+    state.logs = state.logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 250);
   };
 
   const removeSession = (userId) => {
@@ -416,6 +418,7 @@
     const admin = getAdminUser();
     if (!admin) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account details are not available right now.", "danger");
+      setNotice(refs.nurseProfileNotice, "account-helper", "Nurse profile is not available right now.", "danger");
       setNurseCredentialsEditorOpen(true);
       return;
     }
@@ -424,6 +427,7 @@
     if (refs.nurseContact) refs.nurseContact.value = admin.contact || "";
     if (refs.nursePassword) refs.nursePassword.value = "";
     if (refs.nurseConfirmPassword) refs.nurseConfirmPassword.value = "";
+    setNotice(refs.nurseProfileNotice, "account-helper", "Used for report preparation and signatures.");
     setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account only.");
     setNurseCredentialsEditorOpen(false);
   };
@@ -707,6 +711,8 @@
       const moduleLabel = getLogModuleLabel(log);
       const actionLabel = getLogActionDisplayLabel(log);
       const resultLabel = getLogResultDisplayLabel(log);
+      const detailText = text(log.details) || "No details recorded.";
+      const hasLongDetail = detailText.length > 110;
       return `
         <tr class="logs-row">
           <td class="logs-cell logs-cell--datetime" data-label="Date &amp; Time">
@@ -744,7 +750,12 @@
             </div>
           </td>
           <td class="logs-cell logs-cell--details" data-label="Details">
-            <div class="log-detail" title="${esc(log.details)}">${esc(log.details)}</div>
+            <div class="log-detail-wrap">
+              <div class="log-detail" title="${esc(detailText)}">${esc(detailText)}</div>
+              ${hasLongDetail ? `<button type="button" class="log-detail-toggle" data-log-detail-toggle aria-label="Show full details">
+                <i class="bi bi-chevron-down" aria-hidden="true"></i>
+              </button>` : ""}
+            </div>
           </td>
         </tr>
       `;
@@ -905,6 +916,10 @@
     if (!fullName || !username || !contact || !password || !confirmPassword) {
       return void showNotice("Please complete all account fields.", "danger");
     }
+    if (!/^\d{11}$/.test(contact)) {
+      byId("accountContact")?.focus();
+      return void showNotice("Mobile number must contain exactly 11 digits.", "danger");
+    }
     if (password.length < 8 || !hasSpecialCharacter(password)) {
       return void showNotice("Temporary password must be at least 8 characters and include 1 special character.", "danger");
     }
@@ -933,6 +948,10 @@
     const role = normalizeUserRole(text(refs.editRole.value) || USER_ROLE_BHW);
 
     if (!fullName || !username || !contact) return void showNotice("Please complete all profile fields.", "danger");
+    if (!/^\d{11}$/.test(contact)) {
+      refs.editContact?.focus();
+      return void showNotice("Mobile number must contain exactly 11 digits.", "danger");
+    }
     if (usernameExists(username, user.id)) return void showNotice("Username already exists. Please use another username.", "danger");
 
     user.fullName = fullName;
@@ -947,6 +966,47 @@
     editUserModal?.hide();
   };
 
+  const handleNurseProfileSave = async (event) => {
+    event.preventDefault();
+    hideNotice();
+    const admin = getAdminUser();
+    if (!admin) {
+      setNotice(refs.nurseProfileNotice, "account-helper", "Nurse profile is not available right now.", "danger");
+      return;
+    }
+    const previousName = admin.fullName;
+    const fullName = text(refs.nurseFullName?.value);
+    if (!fullName) {
+      setNotice(refs.nurseProfileNotice, "account-helper", "Please enter the Nurse-in-Charge full name.", "danger");
+      return;
+    }
+    if (fullName === text(admin.fullName)) {
+      setNotice(refs.nurseProfileNotice, "account-helper", "No profile changes to save yet.", "danger");
+      return;
+    }
+
+    admin.fullName = fullName;
+    admin.updatedAt = nowIso();
+    admin.updatedBy = previousName || "Nurse-in-Charge";
+    addLog({
+      actor: previousName || "Nurse-in-Charge",
+      action: "Updated Nurse-in-Charge profile",
+      actionType: "updated",
+      target: fullName,
+      details: `Report preparer name was updated from ${previousName || "Nurse-in-Charge"} to ${fullName}.`,
+      category: "Settings"
+    });
+    try {
+      await saveAndRender();
+      await refreshCurrentSession({ rotate: false, locationLabel: "Settings Module" });
+    } catch (error) {
+      setNotice(refs.nurseProfileNotice, "account-helper", error instanceof Error ? error.message : "Unable to save the nurse profile right now.", "danger");
+      return;
+    }
+    setNotice(refs.nurseProfileNotice, "account-helper", "Nurse profile saved. New reports will use this name under Prepared by.", "success");
+    showNotice("Nurse-in-Charge profile updated successfully.");
+  };
+
   const handleNurseSettingsSave = async (event) => {
     event.preventDefault();
     hideNotice();
@@ -955,20 +1015,17 @@
       setNotice(refs.nurseSettingsNotice, "account-helper", "Admin account is not available right now.", "danger");
       return;
     }
-    const previousName = admin.fullName;
-    const fullName = text(refs.nurseFullName?.value);
     const username = text(refs.nurseUsername?.value);
-    const contact = text(refs.nurseContact?.value || admin.contact);
     const password = String(refs.nursePassword?.value || "");
     const confirm = String(refs.nurseConfirmPassword?.value || "");
-    const hasProfileChange = fullName !== text(admin.fullName) || username !== text(admin.username);
+    const hasUsernameChange = username !== text(admin.username);
     const hasPasswordChange = Boolean(password || confirm);
 
-    if (!fullName || !username) {
+    if (!username) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "Please complete all required fields.", "danger");
       return;
     }
-    if (!hasProfileChange && !hasPasswordChange) {
+    if (!hasUsernameChange && !hasPasswordChange) {
       setNotice(refs.nurseSettingsNotice, "account-helper", "No changes to save yet.", "danger");
       return;
     }
@@ -997,15 +1054,13 @@
       admin.credentialsUpdatedAt = nowIso();
     }
 
-    admin.fullName = fullName;
     admin.username = username;
-    admin.contact = contact;
     admin.accountType = USER_ROLE_ADMIN;
     admin.role = USER_ROLE_ADMIN;
     admin.status = "Active";
     admin.updatedAt = nowIso();
     admin.updatedBy = actorName();
-    addLog({ actor: previousName || "Nurse-in-Charge", action: "Updated Nurse-in-Charge credentials", actionType: "security", target: fullName, details: password ? "Primary admin profile and password were updated." : "Primary admin profile details were updated.", category: "Security" });
+    addLog({ action: "Updated Nurse-in-Charge credentials", actionType: "security", target: admin.fullName, details: hasPasswordChange ? "Admin login username and password were updated." : "Admin login username was updated.", category: "Security" });
     try {
       await saveAndRender();
     } catch (error) {
@@ -1117,6 +1172,15 @@
     refs.sidebar.classList.toggle("collapsed");
   };
 
+  const toggleLogDetail = (button) => {
+    const wrap = button.closest(".log-detail-wrap");
+    if (!wrap) return;
+    const expanded = wrap.classList.toggle("is-expanded");
+    button.setAttribute("aria-label", expanded ? "Hide full details" : "Show full details");
+    const icon = button.querySelector("i");
+    if (icon) icon.className = `bi ${expanded ? "bi-chevron-up" : "bi-chevron-down"}`;
+  };
+
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
   refs.sidebarBackdrop?.addEventListener("click", closeMobileSidebar);
   window.addEventListener("resize", () => { if (!isMobile()) closeMobileSidebar(); });
@@ -1124,6 +1188,7 @@
   refs.createAccountForm?.addEventListener("submit", (event) => { void handleCreateAccount(event); });
   refs.editAccountForm?.addEventListener("submit", (event) => { void handleEditAccount(event); });
   refs.changePasswordForm?.addEventListener("submit", (event) => { void handleChangePassword(event); });
+  refs.nurseProfileForm?.addEventListener("submit", (event) => { void handleNurseProfileSave(event); });
   refs.nurseSettingsForm?.addEventListener("submit", (event) => { void handleNurseSettingsSave(event); });
   refs.usersList?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action][data-id]");
@@ -1147,6 +1212,10 @@
     syncNurseSettingsForm();
   });
   refs.activityLogSearch?.addEventListener("input", renderLogs);
+  refs.activityLogTableBody?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-log-detail-toggle]");
+    if (button) toggleLogDetail(button);
+  });
   activityLogFilterButtons.forEach((button) => {
     button.addEventListener("click", () => {
       setActiveLogFilter(text(button.dataset.activityLogFilter) || "all");

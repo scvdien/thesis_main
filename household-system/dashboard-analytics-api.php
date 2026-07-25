@@ -231,6 +231,32 @@ function dash_age_bucket_five(?int $age): ?string
     };
 }
 
+function dash_age_bucket_rbi(?int $age): ?string
+{
+    if ($age === null || $age < 0) {
+        return null;
+    }
+    return match (true) {
+        $age < 5 => 'Under 5 years old',
+        $age <= 9 => '5-9 years old',
+        $age <= 14 => '10-14 years old',
+        $age <= 19 => '15-19 years old',
+        $age <= 24 => '20-24 years old',
+        $age <= 29 => '25-29 years old',
+        $age <= 34 => '30-34 years old',
+        $age <= 39 => '35-39 years old',
+        $age <= 44 => '40-44 years old',
+        $age <= 49 => '45-49 years old',
+        $age <= 54 => '50-54 years old',
+        $age <= 59 => '55-59 years old',
+        $age <= 64 => '60-64 years old',
+        $age <= 69 => '65-69 years old',
+        $age <= 74 => '70-74 years old',
+        $age <= 79 => '75-79 years old',
+        default => '80 years old and over',
+    };
+}
+
 /**
  * @param array<string, int> $bucket
  */
@@ -405,10 +431,53 @@ function dash_build_analytics(PDO $pdo, int $year): array
         '3-5 Members' => 0,
         '6+ Members' => 0,
     ];
+    $rbiAgeLabels = [
+        'Under 5 years old', '5-9 years old', '10-14 years old', '15-19 years old',
+        '20-24 years old', '25-29 years old', '30-34 years old', '35-39 years old',
+        '40-44 years old', '45-49 years old', '50-54 years old', '55-59 years old',
+        '60-64 years old', '65-69 years old', '70-74 years old', '75-79 years old',
+        '80 years old and over',
+    ];
+    $rbiSectorLabels = [
+        'Labor Force',
+        'Unemployed',
+        'Out of School Children (OSC) (6-14 years old)',
+        'Out of School Youth (OSY) (15-24 years old)',
+        'Person with Disabilities (PWDs)',
+        'Overseas Filipino Workers (OFWs)',
+        'Solo Parents',
+        'Indigenous Peoples (IPs)',
+        'Civil Status: Single',
+        ': Married',
+        'Citizenship: Filipino',
+        ': Foreigner',
+        'Senior Citizens',
+        '4Ps Beneficiaries',
+        'Registered Voters',
+        'Pregnant Women',
+        'Persons with Current Illness',
+        'Malnourished Children',
+        'Employment: Employed',
+        'Employment: Self-Employed',
+        'Education: Elementary',
+        'Education: High School',
+        'Education: College',
+        'Education: Vocational',
+    ];
+    $rbiAgeSex = [];
+    foreach ($rbiAgeLabels as $label) {
+        $rbiAgeSex[$label] = ['Male' => 0, 'Female' => 0, 'Total' => 0];
+    }
+    $rbiSectorSex = [];
+    foreach ($rbiSectorLabels as $label) {
+        $rbiSectorSex[$label] = ['Male' => 0, 'Female' => 0, 'Total' => 0];
+    }
     $toiletCounts = [];
     $waterCounts = [];
     $electricityCounts = [];
     $ownershipCounts = [];
+    $internetCounts = [];
+    $zoneCounts = [];
     $deathsByCause = [];
 
     $pregnantWomen = 0;
@@ -442,6 +511,7 @@ function dash_build_analytics(PDO $pdo, int $year): array
         $profile = dash_extract_resident_profile($residentRow);
         $gender = dash_normalize_gender($profile['sex'] ?? ($residentRow['sex'] ?? ''));
         dash_increment($genderCounts, $gender);
+        $rbiSex = $gender === 'Female' ? 'Female' : 'Male';
 
         $age = dash_extract_age($profile, $residentRow['age'] ?? null);
         $ageTenKey = dash_age_bucket_ten($age);
@@ -451,6 +521,11 @@ function dash_build_analytics(PDO $pdo, int $year): array
         $ageFiveKey = dash_age_bucket_five($age);
         if ($ageFiveKey !== null) {
             dash_increment($ageFiveBrackets, $ageFiveKey);
+        }
+        $rbiAgeKey = dash_age_bucket_rbi($age);
+        if ($rbiAgeKey !== null && isset($rbiAgeSex[$rbiAgeKey])) {
+            $rbiAgeSex[$rbiAgeKey][$rbiSex]++;
+            $rbiAgeSex[$rbiAgeKey]['Total']++;
         }
 
         $civilStatus = dash_normalize_civil_status($profile['civil_status'] ?? '');
@@ -475,11 +550,52 @@ function dash_build_analytics(PDO $pdo, int $year): array
             dash_increment($otherIndicators, 'Senior Citizens');
         }
         $numChildren = dash_to_int($profile['num_children'] ?? null) ?? 0;
+        $isSoloParent = false;
         if (
             $numChildren > 0
             && in_array($civilStatus, ['Single', 'Separated', 'Widowed'], true)
         ) {
             dash_increment($otherIndicators, 'Solo Parents');
+            $isSoloParent = true;
+        }
+
+        $sectorMatches = [
+            'Labor Force' => $age !== null && $age >= 15 && $age <= 64 && in_array($employment, ['Employed', 'Self-Employed', 'Unemployed'], true),
+            'Unemployed' => $employment === 'Unemployed',
+            'Out of School Children (OSC) (6-14 years old)' => $age !== null && $age >= 6 && $age <= 14
+                && (dash_is_yes($profile['osy'] ?? 'No') || dash_is_yes($profile['dropout'] ?? 'No')),
+            'Out of School Youth (OSY) (15-24 years old)' => $age !== null && $age >= 15 && $age <= 24
+                && dash_is_yes($profile['osy'] ?? 'No'),
+            'Person with Disabilities (PWDs)' => dash_is_yes($profile['pwd'] ?? 'No'),
+            'Overseas Filipino Workers (OFWs)' => dash_is_yes($profile['ofw'] ?? 'No')
+                || str_contains(strtolower(dash_text($profile['occupation'] ?? '', 120)), 'ofw')
+                || str_contains(strtolower(dash_text($profile['occupation'] ?? '', 120)), 'overseas'),
+            'Solo Parents' => $isSoloParent,
+            'Indigenous Peoples (IPs)' => dash_is_yes($profile['ip'] ?? 'No'),
+            'Civil Status: Single' => $civilStatus === 'Single',
+            ': Married' => $civilStatus === 'Married',
+            'Citizenship: Filipino' => strtolower(dash_text($profile['citizenship'] ?? 'Filipino', 80)) === 'filipino',
+            ': Foreigner' => strtolower(dash_text($profile['citizenship'] ?? 'Filipino', 80)) !== 'filipino',
+            'Senior Citizens' => ($age !== null && $age >= 60) || dash_is_yes($profile['senior'] ?? 'No'),
+            '4Ps Beneficiaries' => dash_is_yes($profile['4ps'] ?? ($profile['four_ps'] ?? 'No')),
+            'Registered Voters' => dash_is_yes($profile['voter'] ?? 'No'),
+            'Pregnant Women' => $gender === 'Female'
+                && (dash_is_yes($profile['pregnant'] ?? 'No') || dash_is_yes($profile['health_maternal_pregnant'] ?? 'No')),
+            'Persons with Current Illness' => dash_is_yes($profile['health_current_illness'] ?? 'No'),
+            'Malnourished Children' => dash_is_yes($profile['health_child_malnutrition'] ?? 'No'),
+            'Employment: Employed' => $employment === 'Employed',
+            'Employment: Self-Employed' => $employment === 'Self-Employed',
+            'Education: Elementary' => $education === 'Elementary',
+            'Education: High School' => $education === 'High School',
+            'Education: College' => $education === 'College',
+            'Education: Vocational' => $education === 'Vocational',
+        ];
+        foreach ($sectorMatches as $sectorLabel => $matches) {
+            if (!$matches) {
+                continue;
+            }
+            $rbiSectorSex[$sectorLabel][$rbiSex]++;
+            $rbiSectorSex[$sectorLabel]['Total']++;
         }
 
         $isFemale = $gender === 'Female';
@@ -511,7 +627,7 @@ function dash_build_analytics(PDO $pdo, int $year): array
     if (dash_table_exists($pdo, 'registration_households')) {
         $householdYearSql = dash_year_sql($pdo, 'registration_households');
         $householdStmt = $pdo->prepare(
-            'SELECT `household_code`, `member_count`, `head_data_json`, `created_at`
+            'SELECT `household_code`, `zone`, `member_count`, `head_data_json`, `created_at`
              FROM `registration_households`
              WHERE ' . $householdYearSql . ' = :year'
         );
@@ -525,6 +641,10 @@ function dash_build_analytics(PDO $pdo, int $year): array
         }
 
         $memberCount = dash_to_int($householdRow['member_count'] ?? null) ?? 0;
+        $householdZone = dash_clean_label($householdRow['zone'] ?? '', 80);
+        if ($householdZone !== '') {
+            dash_increment($zoneCounts, $householdZone);
+        }
         if ($memberCount <= 2) {
             dash_increment($householdSize, '1-2 Members');
         } elseif ($memberCount <= 5) {
@@ -550,6 +670,10 @@ function dash_build_analytics(PDO $pdo, int $year): array
         if ($ownership !== '') {
             dash_increment($ownershipCounts, $ownership);
         }
+        $internet = dash_clean_label($head['internet'] ?? '', 120);
+        if ($internet !== '') {
+            dash_increment($internetCounts, $internet);
+        }
     }
 
     $totalHouseholds = count($householdRows);
@@ -572,8 +696,11 @@ function dash_build_analytics(PDO $pdo, int $year): array
         'gender_distribution' => $genderCounts,
         'age_brackets' => $ageBrackets,
         'age_group_distribution' => $ageFiveBrackets,
+        'rbi_age_sex_distribution' => $rbiAgeSex,
+        'rbi_sector_sex_distribution' => $rbiSectorSex,
         'civil_status_distribution' => $civilStatusCounts,
         'household_size_distribution' => $householdSize,
+        'household_zone_distribution' => dash_sort_counts($zoneCounts),
         'socio_economic' => [
             'employment_status' => dash_sort_counts($employmentCounts),
             'educational_attainment' => dash_sort_counts($educationCounts),
@@ -584,6 +711,7 @@ function dash_build_analytics(PDO $pdo, int $year): array
             'water_source' => dash_sort_counts($waterCounts),
             'electricity_source' => dash_sort_counts($electricityCounts),
             'housing_ownership' => dash_sort_counts($ownershipCounts),
+            'internet_access' => dash_sort_counts($internetCounts),
         ],
         'health_risk' => [
             'pregnant_women' => $pregnantWomen,
@@ -592,6 +720,10 @@ function dash_build_analytics(PDO $pdo, int $year): array
             'deaths_by_cause' => dash_sort_counts($deathsByCause),
         ],
     ];
+}
+
+if (defined('DASHBOARD_ANALYTICS_LIBRARY_ONLY') && DASHBOARD_ANALYTICS_LIBRARY_ONLY === true) {
+    return;
 }
 
 auth_bootstrap_store();

@@ -393,7 +393,7 @@
         record.releases.push(movement);
       });
 
-    return Array.from(map.values()).map((entry) => {
+    return Array.from(map.values()).filter((entry) => entry.releases.length > 0).map((entry) => {
       const releases = [...entry.releases].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
       const lastRelease = releases[0] || null;
       const resident = {

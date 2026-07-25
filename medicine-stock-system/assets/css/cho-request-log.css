@@ -275,7 +275,7 @@
 .request-medicine-list{
   display:flex;
   flex-direction:column;
-  gap:10px;
+  gap:4px;
   min-width:220px;
 }
 
@@ -293,6 +293,12 @@
 .request-medicine-line small{
   font-size:0.75rem;
   color:#6c7768;
+}
+
+.request-medicine-more{
+  font-size:0.75rem;
+  font-weight:600;
+  color:#51705e;
 }
 
 .request-table th:last-child,

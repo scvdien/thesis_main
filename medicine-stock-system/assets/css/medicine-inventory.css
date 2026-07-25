@@ -268,7 +268,7 @@
   min-height:40px;
   border-radius:14px;
   border:1px solid #d7e0cf;
-  background:#f7faf3;
+  background-color:#f7faf3;
   font-size:0.84rem;
   font-weight:600;
 }
@@ -281,7 +281,7 @@
 .inventory-form-grid .form-select:focus{
   border-color:#8dbc6f;
   box-shadow:0 0 0 4px rgba(60, 152, 40, 0.14);
-  background:#fff;
+  background-color:#fff;
 }
 
 .inventory-table-shell{

@@ -218,7 +218,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
             </div>
 
             <form id="dispenseForm" class="staff-form-grid staff-dispense-form" autocomplete="off">
-              <section class="col-span-2 staff-dispense-card">
+              <section class="col-span-2 staff-dispense-card" id="dispensePatientCard">
                 <div class="staff-dispense-card__head">
                   <div>
                     <h6>Patient</h6>
@@ -251,12 +251,15 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                 </div>
               </section>
 
-              <section class="col-span-2 staff-dispense-card" id="dispenseMedicineCard">
+              <section class="col-span-2 staff-dispense-card d-none" id="dispenseMedicineCard">
                 <div class="staff-dispense-card__head">
                   <div>
                     <h6>Medicine Selection</h6>
                     <p>Search and select the medicine.</p>
                   </div>
+                  <button type="button" class="btn btn-sm btn-light" id="changeDispensePatientBtn">
+                    <i class="bi bi-arrow-left"></i> Change Patient
+                  </button>
                 </div>
 
                 <div class="staff-medicine-picker">
@@ -279,37 +282,51 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                     <div class="staff-empty">Search for the medicine to dispense.</div>
                   </div>
 
-                  <div class="staff-stock-preview" id="dispenseStockPreview">
-                    <strong>No medicine selected</strong>
-                    <span>Choose a medicine to view stock details.</span>
-                  </div>
                 </div>
               </section>
 
-              <section class="col-span-2 staff-dispense-card">
+              <section class="col-span-2 staff-selected-medicines-card d-none" id="selectedMedicinesCard">
+                <div class="staff-dispense-card__head">
+                  <div>
+                    <h6>Selected Medicines</h6>
+                    <p>Set the quantity for each medicine.</p>
+                  </div>
+                </div>
+                <div class="staff-dispense-items" id="dispenseSelectedItems"></div>
+                <button type="button" class="btn btn-primary staff-dispense-next" id="continueDispenseBtn">
+                  Continue <i class="bi bi-arrow-right"></i>
+                </button>
+              </section>
+
+              <section class="col-span-2 staff-dispense-card d-none" id="dispenseCaseCard">
                 <div class="staff-dispense-card__head">
                   <div>
                     <h6>Case Details</h6>
                     <p>Record the case details.</p>
                   </div>
+                  <button type="button" class="btn btn-sm btn-light" id="backToMedicinesBtn">
+                    <i class="bi bi-arrow-left"></i> Medicines
+                  </button>
                 </div>
 
                 <div class="staff-dispense-grid">
                   <div class="staff-dispense-field">
                     <label for="dispenseDiseaseCategory" class="form-label">Disease Category</label>
-                    <select id="dispenseDiseaseCategory" class="form-select" required>
-                      <option value="">Select category</option>
-                      <option value="Fever">Fever</option>
-                      <option value="Cough / Cold">Cough / Cold</option>
-                      <option value="Respiratory">Respiratory</option>
-                      <option value="Diarrhea">Diarrhea</option>
-                      <option value="Pain / Inflammation">Pain / Inflammation</option>
-                      <option value="Hypertension">Hypertension</option>
-                      <option value="Diabetes">Diabetes</option>
-                      <option value="Skin Disease">Skin Disease</option>
-                      <option value="Vitamin / Supplement">Vitamin / Supplement</option>
-                      <option value="Others">Others</option>
-                    </select>
+                    <div class="staff-dispense-select">
+                      <select id="dispenseDiseaseCategory" class="form-select" required>
+                        <option value="">Select category</option>
+                        <option value="Fever">Fever</option>
+                        <option value="Cough / Cold">Cough / Cold</option>
+                        <option value="Respiratory">Respiratory</option>
+                        <option value="Diarrhea">Diarrhea</option>
+                        <option value="Pain / Inflammation">Pain / Inflammation</option>
+                        <option value="Hypertension">Hypertension</option>
+                        <option value="Diabetes">Diabetes</option>
+                        <option value="Skin Disease">Skin Disease</option>
+                        <option value="Others">Others</option>
+                      </select>
+                      <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                    </div>
                   </div>
 
                   <div class="staff-dispense-field">
@@ -323,20 +340,10 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                     >
                   </div>
 
-                  <div class="staff-dispense-field">
-                    <label for="dispenseQuantity" class="form-label">Quantity</label>
-                    <input type="number" id="dispenseQuantity" class="form-control" min="1" step="1" required>
-                  </div>
-
-                  <div class="staff-dispense-field">
-                    <label for="dispenseDate" class="form-label">Date Dispensed</label>
-                    <input type="date" id="dispenseDate" class="form-control" required>
-                  </div>
-
                 </div>
               </section>
 
-              <div class="col-span-2 staff-form-actions staff-dispense-actions">
+              <div class="col-span-2 staff-form-actions staff-dispense-actions d-none" id="dispenseFormActions">
                 <button type="button" class="btn btn-outline-secondary" id="dispenseCancelBtn">
                   Cancel
                 </button>

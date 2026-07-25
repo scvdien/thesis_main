@@ -41,7 +41,7 @@
   };
   const buildRelevantReportYears = (availableYears = [], selectedYear = currentYear) => {
     const yearSet = new Set();
-    [currentYear, currentYear - 1, selectedYear].forEach((year) => {
+    [currentYear, selectedYear].forEach((year) => {
       const normalizedYear = normalizeReportYear(year);
       if (normalizedYear > 0) {
         yearSet.add(normalizedYear);

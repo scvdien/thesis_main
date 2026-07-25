@@ -194,7 +194,7 @@ function reports_api_next_code(PDO $pdo, int $year): string
 function reports_api_available_years(PDO $pdo, int $selectedYear): array
 {
     $currentYear = (int) gmdate('Y');
-    $years = [$currentYear, $currentYear - 1, $selectedYear];
+    $years = [$currentYear, $selectedYear];
 
     $stmt = $pdo->query(
         'SELECT DISTINCT `period_year`

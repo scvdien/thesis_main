@@ -127,7 +127,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
         <div class="card-header section-header">B. Contact & Location</div>
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-md-4"><label class="form-label" for="contact">Contact Number</label><input type="tel" class="form-control" id="contact"></div>
+            <div class="col-md-4"><label class="form-label" for="contact">Contact Number</label><input type="tel" class="form-control" id="contact" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Contact number must contain exactly 11 digits."></div>
             <div class="col-md-4"><label class="form-label" for="address">Complete Address</label><input type="text" class="form-control" id="address"></div>
             <div class="col-md-4"><label class="form-label" for="zone">Zone</label><input type="text" class="form-control" id="zone"></div>
             <div class="col-md-4"><label class="form-label" for="barangay">Barangay</label><input type="text" class="form-control" id="barangay"></div>

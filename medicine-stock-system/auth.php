@@ -3,9 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 
-if (!headers_sent()) {
-    date_default_timezone_set('Asia/Manila');
-}
+date_default_timezone_set('Asia/Manila');
 
 function mss_auth_now(): string
 {

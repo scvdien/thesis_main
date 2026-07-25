@@ -11,12 +11,14 @@
 
     const MEMBERS_KEY = isHouseholdViewMode ? "household_view_temp_members" : "household_members";
     const EDIT_KEY = isHouseholdViewMode ? "household_view_temp_edit_index" : "household_member_edit_index";
+    const MEMBER_FORM_DRAFT_KEY = isHouseholdViewMode ? "household_view_temp_member_form_draft" : "household_member_form_draft";
     const VIEW_CONTEXT_KEY = "household_view_context";
     const VIEW_RESULT_KEY = "household_view_edit_result";
     const localStorage = window.createIndexedStorageProxy
       ? window.createIndexedStorageProxy([
           MEMBERS_KEY,
           EDIT_KEY,
+          MEMBER_FORM_DRAFT_KEY,
           VIEW_CONTEXT_KEY,
           VIEW_RESULT_KEY
         ])
@@ -29,6 +31,7 @@
     const backBtn = document.getElementById("backBtn");
     const cancelBtn = document.getElementById("cancelBtn");
     const submitBtn = memberForm.querySelector('button[type="submit"]');
+    let suppressMemberFormDraft = false;
 
     if (isHouseholdViewMode) {
       if (backBtn) {
@@ -107,6 +110,59 @@
       });
     };
 
+    const serializeMemberForm = () => ({
+      first_name: document.getElementById("first_name").value.trim(),
+      middle_name: document.getElementById("middle_name").value.trim(),
+      last_name: document.getElementById("last_name").value.trim(),
+      extension_name: document.getElementById("extension_name").value.trim(),
+      birthday: birthdayInput.value,
+      age: ageInput.value,
+      sex: sexSelect.value,
+      civil_status: document.getElementById("civil_status").value,
+      citizenship: document.getElementById("citizenship").value.trim(),
+      religion: document.getElementById("religion").value.trim(),
+      height: document.getElementById("height").value,
+      weight: document.getElementById("weight").value,
+      blood_type: document.getElementById("blood_type").value.trim(),
+      contact: document.getElementById("contact").value.trim(),
+      address: document.getElementById("address").value.trim(),
+      zone: normalizeZoneLabel(document.getElementById("zone").value),
+      barangay: document.getElementById("barangay").value.trim(),
+      city: document.getElementById("city").value.trim(),
+      province: document.getElementById("province").value.trim(),
+      education: document.getElementById("education").value.trim(),
+      degree: document.getElementById("degree").value.trim(),
+      school_name: document.getElementById("school_name").value.trim(),
+      school_type: document.getElementById("school_type").value,
+      dropout: document.getElementById("dropout").value,
+      osy: document.getElementById("osy").value,
+      currently_studying: document.getElementById("currently_studying").value,
+      occupation: document.getElementById("occupation").value.trim(),
+      employment_status: document.getElementById("employment_status").value,
+      work_type: document.getElementById("work_type").value,
+      monthly_income: document.getElementById("monthly_income").value.trim(),
+      four_ps: document.getElementById("four_ps").value,
+      senior: document.getElementById("senior").value,
+      pwd: document.getElementById("pwd").value,
+      ip: document.getElementById("ip").value,
+      voter: document.getElementById("voter").value,
+      precinct: document.getElementById("precinct").value.trim(),
+      sss: document.getElementById("sss").value.trim(),
+      philhealth: document.getElementById("philhealth").value.trim(),
+      gsis: document.getElementById("gsis").value.trim(),
+      tin: document.getElementById("tin").value.trim(),
+      philid: document.getElementById("philid").value.trim(),
+      driver_license: document.getElementById("driver_license").value.trim(),
+      passport: document.getElementById("passport").value.trim(),
+      relation_to_head: document.getElementById("relation_to_head").value.trim()
+    });
+
+    const memberHasDraftData = (member) => Object.values(member || {}).some((value) => String(value || "").trim() !== "");
+
+    const clearMemberFormDraft = async () => {
+      await localStorage.removeItem(MEMBER_FORM_DRAFT_KEY);
+    };
+
     const loadMember = (member) => {
       setValue("first_name", member.first_name);
       setValue("middle_name", member.middle_name);
@@ -176,6 +232,51 @@
       }
     }
 
+    const saveMemberFormDraft = () => {
+      if (suppressMemberFormDraft) {
+        return;
+      }
+      try {
+        const data = serializeMemberForm();
+        if (!memberHasDraftData(data)) {
+          localStorage.removeItem(MEMBER_FORM_DRAFT_KEY);
+          return;
+        }
+        localStorage.setItem(MEMBER_FORM_DRAFT_KEY, JSON.stringify({
+          mode: isEditing ? "edit" : "add",
+          editIndex: isEditing ? editIndex : null,
+          data
+        }));
+      } catch (error) {
+        // Ignore draft write errors.
+      }
+    };
+
+    const restoreMemberFormDraft = () => {
+      let draft = null;
+      try {
+        draft = JSON.parse(localStorage.getItem(MEMBER_FORM_DRAFT_KEY) || "null");
+      } catch (error) {
+        draft = null;
+      }
+      if (!draft || typeof draft !== "object" || !draft.data || typeof draft.data !== "object") {
+        return;
+      }
+      const expectedMode = isEditing ? "edit" : "add";
+      if (String(draft.mode || "") !== expectedMode) {
+        return;
+      }
+      if (isEditing && Number(draft.editIndex) !== editIndex) {
+        return;
+      }
+      if (!memberHasDraftData(draft.data)) {
+        return;
+      }
+      loadMember(draft.data);
+    };
+
+    restoreMemberFormDraft();
+
     birthdayInput.addEventListener("change", () => {
       ageInput.value = calculateAge(birthdayInput.value);
     });
@@ -189,11 +290,20 @@
         }
       };
       zoneInput.addEventListener("change", normalizeZoneInput);
-      zoneInput.addEventListener("blur", normalizeZoneInput);
+      zoneInput.addEventListener("blur", () => {
+        normalizeZoneInput();
+        saveMemberFormDraft();
+      });
     }
 
+    memberForm.addEventListener("input", saveMemberFormDraft);
+    memberForm.addEventListener("change", saveMemberFormDraft);
+    window.addEventListener("pagehide", saveMemberFormDraft);
+
     const backToRegistration = async () => {
+      suppressMemberFormDraft = true;
       await localStorage.removeItem(EDIT_KEY);
+      await clearMemberFormDraft();
       if (isHouseholdViewMode) {
         const context = getHouseholdViewContext();
         const hid = householdIdFromQuery || context.householdId || "";
@@ -241,52 +351,7 @@
         }
       }
 
-      const memberData = {
-        first_name: document.getElementById("first_name").value.trim(),
-        middle_name: document.getElementById("middle_name").value.trim(),
-        last_name: document.getElementById("last_name").value.trim(),
-        extension_name: document.getElementById("extension_name").value.trim(),
-        birthday: birthdayInput.value,
-        age: ageInput.value,
-        sex: sexSelect.value,
-        civil_status: document.getElementById("civil_status").value,
-        citizenship: document.getElementById("citizenship").value.trim(),
-        religion: document.getElementById("religion").value.trim(),
-        height: document.getElementById("height").value,
-        weight: document.getElementById("weight").value,
-        blood_type: document.getElementById("blood_type").value.trim(),
-        contact: document.getElementById("contact").value.trim(),
-        address: document.getElementById("address").value.trim(),
-        zone: normalizeZoneLabel(document.getElementById("zone").value),
-        barangay: document.getElementById("barangay").value.trim(),
-        city: document.getElementById("city").value.trim(),
-        province: document.getElementById("province").value.trim(),
-        education: document.getElementById("education").value.trim(),
-        degree: document.getElementById("degree").value.trim(),
-        school_name: document.getElementById("school_name").value.trim(),
-        school_type: document.getElementById("school_type").value,
-        dropout: document.getElementById("dropout").value,
-        osy: document.getElementById("osy").value,
-        currently_studying: document.getElementById("currently_studying").value,
-        occupation: document.getElementById("occupation").value.trim(),
-        employment_status: document.getElementById("employment_status").value,
-        work_type: document.getElementById("work_type").value,
-        monthly_income: document.getElementById("monthly_income").value.trim(),
-        four_ps: document.getElementById("four_ps").value,
-        senior: document.getElementById("senior").value,
-        pwd: document.getElementById("pwd").value,
-        ip: document.getElementById("ip").value,
-        voter: document.getElementById("voter").value,
-        precinct: document.getElementById("precinct").value.trim(),
-        sss: document.getElementById("sss").value.trim(),
-        philhealth: document.getElementById("philhealth").value.trim(),
-        gsis: document.getElementById("gsis").value.trim(),
-        tin: document.getElementById("tin").value.trim(),
-        philid: document.getElementById("philid").value.trim(),
-        driver_license: document.getElementById("driver_license").value.trim(),
-        passport: document.getElementById("passport").value.trim(),
-        relation_to_head: document.getElementById("relation_to_head").value.trim()
-      };
+      const memberData = serializeMemberForm();
 
       const members = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "[]");
       if (isEditing && editIndex !== null && editIndex < members.length) {
@@ -309,7 +374,9 @@
           memberData
         }));
 
+        suppressMemberFormDraft = true;
         await localStorage.removeItem(EDIT_KEY);
+        await clearMemberFormDraft();
         await localStorage.removeItem(MEMBERS_KEY);
         await localStorage.removeItem(VIEW_CONTEXT_KEY);
         if (typeof localStorage.flush === "function") {
@@ -324,6 +391,7 @@
       }
 
       await localStorage.removeItem(EDIT_KEY);
+      await clearMemberFormDraft();
       await backToRegistration();
     });
 })();

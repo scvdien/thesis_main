@@ -119,7 +119,7 @@ const normalizeAvailableYears = (values = []) => {
 const ensureYearOptions = (rows = [], availableYears = state.years) => {
   if (!yearSelect) return;
   const currentValue = String(yearSelect.value || '').trim();
-  const yearSet = new Set([currentYear, currentYear - 1]);
+  const yearSet = new Set([currentYear]);
   normalizeAvailableYears(availableYears).forEach((year) => yearSet.add(year));
   rows.forEach((row) => {
     const year = getHouseholdRowYear(row);

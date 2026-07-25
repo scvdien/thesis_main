@@ -368,7 +368,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
               </div>
               <div>
                 <label class="form-label small">Contact Number</label>
-                <input type="text" class="form-control" id="staffCreateContactNumber" placeholder="09XX-XXX-XXXX">
+                <input type="tel" class="form-control" id="staffCreateContactNumber" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Mobile number must contain exactly 11 digits." placeholder="09XXXXXXXXX">
               </div>
               <div>
                 <label class="form-label small">Requested Module</label>
@@ -457,40 +457,38 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
           <section class="settings-section settings-panel" style="--delay:0.25s" id="barangay-profile" data-role="captain-only">
             <div class="settings-section-head">
               <div>
-                <h5 class="mb-1">Barangay Profile & Officials</h5>
-                <p class="small text-muted mb-0">Official identity, seal, and signatories.</p>
+                <h5 class="mb-1">Barangay Profile</h5>
+                <p class="small text-muted mb-0">Official location and signatory details used in reports.</p>
               </div>
               <span class="badge bg-secondary-subtle text-secondary">Official</span>
             </div>
             <div class="settings-form-grid">
               <div>
-                <label class="form-label small">Barangay Name</label>
-                <input type="text" class="form-control" id="barangayProfileName" placeholder="Barangay Name" autocomplete="off">
+                <label class="form-label small">Region</label>
+                <input type="text" class="form-control" id="barangayProfileRegion" autocomplete="off">
               </div>
               <div>
-                <label class="form-label small">Barangay Code</label>
-                <input type="text" class="form-control" id="barangayProfileCode" placeholder="BRC-082" autocomplete="off">
+                <label class="form-label small">Province</label>
+                <input type="text" class="form-control" id="barangayProfileProvince" autocomplete="off">
               </div>
               <div>
-                <label class="form-label small">Captain Name</label>
-                <input type="text" class="form-control" id="barangayProfileCaptainName" placeholder="Hon. Juan Dela Cruz" autocomplete="off">
+                <label class="form-label small">City/Municipality</label>
+                <input type="text" class="form-control" id="barangayProfileCity" autocomplete="off">
               </div>
               <div>
-                <label class="form-label small">Secretary Name</label>
-                <input type="text" class="form-control" id="barangayProfileSecretaryName" placeholder="Ms. Maria Santos" autocomplete="off">
+                <label class="form-label small">Barangay</label>
+                <input type="text" class="form-control" id="barangayProfileName" autocomplete="off">
               </div>
-              <div class="settings-form-full">
-                <label class="form-label small">Official Seal</label>
-                <div class="input-group">
-                  <button type="button" class="btn btn-outline-secondary" id="barangayProfileSealBrowseBtn">
-                    <i class="bi bi-upload"></i> Choose File
-                  </button>
-                  <input type="text" class="form-control" id="barangayProfileSealDisplayName" value="No file chosen" readonly>
-                </div>
-                <input type="file" class="d-none" id="barangayProfileSeal" accept="image/png,image/jpeg,image/webp">
+              <div>
+                <label class="form-label small">Barangay Captain Name</label>
+                <input type="text" class="form-control" id="barangayProfileCaptainName" autocomplete="off">
+              </div>
+              <div>
+                <label class="form-label small">Barangay Secretary Name</label>
+                <input type="text" class="form-control" id="barangayProfileSecretaryName" autocomplete="off">
               </div>
               <div class="settings-form-full d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <div class="small text-muted" id="barangayProfileNotice">These details will appear on official documents and reports.</div>
+                <div class="small text-muted" id="barangayProfileNotice">These location details will appear on official reports.</div>
                 <button type="button" class="btn btn-cta" id="barangayProfileSaveBtn">
                   <i class="bi bi-check2-circle"></i> Save Profile
                 </button>

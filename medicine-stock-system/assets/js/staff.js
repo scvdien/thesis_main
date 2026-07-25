@@ -63,7 +63,11 @@
     dispenseResidentSearchBtn: byId("dispenseResidentSearchBtn"),
     dispenseResidentPreview: byId("dispenseResidentPreview"),
     dispenseResidentResults: byId("dispenseResidentResults"),
+    dispensePatientCard: byId("dispensePatientCard"),
+    changeDispensePatientBtn: byId("changeDispensePatientBtn"),
     dispenseMedicineCard: byId("dispenseMedicineCard"),
+    dispenseCaseCard: byId("dispenseCaseCard"),
+    dispenseFormActions: byId("dispenseFormActions"),
     residentFormModal: byId("residentFormModal"),
     residentHouseholdPanel: byId("residentHouseholdPanel"),
     residentModeCabarianBtn: byId("residentModeCabarianBtn"),
@@ -93,10 +97,12 @@
     dispenseMedicine: byId("dispenseMedicine"),
     dispenseMedicineResults: byId("dispenseMedicineResults"),
     dispenseStockPreview: byId("dispenseStockPreview"),
+    dispenseSelectedItems: byId("dispenseSelectedItems"),
+    selectedMedicinesCard: byId("selectedMedicinesCard"),
+    continueDispenseBtn: byId("continueDispenseBtn"),
+    backToMedicinesBtn: byId("backToMedicinesBtn"),
     dispenseDiseaseCategory: byId("dispenseDiseaseCategory"),
     dispenseIllness: byId("dispenseIllness"),
-    dispenseQuantity: byId("dispenseQuantity"),
-    dispenseDate: byId("dispenseDate"),
     dispenseCancelBtn: byId("dispenseCancelBtn"),
     dispenseSubmitBtn: byId("dispenseSubmitBtn"),
     historyTitle: byId("historyTitle"),
@@ -172,6 +178,8 @@
     residentBarangayFilter: "all",
     residentSort: "recent",
     selectedResidentId: "",
+    dispenseItems: [],
+    dispenseStage: "patient",
     currentUserId: "",
     residentFormOpen: false,
     residentFormMode: "cabarian",
@@ -272,7 +280,6 @@
     return new Date(current.getTime() - offset).toISOString().slice(0, 10);
   };
 
-  if (refs.dispenseDate) refs.dispenseDate.value = todayInputValue();
 
   const daysUntil = (value) => {
     const parsed = new Date(value);
@@ -2599,11 +2606,16 @@
   const updateDispenseFormState = () => {
     const resident = findResidentAccount(state.selectedResidentId);
     const hasResident = Boolean(resident);
+    if (!hasResident) state.dispenseStage = "patient";
+    else if (state.dispenseStage === "patient") state.dispenseStage = "medicine";
+    refs.dispensePatientCard?.classList.toggle("d-none", hasResident);
     if (!hasResident) {
+      state.dispenseItems = [];
       updateDispenseMedicineSelection("");
+      renderDispenseItems();
     }
     if (refs.dispenseMedicineCard) {
-      refs.dispenseMedicineCard.classList.toggle("is-disabled", !hasResident);
+      refs.dispenseMedicineCard.classList.toggle("d-none", !hasResident || state.dispenseStage !== "medicine");
     }
     if (refs.dispenseMedicineSearch) {
       refs.dispenseMedicineSearch.disabled = !hasResident;
@@ -2612,9 +2624,25 @@
         : "Select patient first";
     }
     if (refs.dispenseMedicine) refs.dispenseMedicine.disabled = !hasResident;
+    updateDispenseGuidance();
     syncDispenseSubmitState();
     renderMedicineSearchResults();
     renderStockPreview();
+  };
+
+  const updateDispenseGuidance = () => {
+    const resident = findResidentAccount(state.selectedResidentId);
+    const hasMedicine = Boolean(resident && state.dispenseItems.length);
+    const details = Boolean(text(refs.dispenseDiseaseCategory?.value)
+      && text(refs.dispenseIllness?.value));
+
+    const showCase = hasMedicine && state.dispenseStage === "case";
+    refs.dispenseCaseCard?.classList.toggle("d-none", !showCase);
+    refs.dispenseFormActions?.classList.toggle("d-none", !showCase);
+    refs.selectedMedicinesCard?.classList.toggle("d-none", !state.dispenseItems.length || state.dispenseStage !== "medicine");
+    refs.dispenseCaseCard?.querySelectorAll("input, select").forEach((field) => {
+      field.disabled = !hasMedicine;
+    });
   };
 
   const renderSelectedResident = () => {
@@ -2696,8 +2724,28 @@
   const syncDispenseSubmitState = () => {
     if (!refs.dispenseSubmitBtn) return;
     const hasResident = Boolean(findResidentAccount(state.selectedResidentId));
-    const medicine = findMedicine(text(refs.dispenseMedicine?.value));
-    refs.dispenseSubmitBtn.disabled = !hasResident || Boolean(medicine && isExpiredMedicine(medicine));
+    const itemsValid = state.dispenseItems.length > 0 && state.dispenseItems.every((item) => {
+      const medicine = findMedicine(item.medicineId);
+      return medicine && item.quantity > 0 && item.quantity <= medicine.stockOnHand && !isExpiredMedicine(medicine);
+    });
+    const hasDetails = Boolean(text(refs.dispenseDiseaseCategory?.value)
+      && text(refs.dispenseIllness?.value));
+    refs.dispenseSubmitBtn.disabled = !hasResident || !itemsValid || !hasDetails;
+  };
+
+  const renderDispenseItems = () => {
+    if (!refs.dispenseSelectedItems) return;
+    refs.dispenseSelectedItems.innerHTML = state.dispenseItems.map((item) => {
+      const medicine = findMedicine(item.medicineId);
+      if (!medicine) return "";
+      return `<div class="staff-dispense-item" data-selected-medicine-id="${esc(medicine.id)}">
+        <div><strong>${esc(medicineLabel(medicine))}</strong><small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)} available</small></div>
+        <label><span>Quantity</span><input type="number" min="1" max="${esc(medicine.stockOnHand)}" step="1" value="${esc(item.quantity || "")}" data-dispense-item-quantity="${esc(medicine.id)}" class="form-control"></label>
+        <button type="button" class="btn btn-light" data-remove-dispense-item="${esc(medicine.id)}" aria-label="Remove ${esc(medicineLabel(medicine))}"><i class="bi bi-trash"></i></button>
+      </div>`;
+    }).join("");
+    updateDispenseGuidance();
+    syncDispenseSubmitState();
   };
 
   const updateDispenseMedicineSelection = (medicineId, { syncInput = true } = {}) => {
@@ -2714,11 +2762,17 @@
     }
 
     refs.dispenseMedicine.value = nextMedicine?.id || "";
+    if (nextMedicine && !state.dispenseItems.some((item) => item.medicineId === nextMedicine.id)) {
+      state.dispenseItems.push({ medicineId: nextMedicine.id, quantity: 1 });
+    }
     if (syncInput && refs.dispenseMedicineSearch) {
       refs.dispenseMedicineSearch.value = nextMedicine ? medicineLabel(nextMedicine) : "";
     }
     renderMedicineSearchResults();
     renderStockPreview();
+    renderDispenseItems();
+    updateDispenseGuidance();
+    syncDispenseSubmitState();
   };
 
   const renderMedicineSearchResults = () => {
@@ -2765,6 +2819,7 @@
 
     const matches = medicines
       .filter((medicine) => !query || medicineSearchText(medicine).includes(query))
+      .filter((medicine) => !state.dispenseItems.some((item) => item.medicineId === medicine.id))
       .slice(0, 6);
 
     if (!matches.length) {
@@ -2785,6 +2840,7 @@
           <span class="staff-medicine-result__tail">
             <small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)}</small>
             <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
+            <span class="staff-medicine-add"><i class="bi bi-plus-lg"></i> Add</span>
           </span>
         </button>
       `;
@@ -2897,11 +2953,12 @@
   };
 
   const resetDispenseForm = () => {
+    state.dispenseItems = [];
+    state.dispenseStage = findResidentAccount(state.selectedResidentId) ? "medicine" : "patient";
     updateDispenseMedicineSelection("");
-    if (refs.dispenseQuantity) refs.dispenseQuantity.value = "";
+    renderDispenseItems();
     if (refs.dispenseDiseaseCategory) refs.dispenseDiseaseCategory.value = "";
     if (refs.dispenseIllness) refs.dispenseIllness.value = "";
-    if (refs.dispenseDate) refs.dispenseDate.value = todayInputValue();
   };
 
   const resetDispenseResidentSelection = () => {
@@ -3051,20 +3108,18 @@
   const handleDispenseSubmit = async (event) => {
     event.preventDefault();
     const resident = findResidentAccount(state.selectedResidentId);
-    const medicine = findMedicine(text(refs.dispenseMedicine?.value));
-    const quantity = Math.max(0, Math.round(numeric(refs.dispenseQuantity?.value)));
+    const dispenseItems = state.dispenseItems.map((item) => ({ ...item, medicine: findMedicine(item.medicineId) }));
     const diseaseCategory = text(refs.dispenseDiseaseCategory?.value);
     const illness = text(refs.dispenseIllness?.value);
     const dispenseActor = getCurrentDispenseActor();
-    const actionDate = text(refs.dispenseDate?.value) || todayInputValue();
 
     if (!resident) {
       showNotice("Select or create a resident account before dispensing medicine.", "danger");
       return;
     }
 
-    if (!medicine) {
-      showNotice("Select a medicine to dispense.", "danger");
+    if (!dispenseItems.length || dispenseItems.some((item) => !item.medicine || item.quantity <= 0)) {
+      showNotice("Select at least one medicine and enter its quantity.", "danger");
       return;
     }
 
@@ -3083,36 +3138,31 @@
       return;
     }
 
-    if (quantity <= 0) {
-      showNotice("Enter a valid quantity to dispense.", "danger");
-      return;
-    }
-
-    if (isExpiredMedicine(medicine)) {
+    if (dispenseItems.some((item) => isExpiredMedicine(item.medicine))) {
       showNotice("Expired medicine cannot be dispensed.", "danger");
       return;
     }
 
-    if (quantity > medicine.stockOnHand) {
+    if (dispenseItems.some((item) => item.quantity > item.medicine.stockOnHand)) {
       showNotice("Dispense quantity cannot be greater than available stock.", "danger");
       return;
     }
 
     const snapshot = createStaffStateSnapshot();
-    const stockBefore = medicine.stockOnHand;
-    const stockAfter = stockBefore - quantity;
-    const createdAt = `${actionDate}T08:00:00`;
+    const createdAt = nowIso();
     const releasedByRole = dispenseActor.role;
     const releasedByName = dispenseActor.name;
 
-    medicine.stockOnHand = stockAfter;
-    medicine.lastUpdatedAt = createdAt;
-    medicine.updatedBy = `${releasedByRole}: ${releasedByName}`;
-
     resident.lastDispensedAt = createdAt;
-    resident.lastDispensedMedicine = medicineLabel(medicine);
+    resident.lastDispensedMedicine = dispenseItems.map((item) => medicineLabel(item.medicine)).join(", ");
 
-    state.movements.unshift(normalizeMovement({
+    dispenseItems.forEach(({ medicine, quantity }) => {
+      const stockBefore = medicine.stockOnHand;
+      const stockAfter = stockBefore - quantity;
+      medicine.stockOnHand = stockAfter;
+      medicine.lastUpdatedAt = createdAt;
+      medicine.updatedBy = `${releasedByRole}: ${releasedByName}`;
+      state.movements.unshift(normalizeMovement({
       medicineId: medicine.id,
       medicineName: medicineLabel(medicine),
       actionType: "dispense",
@@ -3129,17 +3179,19 @@
       recipientBarangay: resident.barangay,
       releasedByRole,
       releasedByName
-    }));
+      }));
+    });
 
     const storedUser = findStoredUser({ fullName: releasedByName, accountType: releasedByRole });
     const username = text(storedUser?.username) || makeUsername(releasedByName, defaultUsernameForRole(releasedByRole));
     const ipAddress = resolveSessionIp(storedUser?.id, defaultIpForRole(releasedByRole));
     const residentLabel = resident.residentId ? `${resident.fullName} (${resident.residentId})` : resident.fullName;
+    const itemSummary = dispenseItems.map(({ medicine, quantity }) => `${formatNumber(quantity)} ${medicine.unit} ${medicineLabel(medicine)}`).join(", ");
     const detailParts = [
-      `${formatNumber(quantity)} ${medicine.unit} dispensed to ${residentLabel}.`,
+      `${itemSummary} dispensed to ${residentLabel}.`,
       `Case: ${diseaseCategory}${illness ? ` | ${illness}` : ""}.`,
       `Dispensed by ${releasedByRole}: ${releasedByName}.`,
-      `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
+      `${formatNumber(dispenseItems.length)} medicine item(s) updated in inventory.`
     ];
 
     appendActivityLog({
@@ -3147,7 +3199,7 @@
       username,
       action: "Dispensed medicine",
       actionType: "updated",
-      target: medicineLabel(medicine),
+      target: dispenseItems.map((item) => medicineLabel(item.medicine)).join(", "),
       details: detailParts.join(" "),
       category: "Dispensing",
       resultLabel: "Dispensed",
@@ -3183,10 +3235,10 @@
 
     openSection("staff-dashboard");
     showDispenseSuccess({
-      medicineName: medicineLabel(medicine),
+      medicineName: `${formatNumber(dispenseItems.length)} medicine item(s)`,
       residentName: resident.fullName,
-      quantity,
-      unit: medicine.unit
+      quantity: dispenseItems.reduce((sum, item) => sum + item.quantity, 0),
+      unit: "total units"
     });
   };
 
@@ -3351,7 +3403,7 @@
       actionType: passwordChanged ? "security" : "updated",
       target: nextUser.fullName,
       details: detailParts.join(" "),
-      category: "Security",
+      category: passwordChanged ? "Security" : "Settings",
       resultLabel: "Saved",
       resultTone: "success",
       createdAt: updatedAt,
@@ -3617,6 +3669,18 @@
     }
     renderMedicineSearchResults();
     renderStockPreview();
+    updateDispenseGuidance();
+    syncDispenseSubmitState();
+  });
+  [refs.dispenseDiseaseCategory, refs.dispenseIllness].forEach((field) => {
+    field?.addEventListener("input", () => {
+      updateDispenseGuidance();
+      syncDispenseSubmitState();
+    });
+    field?.addEventListener("change", () => {
+      updateDispenseGuidance();
+      syncDispenseSubmitState();
+    });
   });
 
   refs.residentBarangayFilter?.addEventListener("change", (event) => {
@@ -3667,6 +3731,25 @@
     clearNotice();
     window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
   });
+  refs.changeDispensePatientBtn?.addEventListener("click", () => {
+    resetDispenseForm();
+    resetDispenseResidentSelection();
+    clearNotice();
+    window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
+  });
+  refs.continueDispenseBtn?.addEventListener("click", () => {
+    if (!state.dispenseItems.length) return;
+    state.dispenseStage = "case";
+    refs.dispenseMedicineCard?.classList.add("d-none");
+    updateDispenseGuidance();
+    window.setTimeout(() => refs.dispenseDiseaseCategory?.focus(), 100);
+  });
+  refs.backToMedicinesBtn?.addEventListener("click", () => {
+    state.dispenseStage = "medicine";
+    refs.dispenseMedicineCard?.classList.remove("d-none");
+    updateDispenseGuidance();
+    window.setTimeout(() => refs.dispenseMedicineSearch?.focus(), 100);
+  });
 
   refs.residentCabarianResults?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-cabarian-resident-id]");
@@ -3702,6 +3785,25 @@
     const button = event.target.closest("[data-dispense-medicine-id]");
     if (!button) return;
     updateDispenseMedicineSelection(text(button.getAttribute("data-dispense-medicine-id")));
+    if (refs.dispenseMedicine) refs.dispenseMedicine.value = "";
+    if (refs.dispenseMedicineSearch) refs.dispenseMedicineSearch.value = "";
+    renderMedicineSearchResults();
+  });
+
+  refs.dispenseSelectedItems?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-dispense-item-quantity]");
+    if (!input) return;
+    const item = state.dispenseItems.find((entry) => entry.medicineId === text(input.getAttribute("data-dispense-item-quantity")));
+    if (item) item.quantity = Math.max(0, Math.round(numeric(input.value)));
+    updateDispenseGuidance();
+    syncDispenseSubmitState();
+  });
+  refs.dispenseSelectedItems?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-dispense-item]");
+    if (!button) return;
+    const medicineId = text(button.getAttribute("data-remove-dispense-item"));
+    state.dispenseItems = state.dispenseItems.filter((item) => item.medicineId !== medicineId);
+    renderDispenseItems();
   });
 
   refs.selectedResidentUseBtn?.addEventListener("click", () => {
