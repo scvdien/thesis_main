@@ -305,6 +305,16 @@
   const actorName = () => getAdminUser()?.fullName || text(currentAuthUser?.fullName) || "Nurse-in-Charge";
   const roleLabel = (role) => text(role) === USER_ROLE_ADMIN ? "Nurse-in-Charge" : "BHW";
   const findUser = (id) => state.users.find((user) => user.id === id) || null;
+  const logUserRoleLabel = (log) => {
+    const account = state.users.find((user) =>
+      (text(log.username) && keyOf(user.username) === keyOf(log.username))
+      || (text(log.actor) && keyOf(user.fullName) === keyOf(log.actor))
+    );
+    if (account) return text(account.role) === USER_ROLE_ADMIN ? "Nurse-in-Charge" : "BHW Staff";
+    if (keyOf(log.category) === "dispensing" || keyOf(log.details).includes("dispensed by bhw")) return "BHW Staff";
+    if (keyOf(log.actor).includes("nurse-in-charge")) return "Nurse-in-Charge";
+    return "System User";
+  };
   const getUsers = () => state.users
     .filter((user) => text(user.role) !== USER_ROLE_ADMIN)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -711,6 +721,7 @@
       const moduleLabel = getLogModuleLabel(log);
       const actionLabel = getLogActionDisplayLabel(log);
       const resultLabel = getLogResultDisplayLabel(log);
+      const userRoleLabel = logUserRoleLabel(log);
       const detailText = text(log.details) || "No details recorded.";
       const hasLongDetail = detailText.length > 110;
       return `
@@ -726,6 +737,7 @@
             <div class="log-user">
               <div class="log-user-copy">
                 <div class="log-user-name">${esc(log.actor)}</div>
+                <div class="log-user-role">${esc(userRoleLabel)}</div>
               </div>
             </div>
           </td>

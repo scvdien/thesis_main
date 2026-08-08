@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const HEAD_KEY = "household_head_data";
   const MEMBER_FORM_DRAFT_KEY = "household_member_form_draft";
   const PRESERVE_DRAFT_FLAG_KEY = "registration_preserve_draft";
+  const DRAFT_OWNER_KEY = "household_registration_draft_owner";
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
   const DUPLICATE_INDEX_CACHE_KEY = "household_registration_duplicate_index";
@@ -50,6 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   let requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
   let currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
+  const currentDraftOwner = String(document.body.dataset.currentUserId || "").trim();
   const contentTitle = document.querySelector(".content-title");
   const contentSubtitle = document.querySelector(".content-subtitle:not(.content-subtitle-mobile)");
   const contentSubtitleMobile = document.querySelector(".content-subtitle-mobile");
@@ -2438,6 +2440,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
+  const claimRegistrationDraftForCurrentUser = async () => {
+    if (!currentDraftOwner) return;
+
+    let previousOwner = "";
+    try {
+      previousOwner = String(window.localStorage.getItem(DRAFT_OWNER_KEY) || "").trim();
+    } catch {
+      // Continue without a persisted owner when browser storage is unavailable.
+      return;
+    }
+
+    // Draft form values are device-local and must never carry over to another
+    // staff account. An unowned draft is legacy data, so it is also unsafe to
+    // restore automatically.
+    if (previousOwner !== currentDraftOwner && hasLocalDraftState()) {
+      await clearRegistrationDraftState();
+    }
+
+    try {
+      window.localStorage.setItem(DRAFT_OWNER_KEY, currentDraftOwner);
+    } catch {
+      // Ignore storage errors; the registration form can still be used.
+    }
+  };
+
   const setLoadHouseholdLookupEnabled = (enabled) => {
     if (loadHouseholdYear) {
       loadHouseholdYear.disabled = !enabled;
@@ -3346,6 +3373,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (typeof localStorage.ready === "function") {
     await localStorage.ready();
   }
+
+  await claimRegistrationDraftForCurrentUser();
 
   if (!isEditMode) {
     consumePreserveDraftFlag();

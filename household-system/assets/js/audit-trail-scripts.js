@@ -68,7 +68,7 @@ if (logoutBtn && logoutModalEl) {
 }
 
 const API_ENDPOINT = 'audit-trail-api.php';
-const FETCH_LIMIT = 200;
+const FETCH_LIMIT = 500;
 
 const yearSelect = document.getElementById('yearSelect');
 const auditSearchInput = document.getElementById('auditSearchInput');

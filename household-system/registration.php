@@ -50,6 +50,7 @@ $staffCredentialsDescription = $registrationRequiresCredentialUpdate
   : 'Update your username or password.';
 $staffCredentialsBadge = $registrationRequiresCredentialUpdate ? 'Required' : '';
 $registrationCurrentUsername = (string) ($authUser['username'] ?? '');
+$registrationCurrentUserId = (int) ($authUser['id'] ?? 0);
 $registrationCsrfToken = auth_csrf_token();
 $registrationStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
 $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
@@ -76,6 +77,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
   data-requires-credential-update="<?= $registrationRequiresCredentialUpdate ? 'true' : 'false' ?>"
   data-current-username="<?= htmlspecialchars($registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-user-id="<?= $registrationCurrentUserId ?>"
 >
 <?php echo auth_client_role_script($authRole); ?>
 <div class="layout">
@@ -163,7 +165,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
       </div>
     </div>
 
-    <form id="censusForm">
+    <form id="censusForm" autocomplete="off">
 
     <!-- A. Household Head Information -->
     <div class="card section-card mb-4">

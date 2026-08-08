@@ -892,6 +892,14 @@ html.settings-panel-booting[data-settings-initial-panel="activity-logs"] #activi
   line-height:1.35;
 }
 
+.log-user-role{
+  margin-top:2px;
+  font-size:0.68rem;
+  font-weight:700;
+  color:#6b7a8e;
+  line-height:1.25;
+}
+
 .log-module-pill{
   display:inline-flex;
   align-items:center;

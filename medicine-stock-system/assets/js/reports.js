@@ -211,7 +211,7 @@
     });
     state.activityLogs = state.activityLogs
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-      .slice(0, 60);
+      .slice(0, 250);
   };
 
   const currentAuditActor = () => {
@@ -1268,6 +1268,7 @@
       resultTone: "success",
       createdAt: historyEntry.generatedAt
     });
+    await saveReportHistory();
   };
 
   const redownloadHistoryEntry = async (historyId) => {
@@ -1294,7 +1295,7 @@
       resultTone: "success",
       createdAt: nowIso()
     });
-
+    await saveReportHistory();
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1393,7 +1394,7 @@
           appendActivityLog({
             ...audit,
             action: "Deleted saved report",
-            actionType: "updated",
+            actionType: "deleted",
             target: entry.reportDefinition.title,
             details: `${entry.reportDefinition.title} removed from local report history.`,
             category: "Reports",
@@ -1401,6 +1402,7 @@
             resultTone: "warning",
             createdAt: nowIso()
           });
+          await saveReportHistory();
         }
       });
       return;

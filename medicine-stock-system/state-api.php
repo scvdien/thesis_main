@@ -311,6 +311,9 @@ function mss_state_log_action_type(array $row): string
     ));
     $explicitType = strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? $row['type'] ?? ''));
 
+    if (str_contains($actionText, 'deleted saved report')) {
+        return 'deleted';
+    }
     if (in_array($explicitType, ['created', 'updated', 'deleted', 'security', 'access'], true)) {
         return $explicitType;
     }

@@ -254,6 +254,10 @@ function reportYearValue(array $report): int
 
 function envValue(array $keys, string $default = ''): string
 {
+    if (function_exists('auth_env')) {
+        return auth_env($keys, $default);
+    }
+
     foreach ($keys as $k) {
         if (isset($_ENV[$k]) && trim((string) $_ENV[$k]) !== '') {
             return trim((string) $_ENV[$k]);
@@ -482,33 +486,11 @@ function exportSpreadsheetUsingExternalPhp(
 
 function dbConnection(): ?PDO
 {
-    if (!class_exists('PDO')) {
+    try {
+        return auth_db();
+    } catch (Throwable $e) {
         return null;
     }
-    $host = envValue(['DB_HOST'], '127.0.0.1');
-    $port = envValue(['DB_PORT'], '3306');
-    $user = envValue(['DB_USERNAME', 'DB_USER'], 'root');
-    $pass = envValue(['DB_PASSWORD', 'DB_PASS'], '');
-    $dbNames = array_values(array_unique(array_filter([
-        envValue(['DB_NAME'], 'thesis_main'),
-        'thesis_main',
-        'barangay_hims',
-        'hims',
-        'thesis',
-    ])));
-    $opt = [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES => false,
-    ];
-    foreach ($dbNames as $db) {
-        try {
-            return new PDO("mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4", $user, $pass, $opt);
-        } catch (Throwable $e) {
-            // try next db
-        }
-    }
-    return null;
 }
 
 function nfmt($value, int $decimals = 0): string
@@ -663,9 +645,26 @@ function reportProfileData(?PDO $pdo): array
         } catch (Throwable $e) {
             // Keep empty values when the barangay profile is unavailable.
         }
+
+        $userNames = reportProfileFromUsers($pdo);
+        foreach (['captain_name', 'secretary_name'] as $nameKey) {
+            if (($profile[$nameKey] ?? '') === '' && ($userNames[$nameKey] ?? '') !== '') {
+                $profile[$nameKey] = text($userNames[$nameKey], 255);
+            }
+        }
     }
 
     return $profile;
+}
+
+function reportProfileValueWithFallback(array $profile, string $key, array $fallbackKeys, string $default, int $maxLength = 160): string
+{
+    $value = text($profile[$key] ?? '', $maxLength);
+    if ($value !== '') {
+        return $value;
+    }
+
+    return envValue($fallbackKeys, $default);
 }
 
 function reportImageMimeFromExtension(string $path): string
@@ -1183,18 +1182,9 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
     /** @var array<string, int> $otherIndicators */
     $otherIndicators = mapCountsFromPayload($metrics['other_indicators'] ?? null);
 
-    $province = text($profile['province_name'] ?? '', 120);
-    if ($province === '') {
-        $province = envValue(['BARANGAY_PROVINCE', 'PROVINCE_NAME'], '');
-    }
-    $city = text($profile['city_name'] ?? '', 120);
-    if ($city === '') {
-        $city = envValue(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], '');
-    }
-    $barangay = text($profile['barangay_name'] ?? '', 160);
-    if ($barangay === '') {
-        $barangay = envValue(['BARANGAY_NAME'], 'Barangay');
-    }
+    $province = reportProfileValueWithFallback($profile, 'province_name', ['BARANGAY_PROVINCE', 'PROVINCE_NAME'], '', 120);
+    $city = reportProfileValueWithFallback($profile, 'city_name', ['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], '', 120);
+    $barangay = reportProfileValueWithFallback($profile, 'barangay_name', ['BARANGAY_NAME'], 'Barangay', 160);
 
     $population = max(0, toInt($metrics['population'] ?? 0));
     $male = max(0, toInt($metrics['male'] ?? 0));
@@ -1595,10 +1585,10 @@ function buildRbiFormCReportData(array $analytics, int $year, array $profile, ar
         return $rows;
     };
 
-    $region = text($profile['region_name'] ?? '', 120);
-    $province = text($profile['province_name'] ?? '', 120);
-    $city = text($profile['city_name'] ?? '', 120);
-    $barangay = text($profile['barangay_name'] ?? '', 160);
+    $region = reportProfileValueWithFallback($profile, 'region_name', ['BARANGAY_REGION', 'REGION_NAME'], '', 120);
+    $province = reportProfileValueWithFallback($profile, 'province_name', ['BARANGAY_PROVINCE', 'PROVINCE_NAME'], '', 120);
+    $city = reportProfileValueWithFallback($profile, 'city_name', ['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], '', 120);
+    $barangay = reportProfileValueWithFallback($profile, 'barangay_name', ['BARANGAY_NAME'], 'Barangay', 160);
     $population = payloadCount($populationSummary, ['total_population', 'total', 'population'], 0);
     $households = payloadCount($populationSummary, ['households', 'total_households'], 0);
     $periodText = text($reportMeta['period'] ?? '', 80);

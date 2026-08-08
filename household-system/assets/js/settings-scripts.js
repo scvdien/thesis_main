@@ -202,6 +202,7 @@ let activeUsersRefreshTimer = null;
 let isBackupActionBusy = false;
 let isSettingsRolloverBusy = false;
 let settingsRolloverBusyAction = '';
+let pendingBarangayProfileSavePayload = null;
 let pendingSettingsRolloverRequest = null;
 let pendingSettingsRolloverResetRequest = null;
 
@@ -326,6 +327,12 @@ const barangayProfileCaptainNameInput = document.getElementById('barangayProfile
 const barangayProfileSecretaryNameInput = document.getElementById('barangayProfileSecretaryName');
 const barangayProfileSaveBtn = document.getElementById('barangayProfileSaveBtn');
 const barangayProfileNotice = document.getElementById('barangayProfileNotice');
+const barangayProfileConfirmModalEl = document.getElementById('barangayProfileConfirmModal');
+const barangayProfileConfirmBtn = document.getElementById('barangayProfileConfirmBtn');
+const barangayProfileConfirmModal =
+  barangayProfileConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(barangayProfileConfirmModalEl)
+    : null;
 const backupRestorePanel = document.getElementById('backup-restore');
 const backupHealthBadge = document.getElementById('backupHealthBadge');
 const backupDatabaseCompatCard = document.getElementById('backupDatabaseCompatCard');
@@ -3581,9 +3588,7 @@ adminCredentialsStartBtn?.addEventListener('click', (event) => {
   setAdminCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
 });
 
-barangayProfileSaveBtn?.addEventListener('click', async (event) => {
-  event.preventDefault();
-
+const readBarangayProfileFormPayload = () => {
   const regionName = String(barangayProfileRegionInput?.value || '').trim();
   const provinceName = String(barangayProfileProvinceInput?.value || '').trim();
   const cityName = String(barangayProfileCityInput?.value || '').trim();
@@ -3591,35 +3596,92 @@ barangayProfileSaveBtn?.addEventListener('click', async (event) => {
   const captainName = String(barangayProfileCaptainNameInput?.value || '').trim();
   const secretaryName = String(barangayProfileSecretaryNameInput?.value || '').trim();
 
+  return {
+    action: 'save_barangay_profile',
+    region_name: regionName,
+    province_name: provinceName,
+    city_name: cityName,
+    barangay_name: barangayName,
+    captain_name: captainName,
+    secretary_name: secretaryName
+  };
+};
+
+const executeBarangayProfileSave = async (payload) => {
+  const confirmButtonOriginalHtml = barangayProfileConfirmBtn?.innerHTML || 'Save Profile';
+
+  if (barangayProfileConfirmBtn) {
+    barangayProfileConfirmBtn.disabled = true;
+    barangayProfileConfirmBtn.innerHTML = 'Saving...';
+  }
+  if (barangayProfileSaveBtn) {
+    barangayProfileSaveBtn.disabled = true;
+  }
+
+  try {
+    const response = await runSettingsAction(payload);
+    barangayProfileConfirmModal?.hide();
+    pendingBarangayProfileSavePayload = null;
+    rerenderSettingsPanels();
+    setBarangayProfileNotice(response.message || 'Barangay profile saved successfully.', 'success');
+  } catch (error) {
+    barangayProfileConfirmModal?.hide();
+    pendingBarangayProfileSavePayload = null;
+    const message = error instanceof Error ? error.message : 'Unable to save barangay profile right now.';
+    setBarangayProfileNotice(message, 'danger');
+  } finally {
+    if (barangayProfileConfirmBtn) {
+      barangayProfileConfirmBtn.disabled = false;
+      barangayProfileConfirmBtn.innerHTML = confirmButtonOriginalHtml;
+    }
+    if (barangayProfileSaveBtn) {
+      barangayProfileSaveBtn.disabled = false;
+    }
+  }
+};
+
+barangayProfileSaveBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+
+  const payload = readBarangayProfileFormPayload();
   const currentProfile = readBarangayProfile() || normalizeBarangayProfile(null);
   const hasChanges =
-    regionName !== currentProfile.regionName ||
-    provinceName !== currentProfile.provinceName ||
-    cityName !== currentProfile.cityName ||
-    barangayName !== currentProfile.barangayName ||
-    captainName !== currentProfile.captainName ||
-    secretaryName !== currentProfile.secretaryName;
+    payload.region_name !== currentProfile.regionName ||
+    payload.province_name !== currentProfile.provinceName ||
+    payload.city_name !== currentProfile.cityName ||
+    payload.barangay_name !== currentProfile.barangayName ||
+    payload.captain_name !== currentProfile.captainName ||
+    payload.secretary_name !== currentProfile.secretaryName;
 
   if (!hasChanges) {
     setBarangayProfileNotice('No changes to save.', 'muted');
     return;
   }
 
-  try {
-    const response = await runSettingsAction({
-      action: 'save_barangay_profile',
-      region_name: regionName,
-      province_name: provinceName,
-      city_name: cityName,
-      barangay_name: barangayName,
-      captain_name: captainName,
-      secretary_name: secretaryName
-    });
-    rerenderSettingsPanels();
-    setBarangayProfileNotice(response.message || 'Barangay profile saved successfully.', 'success');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to save barangay profile right now.';
-    setBarangayProfileNotice(message, 'danger');
+  pendingBarangayProfileSavePayload = payload;
+  if (barangayProfileConfirmModal) {
+    barangayProfileConfirmModal.show();
+    return;
+  }
+
+  const confirmed = window.confirm('Save barangay profile changes? These details will appear on official reports and generated documents.');
+  if (!confirmed) {
+    pendingBarangayProfileSavePayload = null;
+    setBarangayProfileNotice('Barangay profile save was cancelled.', 'muted');
+    return;
+  }
+
+  await executeBarangayProfileSave(payload);
+});
+
+barangayProfileConfirmBtn?.addEventListener('click', async () => {
+  if (!pendingBarangayProfileSavePayload) return;
+  await executeBarangayProfileSave(pendingBarangayProfileSavePayload);
+});
+
+barangayProfileConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
+  if (!isSettingsMutating) {
+    pendingBarangayProfileSavePayload = null;
   }
 });
 
