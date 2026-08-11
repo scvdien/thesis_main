@@ -5,6 +5,7 @@ require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
 $csrfToken = auth_csrf_token();
+$householdViewCurrentUserId = (int) ($authUser['id'] ?? 0);
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -46,7 +47,10 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
   <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="stylesheet" href="assets/css/household-view.css?v=<?= htmlspecialchars($householdViewStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
-<body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
+<body
+  data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-user-id="<?= $householdViewCurrentUserId ?>"
+>
 <?php echo auth_client_role_script($authRole); ?>
 
 <div id="wrapper">
@@ -77,15 +81,18 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
         <div class="hv-toolbar-row">
           <div class="hv-toolbar-left">
             <button class="hv-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Toggle sidebar">
-              <i class="bi bi-list"></i>
+              <i class="bi bi-list" aria-hidden="true"></i>
             </button>
             <a href="households.php" class="btn btn-light border hv-back-btn">
-              <i class="bi bi-arrow-left-short"></i> Back to Households
+              <i class="bi bi-arrow-left-short" aria-hidden="true"></i>
+              <span class="hv-back-label">Back to Households</span>
             </a>
           </div>
-          <div class="dropdown role-secretary-only">
-            <button class="btn btn-primary btn-modern dropdown-toggle hv-actions-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <i class="bi bi-sliders2"></i> Actions
+          <div class="dropdown role-secretary-only hv-actions-dropdown">
+            <button class="btn btn-primary btn-modern dropdown-toggle hv-actions-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Household actions">
+              <i class="bi bi-sliders2 hv-actions-icon-wide" aria-hidden="true"></i>
+              <span class="hv-actions-label">Actions</span>
+              <i class="bi bi-three-dots-vertical hv-actions-icon-mobile" aria-hidden="true"></i>
             </button>
             <ul class="dropdown-menu dropdown-menu-end hv-actions-menu">
               <li>
@@ -140,9 +147,20 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
           <div class="hv-head"><i class="bi bi-person-vcard"></i> Primary Information</div>
           <div class="hv-primary-grid">
             <div class="hv-primary-main">
-              <p class="hv-primary-label mb-1">Household Head</p>
-              <h5 class="mb-2" id="hvHeadName">-</h5>
-              <p class="hv-primary-note mb-3">Primary resident listed for this household record.</p>
+              <div class="hv-head-photo-frame">
+                <img id="hvHeadPhoto" class="hv-photo-image" alt="Household head" hidden>
+                <span id="hvHeadPhotoFallback" class="hv-photo-fallback" role="img" aria-label="No profile photo">
+                  <i class="bi bi-person-fill" aria-hidden="true"></i>
+                </span>
+              </div>
+              <div class="hv-primary-copy">
+                <p class="hv-primary-label mb-1">Household Head</p>
+                <h5 class="mb-1" id="hvHeadName">-</h5>
+                <p class="hv-primary-note mb-0">
+                  <span class="hv-primary-note-wide">Primary household representative</span>
+                  <span class="hv-primary-note-mobile">Primary representative</span>
+                </p>
+              </div>
               <div class="hv-chip-row">
                 <div class="hv-chip"><span class="k">Age</span><span class="v" id="hvHeadAge">-</span></div>
                 <div class="hv-chip"><span class="k">Sex</span><span class="v" id="hvHeadSex">-</span></div>
@@ -322,9 +340,17 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content modern-modal">
         <div class="modal-header border-0 pb-0">
-          <div>
-            <h5 class="modal-title mb-1">Member Details</h5>
-            <p class="text-muted small mb-0" id="mdRelation">-</p>
+          <div class="hv-member-modal-identity">
+            <div class="hv-member-modal-avatar">
+              <img id="mdProfilePhoto" class="hv-photo-image" alt="Household member" hidden>
+              <span id="mdProfilePhotoFallback" class="hv-photo-fallback" role="img" aria-label="No profile photo">
+                <i class="bi bi-person-fill" aria-hidden="true"></i>
+              </span>
+            </div>
+            <div class="hv-member-modal-copy">
+              <h5 class="modal-title mb-1">Member Details</h5>
+              <p class="text-muted small mb-0" id="mdRelation">-</p>
+            </div>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
@@ -470,5 +496,3 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
 <script src="assets/js/household-view.js?v=<?= htmlspecialchars($householdViewScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>
 </html>
-
-

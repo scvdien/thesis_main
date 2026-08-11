@@ -62,8 +62,12 @@ const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribut
 const REGISTRATION_HEAD_KEY = 'household_head_data';
 const REGISTRATION_MEMBERS_KEY = 'household_members';
 const REGISTRATION_MEMBER_EDIT_KEY = 'household_member_edit_index';
+const REGISTRATION_HOUSEHOLD_PHOTO_KEY = 'household_registration_photo_id';
+const REGISTRATION_HEAD_PHOTO_KEY = 'household_head_profile_photo_id';
 const REGISTRATION_RECORDS_KEY = 'household_registration_records';
 const REGISTRATION_SYNC_QUEUE_KEY = 'household_registration_sync_queue';
+const LOCAL_OWNER_FIELD = 'local_owner_user_id';
+const currentUserId = String(document.body?.dataset.currentUserId || '').trim();
 let currentDisplayHouseholdId = '';
 let currentDisplayYear = HOUSEHOLD_BASE_DATA_YEAR;
 const HV_TEMP_MEMBERS_KEY = 'household_view_temp_members';
@@ -75,7 +79,11 @@ const storage = window.createIndexedStorageProxy
       HV_TEMP_MEMBERS_KEY,
       HV_TEMP_EDIT_KEY,
       HV_CONTEXT_KEY,
-      HV_RESULT_KEY
+      HV_RESULT_KEY,
+      REGISTRATION_HOUSEHOLD_PHOTO_KEY,
+      REGISTRATION_HEAD_PHOTO_KEY,
+      REGISTRATION_RECORDS_KEY,
+      REGISTRATION_SYNC_QUEUE_KEY
     ])
   : window.localStorage;
 
@@ -226,6 +234,11 @@ const toMemberFormData = (member = {}, record = {}) => {
     existingFormData.barangay = existingFormData.barangay || record.head?.barangay || '';
     existingFormData.city = existingFormData.city || record.head?.city || '';
     existingFormData.province = existingFormData.province || record.head?.province || '';
+    existingFormData.profile_photo_id = firstValidRegistrationPhotoId(
+      existingFormData.profile_photo_id,
+      member.profilePhotoId,
+      member.profile_photo_id
+    );
     return existingFormData;
   }
 
@@ -279,12 +292,14 @@ const toMemberFormData = (member = {}, record = {}) => {
     num_members: record.household?.numMembers || record.members?.length || '',
     relation_to_head: profile.relation === '-' ? '' : profile.relation,
     num_children: record.household?.numChildren || '',
-    partner_name: record.household?.partnerName || ''
+    partner_name: record.household?.partnerName || '',
+    profile_photo_id: firstValidRegistrationPhotoId(member.profilePhotoId, member.profile_photo_id)
   };
 };
 
 const fromMemberFormData = (memberData = {}) => {
   const normalized = { ...memberData };
+  normalized.profile_photo_id = normalizeRegistrationPhotoId(normalized.profile_photo_id);
   const fullName = [
     normalized.first_name,
     normalized.middle_name,
@@ -302,11 +317,74 @@ const fromMemberFormData = (memberData = {}) => {
     education: normalized.education || '-',
     occupation: normalized.occupation || '-',
     address: normalized.address || '-',
+    profilePhotoId: normalized.profile_photo_id,
     formData: normalized
   };
 };
 
 const toTextOrEmpty = (value) => String(value ?? '').trim();
+
+const REGISTRATION_PHOTO_UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeRegistrationPhotoId = (value) => {
+  const candidate = toTextOrEmpty(value);
+  return REGISTRATION_PHOTO_UUID_V4_PATTERN.test(candidate) ? candidate.toLowerCase() : '';
+};
+
+const firstValidRegistrationPhotoId = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeRegistrationPhotoId(value);
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+const registrationPhotoUrl = (photoId) => {
+  const normalized = normalizeRegistrationPhotoId(photoId);
+  return normalized ? `registration-photo.php?id=${encodeURIComponent(normalized)}` : '';
+};
+
+const memberProfilePhotoId = (member = {}) => firstValidRegistrationPhotoId(
+  member.profilePhotoId,
+  member.profile_photo_id,
+  member.formData?.profile_photo_id
+);
+
+const setRegistrationPhotoFrame = (image, fallback, photoId, altText) => {
+  if (!(image instanceof HTMLImageElement) || !(fallback instanceof HTMLElement)) return;
+
+  const normalized = normalizeRegistrationPhotoId(photoId);
+  image.onload = null;
+  image.onerror = null;
+  image.removeAttribute('src');
+  image.hidden = true;
+  fallback.hidden = false;
+  delete image.dataset.photoId;
+  image.alt = toTextOrEmpty(altText) || 'Profile photo';
+
+  if (!normalized) return;
+
+  image.dataset.photoId = normalized;
+  image.onload = () => {
+    if (image.dataset.photoId !== normalized) return;
+    image.hidden = false;
+    fallback.hidden = true;
+  };
+  image.onerror = () => {
+    if (image.dataset.photoId !== normalized) return;
+    image.hidden = true;
+    fallback.hidden = false;
+    image.removeAttribute('src');
+  };
+  image.src = registrationPhotoUrl(normalized);
+};
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
 
 const toListFromValue = (value) => {
   if (Array.isArray(value)) {
@@ -354,6 +432,7 @@ const mapMemberFormToViewRow = (memberData = {}, fallbackRelation = 'Member') =>
     education: toTextOrEmpty(formData.education) || '-',
     occupation: toTextOrEmpty(formData.occupation) || '-',
     address: toTextOrEmpty(formData.address) || '-',
+    profilePhotoId: normalizeRegistrationPhotoId(formData.profile_photo_id),
     formData
   };
 };
@@ -388,10 +467,12 @@ const mapApiHouseholdToViewRecord = (payload) => {
 
   return {
     id: householdId,
+    householdPhotoId: normalizeRegistrationPhotoId(record.household_photo_id),
     status: 'Synced',
     updated: formatServerDate(apiData.updated_at || record.updated_at || apiData.created_at),
     head: {
       name: headName,
+      profilePhotoId: normalizeRegistrationPhotoId(head.profile_photo_id),
       age: head.age,
       sex: head.sex,
       civilStatus: head.civil_status,
@@ -529,25 +610,30 @@ const deleteHouseholdFromServer = async (householdId) => {
   return payload;
 };
 
-const removeHouseholdFromRegistrationCache = (householdId) => {
+const removeHouseholdFromRegistrationCache = async (householdId) => {
   const targetId = toTextOrEmpty(householdId);
-  if (!targetId) return;
+  if (!targetId || !currentUserId) return;
+
+  const shouldRemoveOwnedRecord = (item) => (
+    String(item?.[LOCAL_OWNER_FIELD] || '').trim() === currentUserId
+    && String(item?.household_id || '').trim() === targetId
+  );
 
   try {
-    const records = JSON.parse(window.localStorage.getItem(REGISTRATION_RECORDS_KEY) || '[]');
+    const records = JSON.parse(storage.getItem(REGISTRATION_RECORDS_KEY) || '[]');
     if (Array.isArray(records)) {
-      const filtered = records.filter((item) => String(item?.household_id || '').trim() !== targetId);
-      window.localStorage.setItem(REGISTRATION_RECORDS_KEY, JSON.stringify(filtered));
+      const filtered = records.filter((item) => !shouldRemoveOwnedRecord(item));
+      await storage.setItem(REGISTRATION_RECORDS_KEY, JSON.stringify(filtered));
     }
   } catch (error) {
     // Ignore cache cleanup issues.
   }
 
   try {
-    const queue = JSON.parse(window.localStorage.getItem(REGISTRATION_SYNC_QUEUE_KEY) || '[]');
+    const queue = JSON.parse(storage.getItem(REGISTRATION_SYNC_QUEUE_KEY) || '[]');
     if (Array.isArray(queue)) {
-      const filtered = queue.filter((item) => String(item?.household_id || '').trim() !== targetId);
-      window.localStorage.setItem(REGISTRATION_SYNC_QUEUE_KEY, JSON.stringify(filtered));
+      const filtered = queue.filter((item) => !shouldRemoveOwnedRecord(item));
+      await storage.setItem(REGISTRATION_SYNC_QUEUE_KEY, JSON.stringify(filtered));
     }
   } catch (error) {
     // Ignore cache cleanup issues.
@@ -614,6 +700,25 @@ const seedRegistrationEditDraft = async (record) => {
 
   await storage.setItem(REGISTRATION_HEAD_KEY, JSON.stringify(headDraft));
   await storage.setItem(REGISTRATION_MEMBERS_KEY, JSON.stringify(memberDrafts));
+  const householdPhotoId = firstValidRegistrationPhotoId(
+    record.householdPhotoId,
+    record.household_photo_id
+  );
+  const headPhotoId = firstValidRegistrationPhotoId(
+    record.head?.profilePhotoId,
+    record.head?.profile_photo_id,
+    headDraft.profile_photo_id
+  );
+  if (householdPhotoId) {
+    await storage.setItem(REGISTRATION_HOUSEHOLD_PHOTO_KEY, householdPhotoId);
+  } else {
+    await storage.removeItem(REGISTRATION_HOUSEHOLD_PHOTO_KEY);
+  }
+  if (headPhotoId) {
+    await storage.setItem(REGISTRATION_HEAD_PHOTO_KEY, headPhotoId);
+  } else {
+    await storage.removeItem(REGISTRATION_HEAD_PHOTO_KEY);
+  }
   await storage.removeItem(REGISTRATION_MEMBER_EDIT_KEY);
   if (typeof storage.flush === 'function') {
     await storage.flush();
@@ -666,6 +771,7 @@ const applyPendingMemberEditResult = async (record, householdId) => {
     if (updatedMember.address && updatedMember.address !== '-') record.head.address = updatedMember.address;
     if (updatedMember.education && updatedMember.education !== '-' && record.education) record.education.attainment = updatedMember.education;
     if (updatedMember.occupation && updatedMember.occupation !== '-' && record.employment) record.employment.occupation = updatedMember.occupation;
+    record.head.profilePhotoId = memberProfilePhotoId(updatedMember);
   }
 
   await storage.removeItem(HV_RESULT_KEY);
@@ -692,29 +798,73 @@ const renderMembersTable = (members) => {
   if (!tbody) return;
   if (!visibleMembers.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No members listed.</td></tr>';
-    if (label) label.textContent = '0 member(s)';
+    if (label) label.textContent = '0 members';
     return;
   }
 
   tbody.innerHTML = visibleMembers
-    .map(({ member: m, originalIndex }, idx) => `
-      <tr>
-        <td>${idx + 1}</td>
-        <td>${m.name || '-'}</td>
-        <td>${m.relation || '-'}</td>
-        <td>${m.age || '-'}</td>
-        <td>${m.sex || '-'}</td>
-        <td class="member-action-cell">
-          <div class="member-action-wrap">
-            <button type="button" class="member-btn member-view-btn" data-member-index="${originalIndex}">
-              <i class="bi bi-eye"></i> View Details
-            </button>
-          </div>
-        </td>
-      </tr>
-    `).join('');
+    .map(({ member: m, originalIndex }, idx) => {
+      const name = toTextOrEmpty(m.name) || '-';
+      const photoId = memberProfilePhotoId(m);
+      const relation = toTextOrEmpty(m.relation) || '-';
+      const age = toTextOrEmpty(m.age) || '-';
+      const rawSex = toTextOrEmpty(m.sex) || '-';
+      const normalizedSex = rawSex.toLowerCase();
+      const sexLabel = normalizedSex === 'm' || normalizedSex === 'male'
+        ? 'Male'
+        : normalizedSex === 'f' || normalizedSex === 'female'
+          ? 'Female'
+          : rawSex;
+      const ageLabel = age === '-' ? 'Age -' : `${age} yrs`;
+      return `
+        <tr class="hv-member-row">
+          <td class="hv-member-index-cell">${idx + 1}</td>
+          <td class="hv-member-identity-cell">
+            <div class="hv-member-name-cell">
+              <span class="hv-member-avatar" data-photo-id="${escapeHtml(photoId)}">
+                <img class="hv-photo-image" alt="" hidden>
+                <span class="hv-photo-fallback" role="img" aria-label="No profile photo">
+                  <i class="bi bi-person-fill" aria-hidden="true"></i>
+                </span>
+              </span>
+              <span class="hv-member-identity-copy">
+                <span class="hv-member-name">${escapeHtml(name)}</span>
+                <span class="hv-member-mobile-meta">
+                  <span>${escapeHtml(relation)}</span>
+                  <span class="hv-member-meta-divider" aria-hidden="true">&middot;</span>
+                  <span>${escapeHtml(ageLabel)}</span>
+                  <span class="hv-member-meta-divider" aria-hidden="true">&middot;</span>
+                  <span>${escapeHtml(sexLabel)}</span>
+                </span>
+              </span>
+            </div>
+          </td>
+          <td class="hv-member-relation-cell">${escapeHtml(relation)}</td>
+          <td class="hv-member-age-cell">${escapeHtml(age)}</td>
+          <td class="hv-member-sex-cell">${escapeHtml(rawSex)}</td>
+          <td class="member-action-cell">
+            <div class="member-action-wrap">
+              <button type="button" class="member-btn member-view-btn" data-member-index="${originalIndex}" aria-label="View details for ${escapeHtml(name)}">
+                <i class="bi bi-eye hv-member-action-icon-wide" aria-hidden="true"></i>
+                <span class="hv-member-action-label">View Details</span>
+                <i class="bi bi-chevron-right hv-member-action-icon-mobile" aria-hidden="true"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
 
-  if (label) label.textContent = `${visibleMembers.length} member(s)`;
+  tbody.querySelectorAll('.hv-member-avatar').forEach((avatar) => {
+    const image = avatar.querySelector('.hv-photo-image');
+    const fallback = avatar.querySelector('.hv-photo-fallback');
+    const name = avatar.closest('.hv-member-name-cell')?.querySelector('.hv-member-name')?.textContent || 'Household member';
+    setRegistrationPhotoFrame(image, fallback, avatar.dataset.photoId, `${name} profile photo`);
+  });
+
+  if (label) {
+    label.textContent = `${visibleMembers.length} ${visibleMembers.length === 1 ? 'member' : 'members'}`;
+  }
 };
 
 const hydratePage = (record) => {
@@ -730,6 +880,13 @@ const hydratePage = (record) => {
   const housing = record.housing || {};
   const health = record.health || {};
   const members = record.members || [];
+
+  setRegistrationPhotoFrame(
+    document.getElementById('hvHeadPhoto'),
+    document.getElementById('hvHeadPhotoFallback'),
+    firstValidRegistrationPhotoId(head.profilePhotoId, head.profile_photo_id),
+    `${toTextOrEmpty(head.name) || 'Household head'} profile photo`
+  );
 
   setText('hvId', currentDisplayHouseholdId || record.id);
   const statusEl = document.getElementById('hvStatus');
@@ -815,6 +972,13 @@ const openMemberDetails = (memberIndex) => {
   const fullName = buildFullName(memberData, member.name || '-');
   const residentId = toTextOrEmpty(memberData.resident_id || memberData.resident_code || member.resident_id || member.resident_code) || '-';
   const householdId = toTextOrEmpty(currentDisplayHouseholdId || currentRecord.id || memberData.household_id || memberData.household_code) || '-';
+
+  setRegistrationPhotoFrame(
+    document.getElementById('mdProfilePhoto'),
+    document.getElementById('mdProfilePhotoFallback'),
+    firstValidRegistrationPhotoId(memberData.profile_photo_id, memberProfilePhotoId(member)),
+    `${fullName === '-' ? 'Household member' : fullName} profile photo`
+  );
 
   setText('mdName', fullName);
   setText('mdRelation', `Relation: ${relation} | Resident ID: ${residentId} | Household: ${householdId}`);
@@ -1003,7 +1167,7 @@ const main = async () => {
 
     try {
       await deleteHouseholdFromServer(householdId);
-      removeHouseholdFromRegistrationCache(householdId);
+      await removeHouseholdFromRegistrationCache(householdId);
       try {
         const selected = String(sessionStorage.getItem('selectedHouseholdId') || '').trim();
         if (selected === householdId) {
