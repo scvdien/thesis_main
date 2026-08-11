@@ -46,6 +46,7 @@ $requiresCredentialUpdate = !empty($authUser['requires_credential_update']);
 $adminCredentialLock = $authRole === AUTH_ROLE_ADMIN && $requiresCredentialUpdate;
 $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scripts.js') ?: time());
+$passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-toggle.js') ?: time());
 ?>
 <!doctype html>
 <html lang="en">
@@ -60,6 +61,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+<link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
 <body
@@ -688,6 +690,24 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
     </div>
   </div>
 
+  <!-- CREATE STAFF ACCOUNT CONFIRM MODAL -->
+  <div class="modal fade" id="staffCreateConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal text-center p-4">
+        <div class="modal-icon mb-3 text-success">
+          <i class="bi bi-person-check-fill fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2">Create Staff Account?</h5>
+        <p class="mb-2" id="staffCreateConfirmText">Confirm creation of this registration staff account.</p>
+        <p class="text-muted small mb-3">The staff member must replace the temporary credentials on first login.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-modern" id="staffCreateConfirmBtn">Create Account</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- BARANGAY PROFILE SAVE CONFIRM MODAL -->
   <div class="modal fade" id="barangayProfileConfirmModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -937,6 +957,7 @@ $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scr
   <!-- Bootstrap JS bundle -->
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/responsive-table-scripts.js"></script>
+  <script src="assets/js/password-toggle.js?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/settings-scripts.js?v=<?= htmlspecialchars($settingsScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 
 </body>

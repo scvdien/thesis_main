@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['staff', 'secretary', 'admin']);
 $authRole = auth_user_role($authUser);
+$memberCsrfToken = auth_csrf_token();
+$memberCurrentUserId = (int) ($authUser['id'] ?? 0);
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -30,15 +32,20 @@ if (stripos($brandLabel, 'barangay') !== 0) {
 $memberMode = strtolower(trim((string) ($_GET['mode'] ?? '')));
 $isHouseholdViewMode = $memberMode === 'household-view';
 $systemLabel = trim($brandLabel . ($brandCity !== '' ? ' ' . $brandCity : '') . ' Online Household Information Management System');
+$memberStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
+$memberIndexedDbVersion = (string) (@filemtime(__DIR__ . '/assets/js/indexeddb-storage-scripts.js') ?: time());
 $memberOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
+$memberPhotoStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-photo-storage.js') ?: time());
+$memberPhotoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.js') ?: time());
 $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts.js') ?: time());
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0d6efd">
+  <meta name="csrf-token" content="<?= htmlspecialchars($memberCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Add Household Member</title>
   <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
@@ -46,10 +53,13 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/registration-style.css">
+  <link rel="stylesheet" href="assets/css/registration-style.css?v=<?= htmlspecialchars($memberStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 
-<body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
+<body
+  data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-user-id="<?= $memberCurrentUserId ?>"
+>
 <?php echo auth_client_role_script($authRole); ?>
   <div class="py-4 page-wrap">
     <div class="page-header mb-4">
@@ -77,6 +87,56 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
           <span class="badge rounded-pill">Required</span>
         </div>
         <div class="card-body member-info-body">
+          <section class="registration-photo-panel registration-photo-panel-single mb-4" aria-labelledby="memberProfilePhotoHeading">
+            <div class="registration-photo-panel-header">
+              <div class="registration-photo-panel-title" id="memberProfilePhotoHeading">
+                <i class="bi bi-person-bounding-box" aria-hidden="true"></i>
+                Profile Photo
+              </div>
+              <span class="badge rounded-pill">Optional</span>
+            </div>
+            <div class="registration-photo-grid">
+              <div class="registration-photo-card registration-photo-card-member">
+                <div class="registration-photo-preview registration-photo-preview-profile">
+                  <img
+                    id="memberProfilePhotoPreview"
+                    alt="Selected household member profile photo"
+                    hidden
+                  >
+                  <div class="registration-photo-placeholder" id="memberProfilePhotoPlaceholder">
+                    <i class="bi bi-person-fill" aria-hidden="true"></i>
+                    <span class="visually-hidden">No photo</span>
+                  </div>
+                </div>
+                <div class="registration-photo-copy">
+                  <div class="registration-photo-heading">
+                    Household Member
+                  </div>
+                  <div class="registration-photo-status text-muted" id="memberProfilePhotoStatus" role="status" aria-live="polite">
+                    No photo yet
+                  </div>
+                  <input
+                    type="file"
+                    class="visually-hidden registration-photo-input"
+                    id="memberProfilePhotoInput"
+                    accept="image/*"
+                    capture="environment"
+                  >
+                  <div class="registration-photo-actions">
+                    <button type="button" class="btn btn-primary btn-sm registration-photo-capture-btn" id="memberProfilePhotoCaptureBtn">
+                      <i class="bi bi-camera-fill" aria-hidden="true"></i>
+                      <span id="memberProfilePhotoTriggerText">Open Camera</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm registration-photo-remove-btn" id="memberProfilePhotoRemoveBtn" aria-label="Remove member profile photo" title="Remove photo" hidden>
+                      <i class="bi bi-trash3" aria-hidden="true"></i>
+                      <span class="visually-hidden">Remove photo</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <div class="member-info-group">
             <div class="member-info-group-title">Identity</div>
             <div class="row g-3">
@@ -230,8 +290,10 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
   </footer>
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
-  <script src="assets/js/indexeddb-storage-scripts.js"></script>
+  <script src="assets/js/indexeddb-storage-scripts.js?v=<?= htmlspecialchars($memberIndexedDbVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($memberOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+  <script src="assets/js/registration-photo-storage.js?v=<?= htmlspecialchars($memberPhotoStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+  <script src="assets/js/photo-capture.js?v=<?= htmlspecialchars($memberPhotoCaptureVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/member-scripts.js?v=<?= htmlspecialchars($memberScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>
 </html>

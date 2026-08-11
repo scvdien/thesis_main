@@ -2,7 +2,37 @@ document.getElementById("year").textContent = String(new Date().getFullYear());
 
 document.addEventListener("DOMContentLoaded", async () => {
   const urlParams = new URLSearchParams(window.location.search);
-  const editHouseholdId = (urlParams.get("edit") || "").trim();
+  const LOAD_EDIT_CONTEXT_KEY = "registration_load_edit_context";
+  const LOAD_EDIT_CONTEXT_TTL_MS = 2 * 60 * 1000;
+  let editHouseholdId = (urlParams.get("edit") || "").trim();
+
+  try {
+    const rawContext = window.sessionStorage.getItem(LOAD_EDIT_CONTEXT_KEY);
+    window.sessionStorage.removeItem(LOAD_EDIT_CONTEXT_KEY);
+    if (!editHouseholdId && rawContext) {
+      const context = JSON.parse(rawContext);
+      const contextHouseholdId = String(context?.householdId || "").trim();
+      const contextYear = Number.parseInt(String(context?.recordYear || ""), 10);
+      const contextCreatedAt = Number(context?.createdAt || 0);
+      const contextIsFresh = contextCreatedAt > 0 && (Date.now() - contextCreatedAt) <= LOAD_EDIT_CONTEXT_TTL_MS;
+
+      if (contextHouseholdId && contextIsFresh) {
+        editHouseholdId = contextHouseholdId;
+        urlParams.set("edit", contextHouseholdId);
+        urlParams.set("from", "registration");
+        if (Number.isInteger(contextYear) && contextYear >= 2000 && contextYear <= 2100) {
+          urlParams.set("year", String(contextYear));
+        }
+
+        const recoveredUrl = new URL(window.location.href);
+        recoveredUrl.search = urlParams.toString();
+        window.history.replaceState(null, "", recoveredUrl.toString());
+      }
+    }
+  } catch {
+    // Continue with URL-based edit mode when session storage is unavailable.
+  }
+
   const isEditMode = editHouseholdId.length > 0;
   const editReturnSource = (urlParams.get("from") || "").trim().toLowerCase();
   const editReturnId = (urlParams.get("return_id") || editHouseholdId).trim();
@@ -16,9 +46,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const MEMBERS_KEY = "household_members";
   const EDIT_KEY = "household_member_edit_index";
   const HEAD_KEY = "household_head_data";
+  const HOUSEHOLD_PHOTO_ID_KEY = "household_registration_photo_id";
+  const HEAD_PROFILE_PHOTO_ID_KEY = "household_head_profile_photo_id";
   const MEMBER_FORM_DRAFT_KEY = "household_member_form_draft";
   const PRESERVE_DRAFT_FLAG_KEY = "registration_preserve_draft";
   const DRAFT_OWNER_KEY = "household_registration_draft_owner";
+  const LOCAL_OWNER_FIELD = "local_owner_user_id";
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
   const DUPLICATE_INDEX_CACHE_KEY = "household_registration_duplicate_index";
@@ -34,6 +67,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         MEMBERS_KEY,
         EDIT_KEY,
         HEAD_KEY,
+        HOUSEHOLD_PHOTO_ID_KEY,
+        HEAD_PROFILE_PHOTO_ID_KEY,
         MEMBER_FORM_DRAFT_KEY,
         REGISTRATION_RECORDS_KEY,
         SYNC_QUEUE_KEY,
@@ -64,6 +99,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sidebarMemberCount = document.getElementById("sidebarMemberCount");
   const memberModalEl = document.getElementById("memberModal");
   const memberModalBody = document.getElementById("memberModalBody");
+  const previewModalEl = document.getElementById("previewModal");
   const previewBody = document.getElementById("previewBody");
   const censusForm = document.getElementById("censusForm");
   const previewBtn = document.getElementById("previewBtn");
@@ -73,6 +109,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sexInput = document.getElementById("sex");
   const pregnantWrap = document.getElementById("pregnantWrap");
   const pregnantRadios = Array.from(document.querySelectorAll('input[name="pregnant"]'));
+  const householdPhotoInput = document.getElementById("householdPhotoInput");
+  const householdPhotoCaptureBtn = document.getElementById("householdPhotoCaptureBtn");
+  const householdPhotoPreview = document.getElementById("householdPhotoPreview");
+  const householdPhotoPlaceholder = document.getElementById("householdPhotoPlaceholder");
+  const householdPhotoRemoveBtn = document.getElementById("householdPhotoRemoveBtn");
+  const householdPhotoTriggerText = document.getElementById("householdPhotoTriggerText");
+  const householdPhotoStatus = document.getElementById("householdPhotoStatus");
+  const headProfilePhotoInput = document.getElementById("headProfilePhotoInput");
+  const headProfilePhotoCaptureBtn = document.getElementById("headProfilePhotoCaptureBtn");
+  const headProfilePhotoPreview = document.getElementById("headProfilePhotoPreview");
+  const headProfilePhotoPlaceholder = document.getElementById("headProfilePhotoPlaceholder");
+  const headProfilePhotoRemoveBtn = document.getElementById("headProfilePhotoRemoveBtn");
+  const headProfilePhotoTriggerText = document.getElementById("headProfilePhotoTriggerText");
+  const headProfilePhotoStatus = document.getElementById("headProfilePhotoStatus");
   const numMembersInput = document.querySelector('input[name="num_members"]');
   const numChildrenInput = document.querySelector('input[name="num_children"]');
   const memberModal = memberModalEl ? new bootstrap.Modal(memberModalEl) : null;
@@ -84,6 +134,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const sidebarToggle = document.getElementById("sidebarToggle");
   const sidebarOverlay = document.getElementById("sidebarOverlay");
   const sidebar = document.getElementById("sidebar");
+  const sidebarDrawerMedia = window.matchMedia("(max-width: 991.98px)");
+  let sidebarReturnFocus = null;
   const logoutModalEl = document.getElementById("logoutModal");
   const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
   const logoutConfirm = document.getElementById("logoutConfirm");
@@ -171,6 +223,456 @@ document.addEventListener("DOMContentLoaded", async () => {
   let suppressHeadDraftSave = false;
   const duplicateIndexRefreshPromises = new Map();
   const LOAD_HOUSEHOLD_MIN_QUERY_LENGTH = 2;
+  const PHOTO_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const PHOTO_DATA_URL_PATTERN = /^data:image\/(?:jpeg|png|webp);base64,/i;
+  const photoStorage = window.registrationPhotoStorage || null;
+  const photoCaptureApi = window.HouseholdPhotoCapture || null;
+  const householdPhotoPreviewState = { objectUrl: "", token: 0 };
+  const headPhotoPreviewState = { objectUrl: "", token: 0 };
+  const previewModalPhotoObjectUrls = new Set();
+  const sidebarPhotoObjectUrls = new Set();
+  const memberModalPhotoObjectUrls = new Set();
+  let photoStorageReadyPromise = null;
+  let householdPhotoController = null;
+  let headProfilePhotoController = null;
+  let registrationPhotoCaptureUnavailable = false;
+
+  const normalizePhotoId = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    return PHOTO_ID_PATTERN.test(normalized) ? normalized : "";
+  };
+
+  const readPhotoDraftId = (key) => {
+    try {
+      const rawValue = String(localStorage.getItem(key) || "").trim();
+      const photoId = normalizePhotoId(rawValue);
+      if (rawValue && !photoId) {
+        const cleanup = localStorage.removeItem(key);
+        if (cleanup && typeof cleanup.catch === "function") cleanup.catch(() => {});
+      }
+      return photoId;
+    } catch {
+      return "";
+    }
+  };
+
+  const writePhotoDraftId = async (key, photoId) => {
+    const normalizedPhotoId = normalizePhotoId(photoId);
+    if (normalizedPhotoId) {
+      await localStorage.setItem(key, normalizedPhotoId);
+      return normalizedPhotoId;
+    }
+    await localStorage.removeItem(key);
+    return "";
+  };
+
+  const ensurePhotoStorageReady = () => {
+    if (!photoStorage || typeof photoStorage.ready !== "function") {
+      return Promise.reject(new Error("Photo storage is unavailable. Please reload the page."));
+    }
+    if (!photoStorageReadyPromise) {
+      photoStorageReadyPromise = Promise.resolve(photoStorage.ready()).catch((error) => {
+        photoStorageReadyPromise = null;
+        throw error;
+      });
+    }
+    return photoStorageReadyPromise;
+  };
+
+  const revokePhotoObjectUrl = (value) => {
+    const objectUrl = String(value || "").trim();
+    if (!objectUrl || typeof window.URL?.revokeObjectURL !== "function") return;
+    window.URL.revokeObjectURL(objectUrl);
+  };
+
+  const revokePhotoObjectUrlSet = (objectUrls) => {
+    objectUrls.forEach((objectUrl) => revokePhotoObjectUrl(objectUrl));
+    objectUrls.clear();
+  };
+
+  const readPhotoBlobDimensions = (blob) => new Promise((resolve) => {
+    if (typeof Blob === "undefined" || !(blob instanceof Blob) || typeof window.URL?.createObjectURL !== "function") {
+      resolve({ width: null, height: null });
+      return;
+    }
+    const objectUrl = window.URL.createObjectURL(blob);
+    const image = new Image();
+    const finish = (dimensions) => {
+      revokePhotoObjectUrl(objectUrl);
+      resolve(dimensions);
+    };
+    image.addEventListener("load", () => finish({
+      width: Number(image.naturalWidth || 0) || null,
+      height: Number(image.naturalHeight || 0) || null
+    }), { once: true });
+    image.addEventListener("error", () => finish({ width: null, height: null }), { once: true });
+    image.src = objectUrl;
+  });
+
+  const replaceControllerPhotoPreview = async (controller, previewState, source = null) => {
+    const nextSource = String(source?.src || "").trim();
+    const nextObjectUrl = source?.isObjectUrl ? nextSource : "";
+    const previousObjectUrl = previewState.objectUrl;
+    await controller?.setValue(nextSource);
+    previewState.objectUrl = nextObjectUrl;
+    if (previousObjectUrl && previousObjectUrl !== nextObjectUrl) {
+      revokePhotoObjectUrl(previousObjectUrl);
+    }
+  };
+
+  const getRecordPhotoReferences = (record) => {
+    if (!record || typeof record !== "object") return [];
+    const references = [];
+    const addReference = (value, subjectType) => {
+      const photoId = normalizePhotoId(value);
+      if (photoId) references.push({ photoId, subjectType });
+    };
+    addReference(record.household_photo_id, "household");
+    addReference(record.head?.profile_photo_id, "head");
+    if (Array.isArray(record.members)) {
+      record.members.forEach((member) => addReference(member?.profile_photo_id, "member"));
+    }
+    return references.filter((reference, index, list) => (
+      list.findIndex((candidate) => candidate.photoId === reference.photoId) === index
+    ));
+  };
+
+  const getCurrentDraftPhotoIds = () => {
+    const photoIds = new Set([
+      readPhotoDraftId(HOUSEHOLD_PHOTO_ID_KEY),
+      readPhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY)
+    ].filter(Boolean));
+    try {
+      const headDraft = JSON.parse(localStorage.getItem(HEAD_KEY) || "{}");
+      const headPhotoId = normalizePhotoId(headDraft?.profile_photo_id);
+      if (headPhotoId) photoIds.add(headPhotoId);
+    } catch {
+      // Ignore malformed legacy draft data.
+    }
+    try {
+      const members = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "[]");
+      if (Array.isArray(members)) {
+        members.forEach((member) => {
+          const memberPhotoId = normalizePhotoId(member?.profile_photo_id);
+          if (memberPhotoId) photoIds.add(memberPhotoId);
+        });
+      }
+    } catch {
+      // Ignore malformed member draft data.
+    }
+    try {
+      const memberFormDraft = JSON.parse(localStorage.getItem(MEMBER_FORM_DRAFT_KEY) || "null");
+      const memberDraftPhotoId = normalizePhotoId(memberFormDraft?.data?.profile_photo_id);
+      if (memberDraftPhotoId) photoIds.add(memberDraftPhotoId);
+    } catch {
+      // Ignore malformed member form draft data.
+    }
+    return photoIds;
+  };
+
+  const getPersistedRecordPhotoIds = () => {
+    const photoIds = new Set();
+    const records = [...getRegistrationRecords(), ...getSyncQueue()];
+    records.forEach((record) => {
+      getRecordPhotoReferences(record).forEach(({ photoId }) => photoIds.add(photoId));
+    });
+    return photoIds;
+  };
+
+  const removeLocalPhotoIfUnreferenced = async (photoId) => {
+    const normalizedPhotoId = normalizePhotoId(photoId);
+    if (!normalizedPhotoId || typeof photoStorage?.remove !== "function") return;
+    if (getCurrentDraftPhotoIds().has(normalizedPhotoId)) return;
+    if (getPersistedRecordPhotoIds().has(normalizedPhotoId)) return;
+    try {
+      await ensurePhotoStorageReady();
+      await photoStorage.remove(normalizedPhotoId, {
+        expectedOwnerUserId: currentDraftOwner
+      });
+    } catch {
+      // Leaving an unreferenced local Blob is safer than interrupting registration.
+    }
+  };
+
+  const renderStoredPhoto = async ({ photoId, controller, previewState, status, emptyStatus }) => {
+    const normalizedPhotoId = normalizePhotoId(photoId);
+    const token = ++previewState.token;
+    if (!normalizedPhotoId) {
+      await replaceControllerPhotoPreview(controller, previewState);
+      if (status) {
+        status.textContent = emptyStatus;
+        status.classList.remove("text-success", "text-danger");
+        status.classList.add("text-muted");
+      }
+      return;
+    }
+
+    let source = null;
+    try {
+      await ensurePhotoStorageReady();
+      source = await photoStorage.getPreviewSource(normalizedPhotoId, {
+        expectedOwnerUserId: currentDraftOwner
+      });
+    } catch {
+      source = {
+        src: `registration-photo.php?id=${encodeURIComponent(normalizedPhotoId)}`,
+        isObjectUrl: false
+      };
+    }
+
+    if (token !== previewState.token) {
+      if (source?.isObjectUrl) revokePhotoObjectUrl(source.src);
+      return;
+    }
+    await replaceControllerPhotoPreview(controller, previewState, source);
+  };
+
+  const handleCapturedPhotoChange = async ({
+    value,
+    key,
+    subjectType,
+    controller,
+    previewState
+  }) => {
+    const nextValue = String(value || "").trim();
+    const previousPhotoId = readPhotoDraftId(key);
+
+    if (!nextValue) {
+      previewState.token += 1;
+      await writePhotoDraftId(key, "");
+      await replaceControllerPhotoPreview(controller, previewState);
+      await removeLocalPhotoIfUnreferenced(previousPhotoId);
+      return;
+    }
+
+    if (!PHOTO_DATA_URL_PATTERN.test(nextValue)
+      || typeof photoCaptureApi?.dataUrlToBlob !== "function"
+      || typeof photoStorage?.createPhotoId !== "function"
+      || typeof photoStorage?.put !== "function") {
+      throw new Error("Photo storage is unavailable. Please reload the page.");
+    }
+
+    await ensurePhotoStorageReady();
+    const blob = photoCaptureApi.dataUrlToBlob(nextValue);
+    const dimensions = await readPhotoBlobDimensions(blob);
+    const photoId = normalizePhotoId(photoStorage.createPhotoId());
+    if (!photoId) {
+      throw new Error("Unable to create a secure photo reference.");
+    }
+
+    await photoStorage.put({
+      photoId,
+      blob,
+      subjectType,
+      ownerUserId: currentDraftOwner,
+      width: dimensions.width,
+      height: dimensions.height,
+      mimeType: blob.type
+    });
+
+    let source = null;
+    try {
+      source = await photoStorage.getPreviewSource(photoId, {
+        expectedOwnerUserId: currentDraftOwner
+      });
+      await writePhotoDraftId(key, photoId);
+      previewState.token += 1;
+      await replaceControllerPhotoPreview(controller, previewState, source);
+      await removeLocalPhotoIfUnreferenced(previousPhotoId);
+    } catch (error) {
+      if (source?.isObjectUrl) revokePhotoObjectUrl(source.src);
+      await writePhotoDraftId(key, previousPhotoId);
+      try {
+        await photoStorage.remove(photoId, {
+          expectedOwnerUserId: currentDraftOwner
+        });
+      } catch {
+        // The unreferenced staged Blob can be cleaned up on a later visit.
+      }
+      throw error;
+    }
+  };
+
+  const photoCaptureFactory = photoCaptureApi?.create;
+  if (typeof photoCaptureFactory === "function") {
+    householdPhotoController = photoCaptureFactory({
+      fileInput: householdPhotoInput,
+      triggerButton: householdPhotoCaptureBtn,
+      previewImage: householdPhotoPreview,
+      placeholder: householdPhotoPlaceholder,
+      removeButton: householdPhotoRemoveBtn,
+      triggerText: householdPhotoTriggerText,
+      status: householdPhotoStatus,
+      initialValue: "",
+      maxWidth: 1024,
+      maxHeight: 768,
+      maxOutputBytes: 350 * 1024,
+      quality: 0.8,
+      emptyLabel: "Open Camera",
+      filledLabel: "Retake",
+      onChange: (value) => handleCapturedPhotoChange({
+        value,
+        key: HOUSEHOLD_PHOTO_ID_KEY,
+        subjectType: "household",
+        controller: householdPhotoController,
+        previewState: householdPhotoPreviewState
+      })
+    });
+    headProfilePhotoController = photoCaptureFactory({
+      fileInput: headProfilePhotoInput,
+      triggerButton: headProfilePhotoCaptureBtn,
+      previewImage: headProfilePhotoPreview,
+      placeholder: headProfilePhotoPlaceholder,
+      removeButton: headProfilePhotoRemoveBtn,
+      triggerText: headProfilePhotoTriggerText,
+      status: headProfilePhotoStatus,
+      initialValue: "",
+      maxWidth: 640,
+      maxHeight: 640,
+      maxOutputBytes: 180 * 1024,
+      quality: 0.8,
+      emptyLabel: "Open Camera",
+      filledLabel: "Retake",
+      onChange: (value) => handleCapturedPhotoChange({
+        value,
+        key: HEAD_PROFILE_PHOTO_ID_KEY,
+        subjectType: "head",
+        controller: headProfilePhotoController,
+        previewState: headPhotoPreviewState
+      })
+    });
+  }
+
+  const registrationPhotosAreProcessing = () => Boolean(
+    householdPhotoController?.isProcessing()
+    || headProfilePhotoController?.isProcessing()
+  );
+
+  const requireRegistrationPhotosIdle = () => {
+    if (!registrationPhotosAreProcessing()) return true;
+    showSyncToast("Please wait until the photo finishes processing.", "warning", "Photo Processing");
+    return false;
+  };
+
+  const markRegistrationPhotoCaptureUnavailable = () => {
+    registrationPhotoCaptureUnavailable = true;
+    [
+      householdPhotoInput,
+      householdPhotoCaptureBtn,
+      headProfilePhotoInput,
+      headProfilePhotoCaptureBtn
+    ].forEach((control) => {
+      if (control) control.disabled = true;
+    });
+    [householdPhotoStatus, headProfilePhotoStatus].forEach((status) => {
+      if (!status) return;
+      status.textContent = "Photo storage is unavailable. Reload the page before adding a photo.";
+      status.classList.remove("text-muted", "text-success");
+      status.classList.add("text-danger");
+    });
+  };
+
+  const syncPhotoControllersFromDraft = async () => {
+    await Promise.all([
+      renderStoredPhoto({
+        photoId: readPhotoDraftId(HOUSEHOLD_PHOTO_ID_KEY),
+        controller: householdPhotoController,
+        previewState: householdPhotoPreviewState,
+        status: householdPhotoStatus,
+        emptyStatus: "No photo yet"
+      }),
+      renderStoredPhoto({
+        photoId: readPhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY),
+        controller: headProfilePhotoController,
+        previewState: headPhotoPreviewState,
+        status: headProfilePhotoStatus,
+        emptyStatus: "No photo yet"
+      })
+    ]);
+  };
+
+  const resetRegistrationPhotoControllers = async () => {
+    householdPhotoPreviewState.token += 1;
+    headPhotoPreviewState.token += 1;
+    await Promise.all([
+      replaceControllerPhotoPreview(householdPhotoController, householdPhotoPreviewState),
+      replaceControllerPhotoPreview(headProfilePhotoController, headPhotoPreviewState)
+    ]);
+    if (registrationPhotoCaptureUnavailable) {
+      markRegistrationPhotoCaptureUnavailable();
+      return;
+    }
+    if (householdPhotoStatus) {
+      householdPhotoStatus.textContent = "No photo yet";
+      householdPhotoStatus.classList.remove("text-success", "text-danger");
+      householdPhotoStatus.classList.add("text-muted");
+    }
+    if (headProfilePhotoStatus) {
+      headProfilePhotoStatus.textContent = "No photo yet";
+      headProfilePhotoStatus.classList.remove("text-success", "text-danger");
+      headProfilePhotoStatus.classList.add("text-muted");
+    }
+  };
+
+  const buildPhotoAvatarMarkup = ({
+    photoId = "",
+    className = "",
+    alt = "",
+    iconClass = "bi-person-fill",
+    placeholderClass = ""
+  } = {}) => `
+    <span class="${escapeHtml(className)}" data-photo-avatar data-photo-id="${escapeHtml(normalizePhotoId(photoId))}">
+      <img class="registration-photo-display-image" alt="${escapeHtml(alt)}" hidden>
+      <span class="registration-photo-display-placeholder ${escapeHtml(placeholderClass)}" data-photo-placeholder aria-hidden="true">
+        <i class="bi ${escapeHtml(iconClass)}"></i>
+      </span>
+    </span>
+  `;
+
+  const hydratePhotoAvatars = async (container, objectUrls) => {
+    if (!container) return;
+    const avatars = Array.from(container.querySelectorAll("[data-photo-avatar]"));
+    await Promise.all(avatars.map(async (avatar) => {
+      const photoId = normalizePhotoId(avatar.dataset.photoId);
+      const image = avatar.querySelector(".registration-photo-display-image");
+      const placeholder = avatar.querySelector("[data-photo-placeholder]");
+      if (!photoId || !image) return;
+
+      let source = null;
+      try {
+        await ensurePhotoStorageReady();
+        source = await photoStorage.getPreviewSource(photoId, {
+          expectedOwnerUserId: currentDraftOwner
+        });
+      } catch {
+        source = {
+          src: `registration-photo.php?id=${encodeURIComponent(photoId)}`,
+          isObjectUrl: false
+        };
+      }
+
+      if (!source?.src || !container.contains(avatar)) {
+        if (source?.isObjectUrl) revokePhotoObjectUrl(source.src);
+        return;
+      }
+
+      if (source.isObjectUrl) objectUrls.add(source.src);
+      image.addEventListener("load", () => {
+        if (!container.contains(avatar)) return;
+        image.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+      }, { once: true });
+      image.addEventListener("error", () => {
+        image.hidden = true;
+        if (placeholder) placeholder.hidden = false;
+        if (source.isObjectUrl) {
+          objectUrls.delete(source.src);
+          revokePhotoObjectUrl(source.src);
+        }
+      }, { once: true });
+      image.src = source.src;
+    }));
+  };
 
   const buildEditModeReturnUrl = () => {
     if (editReturnSource === "household-view") {
@@ -190,6 +692,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     const nextUrl = new URL("registration.php", window.location.href);
     nextUrl.searchParams.set("year", String(targetRecordYear));
     return nextUrl.toString();
+  };
+
+  const buildMemberFormUrl = () => {
+    const nextUrl = new URL("member.php", window.location.href);
+    nextUrl.search = "";
+    nextUrl.hash = "";
+    nextUrl.searchParams.set("year", String(targetRecordYear));
+
+    if (isEditMode && editHouseholdId) {
+      nextUrl.searchParams.set("edit", editHouseholdId);
+    }
+    if (editReturnSource) {
+      nextUrl.searchParams.set("from", editReturnSource);
+    }
+    if (editReturnId) {
+      nextUrl.searchParams.set("return_id", editReturnId);
+    }
+    if (currentRole) {
+      nextUrl.searchParams.set("role", currentRole);
+    }
+
+    return nextUrl;
   };
 
   const canDeleteMembersInCurrentFlow = () => !(isEditMode && currentRole === "staff");
@@ -309,12 +833,57 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const setSidebarOpen = (open) => {
-    document.body.classList.toggle("sidebar-open", open);
-    if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", String(open));
-    if (sidebarOverlay) sidebarOverlay.setAttribute("aria-hidden", String(!open));
+  const getSidebarFocusableElements = () => {
+    if (!sidebar) return [];
+    return Array.from(sidebar.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter((element) => element instanceof HTMLElement && element.offsetParent !== null);
+  };
 
-    if (!open) {
+  const syncSidebarAccessibility = (open) => {
+    if (!sidebar) return;
+    if (!sidebarDrawerMedia.matches) {
+      sidebar.removeAttribute("inert");
+      sidebar.removeAttribute("aria-hidden");
+      return;
+    }
+
+    sidebar.toggleAttribute("inert", !open);
+    sidebar.setAttribute("aria-hidden", String(!open));
+  };
+
+  const setSidebarOpen = (open, { restoreFocus = true } = {}) => {
+    const shouldOpen = Boolean(open && sidebarDrawerMedia.matches);
+    const wasOpen = document.body.classList.contains("sidebar-open");
+
+    if (shouldOpen && !wasOpen) {
+      sidebarReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : sidebarToggle;
+    }
+
+    if (!shouldOpen && wasOpen && restoreFocus && sidebarDrawerMedia.matches) {
+      const focusTarget = sidebarReturnFocus instanceof HTMLElement
+        ? sidebarReturnFocus
+        : sidebarToggle;
+      focusTarget?.focus();
+    }
+
+    document.body.classList.toggle("sidebar-open", shouldOpen);
+    if (sidebarToggle) {
+      sidebarToggle.setAttribute("aria-expanded", String(shouldOpen));
+      sidebarToggle.setAttribute("aria-label", shouldOpen ? "Close menu" : "Open menu");
+    }
+    if (sidebarOverlay) sidebarOverlay.setAttribute("aria-hidden", "true");
+    syncSidebarAccessibility(shouldOpen);
+
+    if (shouldOpen) {
+      window.requestAnimationFrame(() => {
+        const focusTarget = getSidebarFocusableElements()[0];
+        focusTarget?.focus();
+      });
+    } else {
+      sidebarReturnFocus = null;
       return;
     }
 
@@ -577,6 +1146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     delete cleaned._sync_error_status;
     delete cleaned._sync_error_at;
     delete cleaned._sync_duplicate;
+    delete cleaned[LOCAL_OWNER_FIELD];
     return cleaned;
   };
 
@@ -765,10 +1335,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const getRegistrationRecords = () => readArrayFromStorage(REGISTRATION_RECORDS_KEY);
-  const setRegistrationRecords = (records) => writeArrayToStorage(REGISTRATION_RECORDS_KEY, records);
-  const getSyncQueue = () => readArrayFromStorage(SYNC_QUEUE_KEY);
-  const setSyncQueue = (queue) => writeArrayToStorage(SYNC_QUEUE_KEY, queue);
+  const isCurrentUserLocalRecord = (record) => (
+    Boolean(currentDraftOwner)
+    && String(record?.[LOCAL_OWNER_FIELD] || "").trim() === currentDraftOwner
+  );
+
+  const readCurrentUserArray = (key) => readArrayFromStorage(key).filter(isCurrentUserLocalRecord);
+
+  const writeCurrentUserArray = (key, records) => {
+    if (!currentDraftOwner) return;
+    const preservedRecords = readArrayFromStorage(key).filter((record) => !isCurrentUserLocalRecord(record));
+    const ownedRecords = (Array.isArray(records) ? records : [])
+      .filter((record) => record && typeof record === "object")
+      .map((record) => ({
+        ...record,
+        [LOCAL_OWNER_FIELD]: currentDraftOwner
+      }));
+    writeArrayToStorage(key, [...preservedRecords, ...ownedRecords]);
+  };
+
+  const getRegistrationRecords = () => readCurrentUserArray(REGISTRATION_RECORDS_KEY);
+  const setRegistrationRecords = (records) => writeCurrentUserArray(REGISTRATION_RECORDS_KEY, records);
+  const getSyncQueue = () => readCurrentUserArray(SYNC_QUEUE_KEY);
+  const setSyncQueue = (queue) => writeCurrentUserArray(SYNC_QUEUE_KEY, queue);
+  const getQuarantinedLegacyQueueCount = () => readArrayFromStorage(SYNC_QUEUE_KEY).filter(
+    (record) => !String(record?.[LOCAL_OWNER_FIELD] || "").trim()
+  ).length;
 
   const getLastSyncedAt = () => {
     try {
@@ -845,12 +1437,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     const normalizedZone = normalizeZoneLabel(headDraft.zone);
     const head = {
       ...headDraft,
-      zone: normalizedZone
+      zone: normalizedZone,
+      profile_photo_id: readPhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY)
     };
-    const members = getMembers().map((member) => ({
-      ...member,
-      zone: normalizeZoneLabel(member?.zone || normalizedZone)
-    }));
+    const members = getMembers().map((member) => {
+      const normalizedMember = member && typeof member === "object" ? { ...member } : {};
+      [
+        "photo",
+        "photo_url",
+        "photo_data",
+        "profile_photo",
+        "profile_photo_url",
+        "profile_photo_data"
+      ].forEach((field) => delete normalizedMember[field]);
+      return {
+        ...normalizedMember,
+        zone: normalizeZoneLabel(normalizedMember.zone || normalizedZone),
+        profile_photo_id: normalizePhotoId(normalizedMember.profile_photo_id)
+      };
+    });
     const records = getRegistrationRecords();
     const existingRecord = isEditMode
       ? records.find((item) => String(item?.household_id || "") === editHouseholdId)
@@ -872,6 +1477,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       mode: isEditMode ? "update" : "create",
       source: "registration-module",
       record_year: targetRecordYear,
+      photo_schema_version: 1,
+      household_photo_id: readPhotoDraftId(HOUSEHOLD_PHOTO_ID_KEY),
       head,
       members,
       head_name: headName || "Unnamed household head",
@@ -1726,8 +2333,53 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
+  const uploadRegistrationRecordPhotos = async (record) => {
+    const references = getRecordPhotoReferences(record);
+    if (!references.length || typeof photoStorage?.upload !== "function") return;
+
+    try {
+      await ensurePhotoStorageReady();
+    } catch {
+      // Existing server-side references remain valid even when local IndexedDB
+      // is unavailable. The household endpoint performs the final validation.
+      return;
+    }
+
+    for (const reference of references) {
+      try {
+        await photoStorage.upload(reference.photoId, {
+          csrfToken,
+          subjectType: reference.subjectType,
+          expectedOwnerUserId: currentDraftOwner
+        });
+      } catch (error) {
+        if (String(error?.code || "") === "photo_owner_mismatch") {
+          // Never read/upload another user's local Blob. The registration API
+          // remains authoritative and will accept an already-attached UUID or
+          // reject a foreign staged UUID during the household upsert.
+          continue;
+        }
+        throw error;
+      }
+    }
+  };
+
+  const removeSyncedRegistrationPhotoBlobs = async (record) => {
+    const photoIds = getRecordPhotoReferences(record).map(({ photoId }) => photoId);
+    if (!photoIds.length || typeof photoStorage?.removeMany !== "function") return;
+    try {
+      await ensurePhotoStorageReady();
+      await photoStorage.removeMany(photoIds, {
+        expectedOwnerUserId: currentDraftOwner
+      });
+    } catch {
+      // Keep registration successful even if local cache cleanup must retry later.
+    }
+  };
+
   const syncRecordToServer = async (record) => {
     const cleanRecord = stripClientSyncMeta(record);
+    await uploadRegistrationRecordPhotos(cleanRecord);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 12000);
     try {
@@ -1761,6 +2413,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         error.payload = payload;
         throw error;
       }
+      await removeSyncedRegistrationPhotoBlobs(cleanRecord);
       return payload;
     } finally {
       window.clearTimeout(timeoutId);
@@ -2055,11 +2708,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const deletePendingRecord = async (householdId) => {
     const targetId = String(householdId || "").trim();
     if (!targetId) return;
-    const exists = getSyncQueue().some((item) => String(item?.household_id || "").trim() === targetId);
-    if (!exists) {
+    const pendingRecord = getSyncQueue().find(
+      (item) => String(item?.household_id || "").trim() === targetId
+    );
+    if (!pendingRecord) {
       renderPendingSyncModal();
       return;
     }
+    const pendingPhotoIds = getRecordPhotoReferences(pendingRecord).map(({ photoId }) => photoId);
     const shouldDelete = await askPendingActionConfirm({
       title: "Delete Pending Household?",
       message: `Delete pending household ${targetId}?`,
@@ -2071,6 +2727,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     removeSyncRecord(targetId);
     removeRegistrationRecord(targetId);
+    for (const photoId of pendingPhotoIds) {
+      await removeLocalPhotoIfUnreferenced(photoId);
+    }
     clearResolvedLastSyncError();
     updateSyncStatus();
     renderPendingSyncModal();
@@ -2081,7 +2740,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const saveRegistration = async () => {
+    if (!requireRegistrationPhotosIdle()) {
+      return false;
+    }
     let record = buildRegistrationRecord();
+    const priorPhotoIds = new Set(
+      [...getRegistrationRecords(), ...getSyncQueue()]
+        .filter((item) => String(item?.household_id || "").trim() === String(record.household_id || "").trim())
+        .flatMap((item) => getRecordPhotoReferences(item).map(({ photoId }) => photoId))
+    );
+    const currentPhotoIds = new Set(getRecordPhotoReferences(record).map(({ photoId }) => photoId));
     let duplicateNotice = null;
     clearSyncSuccessState();
     if (!ensureMemberRequirementForSave(Array.isArray(record.members) ? record.members.length : 0, { closeSaveModal: true })) {
@@ -2197,6 +2865,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateSyncStatus();
       }
 
+      for (const priorPhotoId of priorPhotoIds) {
+        if (!currentPhotoIds.has(priorPhotoId)) {
+          await removeLocalPhotoIfUnreferenced(priorPhotoId);
+        }
+      }
+
       if (!isEditMode) {
         await clearRegistration();
       } else {
@@ -2234,8 +2908,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const renderPreview = () => {
+  const renderPreview = async () => {
     if (!censusForm || !previewBody) return;
+    revokePhotoObjectUrlSet(previewModalPhotoObjectUrls);
     const formData = new FormData(censusForm);
     const valueOf = (name) => String(formData.get(name) ?? "").trim();
     const listOf = (name) =>
@@ -2346,7 +3021,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       .filter(Boolean)
       .join("");
 
-    previewBody.innerHTML = sections || '<p class="text-muted text-center">No details provided.</p>';
+    const headPreviewName = [
+      valueOf("first_name"),
+      valueOf("middle_name"),
+      valueOf("last_name"),
+      valueOf("extension_name")
+    ].filter(Boolean).join(" ") || "Household head";
+    const photoSection = `
+      <div class="registration-preview-photos registration-preview-photos-single">
+        <div class="registration-preview-photo">
+          ${buildPhotoAvatarMarkup({
+            photoId: readPhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY),
+            className: "registration-preview-photo-frame registration-preview-photo-frame-profile",
+            alt: `${headPreviewName} profile photo`,
+            iconClass: "bi-person-fill",
+            placeholderClass: "registration-preview-photo-placeholder"
+          })}
+          <span>Household Head</span>
+        </div>
+      </div>
+    `;
+
+    previewBody.innerHTML = `${photoSection}${sections || '<p class="text-muted text-center">No details provided.</p>'}`;
+    await hydratePhotoAvatars(previewBody, previewModalPhotoObjectUrls);
   };
 
   const getMembers = () => {
@@ -2422,14 +3119,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const hasLocalDraftState = () => {
-    return hasHeadDraft() || getMembers().length > 0 || hasMemberFormDraft();
+    return hasHeadDraft()
+      || getMembers().length > 0
+      || hasMemberFormDraft()
+      || Boolean(readPhotoDraftId(HOUSEHOLD_PHOTO_ID_KEY))
+      || Boolean(readPhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY));
   };
 
   const clearRegistrationDraftState = async () => {
+    const draftPhotoIds = getCurrentDraftPhotoIds();
     await localStorage.removeItem(HEAD_KEY);
     await localStorage.removeItem(MEMBERS_KEY);
     await localStorage.removeItem(EDIT_KEY);
     await localStorage.removeItem(MEMBER_FORM_DRAFT_KEY);
+    await localStorage.removeItem(HOUSEHOLD_PHOTO_ID_KEY);
+    await localStorage.removeItem(HEAD_PROFILE_PHOTO_ID_KEY);
     try {
       sessionStorage.removeItem(PRESERVE_DRAFT_FLAG_KEY);
     } catch {
@@ -2437,6 +3141,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (typeof localStorage.flush === "function") {
       await localStorage.flush();
+    }
+    for (const photoId of draftPhotoIds) {
+      await removeLocalPhotoIfUnreferenced(photoId);
     }
   };
 
@@ -2748,6 +3455,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const openExistingHouseholdForEdit = async (householdId, recordYear) => {
+    if (!requireRegistrationPhotosIdle()) return;
     const targetHouseholdId = String(householdId || "").trim();
     const safeYear = Number.parseInt(String(recordYear || ""), 10);
     if (!targetHouseholdId) return;
@@ -2773,12 +3481,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     await clearRegistrationDraftState();
     loadHouseholdModal?.hide();
 
+    try {
+      window.sessionStorage.setItem(LOAD_EDIT_CONTEXT_KEY, JSON.stringify({
+        householdId: targetHouseholdId,
+        recordYear: isValidRecordYear(safeYear) ? safeYear : targetRecordYear,
+        createdAt: Date.now()
+      }));
+    } catch {
+      // The edit query string remains the primary source when storage is unavailable.
+    }
+
     const nextUrl = new URL("registration.php", window.location.href);
     nextUrl.searchParams.set("edit", targetHouseholdId);
+    nextUrl.searchParams.set("from", "registration");
     if (isValidRecordYear(safeYear)) {
       nextUrl.searchParams.set("year", String(safeYear));
     }
-    window.location.href = nextUrl.toString();
+    window.location.assign(nextUrl.toString());
   };
 
   const fetchHouseholdRecordFromServer = async (householdId) => {
@@ -2814,9 +3533,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!record) {
       return false;
     }
+    const cacheSafeRecord = { ...record };
+    [
+      "photo",
+      "photo_url",
+      "photo_data",
+      "household_photo",
+      "household_photo_url",
+      "household_photo_data"
+    ].forEach((field) => delete cacheSafeRecord[field]);
 
-    const headRaw = record.head && typeof record.head === "object" ? record.head : {};
+    const headRaw = record.head && typeof record.head === "object" ? { ...record.head } : {};
     const householdZone = normalizeZoneLabel(record.zone || headRaw.zone);
+    const householdPhotoId = normalizePhotoId(record.household_photo_id);
+    const headProfilePhotoId = normalizePhotoId(headRaw.profile_photo_id);
+    [
+      "photo",
+      "photo_url",
+      "photo_data",
+      "profile_photo",
+      "profile_photo_url",
+      "profile_photo_data",
+      "profile_photo_id"
+    ].forEach((field) => delete headRaw[field]);
     const head = {
       ...headRaw,
       zone: householdZone
@@ -2824,19 +3563,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     const members = Array.isArray(record.members)
       ? record.members
         .filter((row) => row && typeof row === "object")
-        .map((row) => ({
-          ...row,
-          zone: normalizeZoneLabel(row.zone || householdZone)
-        }))
+        .map((row) => {
+          const member = { ...row };
+          [
+            "photo",
+            "photo_url",
+            "photo_data",
+            "profile_photo",
+            "profile_photo_url",
+            "profile_photo_data"
+          ].forEach((field) => delete member[field]);
+          return {
+            ...member,
+            zone: normalizeZoneLabel(member.zone || householdZone),
+            profile_photo_id: normalizePhotoId(member.profile_photo_id)
+          };
+        })
       : [];
 
     await localStorage.setItem(HEAD_KEY, JSON.stringify(head));
+    await writePhotoDraftId(HOUSEHOLD_PHOTO_ID_KEY, householdPhotoId);
+    await writePhotoDraftId(HEAD_PROFILE_PHOTO_ID_KEY, headProfilePhotoId);
     setMembers(members);
 
     if (cacheRecord) {
       upsertRegistrationRecord({
-        ...record,
-        head,
+        ...cacheSafeRecord,
+        photo_schema_version: 1,
+        household_photo_id: householdPhotoId,
+        head: {
+          ...head,
+          profile_photo_id: headProfilePhotoId
+        },
         members,
         zone: householdZone,
         head_name: buildHeadNameFromRecord({ ...record, head }) || "Unnamed household head",
@@ -2879,6 +3637,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       document.getElementById("censusForm").reset();
       await clearRegistrationDraftState();
+      await resetRegistrationPhotoControllers();
       renderMembers();
       updateAddMemberState();
       updateAgeField();
@@ -2950,27 +3709,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (addMemberBtn) {
     addMemberBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      if (!requireRegistrationPhotosIdle()) {
+        return;
+      }
       if (!isHeadComplete()) {
-        event.preventDefault();
         addMemberBlockedModal?.show();
         return;
       }
 
-      event.preventDefault();
       saveHeadData();
       if (typeof localStorage.flush === "function") {
         await localStorage.flush();
       }
-      const nextUrl = new URL(addMemberBtn.getAttribute("href") || "member.php", window.location.href);
-      nextUrl.searchParams.set("year", String(targetRecordYear));
-      if (isEditMode && editHouseholdId) {
-        nextUrl.searchParams.set("edit", editHouseholdId);
-      }
+      const nextUrl = buildMemberFormUrl();
       window.location.href = nextUrl.toString();
     });
   }
 
   const renderMemberModal = (member) => {
+    revokePhotoObjectUrlSet(memberModalPhotoObjectUrls);
     const listValue = (value) => {
       if (Array.isArray(value)) return value.join(", ");
       return value || "";
@@ -3031,10 +3789,38 @@ document.addEventListener("DOMContentLoaded", async () => {
       `)
       .join("");
 
-    memberModalBody.innerHTML = list || "<p class=\"text-muted\">No details provided.</p>";
+    const memberName = [
+      member.first_name,
+      member.middle_name,
+      member.last_name,
+      member.extension_name
+    ].map((part) => String(part || "").trim()).filter(Boolean).join(" ") || "Household member";
+    const memberMeta = [
+      member.relation_to_head,
+      member.sex,
+      member.age ? `${member.age} yrs` : ""
+    ].filter(Boolean).join(" | ") || "Member details";
+    const profile = `
+      <div class="member-modal-profile">
+        ${buildPhotoAvatarMarkup({
+          photoId: member.profile_photo_id,
+          className: "member-modal-profile-avatar",
+          alt: `${memberName} profile photo`,
+          iconClass: "bi-person-fill"
+        })}
+        <div class="member-modal-profile-copy">
+          <div class="member-modal-profile-name">${escapeHtml(memberName)}</div>
+          <div class="member-modal-profile-meta">${escapeHtml(memberMeta)}</div>
+        </div>
+      </div>
+    `;
+
+    memberModalBody.innerHTML = `${profile}${list || "<p class=\"text-muted\">No details provided.</p>"}`;
+    void hydratePhotoAvatars(memberModalBody, memberModalPhotoObjectUrls);
   };
 
   const renderMembers = () => {
+    revokePhotoObjectUrlSet(sidebarPhotoObjectUrls);
     const members = getMembers();
     if (memberCount) memberCount.textContent = members.length;
     if (sidebarMemberCount) sidebarMemberCount.textContent = members.length;
@@ -3061,12 +3847,21 @@ document.addEventListener("DOMContentLoaded", async () => {
           const displayName = name ? `${label} - ${name}` : label;
           return `
             <button type="button" class="sidebar-member-item" data-index="${index}">
-              <span class="sidebar-member-name">${escapeHtml(displayName)}</span>
-              <span class="sidebar-member-meta">${escapeHtml(metaParts.join(" | ") || "Details saved")}</span>
+              ${buildPhotoAvatarMarkup({
+                photoId: member.profile_photo_id,
+                className: "sidebar-member-avatar",
+                alt: `${displayName} profile photo`,
+                iconClass: "bi-person-fill"
+              })}
+              <span class="sidebar-member-copy">
+                <span class="sidebar-member-name">${escapeHtml(displayName)}</span>
+                <span class="sidebar-member-meta">${escapeHtml(metaParts.join(" | ") || "Details saved")}</span>
+              </span>
             </button>
           `;
         }).join("");
       }
+      void hydratePhotoAvatars(sidebarMembersList, sidebarPhotoObjectUrls);
     }
 
     syncMemberActionButtons(members);
@@ -3129,9 +3924,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
+      const removedPhotoId = normalizePhotoId(member.profile_photo_id);
       members.splice(index, 1);
       setMembers(members);
       renderMembers();
+      void removeLocalPhotoIfUnreferenced(removedPhotoId);
     });
   }
 
@@ -3148,9 +3945,30 @@ document.addEventListener("DOMContentLoaded", async () => {
       currentMemberIndex = index;
       syncMemberActionButtons(members);
       renderMemberModal(member);
+      if (sidebarDrawerMedia.matches) {
+        setSidebarOpen(false);
+      }
       memberModal?.show();
     });
   }
+
+  memberModalEl?.addEventListener("hidden.bs.modal", () => {
+    revokePhotoObjectUrlSet(memberModalPhotoObjectUrls);
+  });
+
+  previewModalEl?.addEventListener("hidden.bs.modal", () => {
+    revokePhotoObjectUrlSet(previewModalPhotoObjectUrls);
+  });
+
+  window.addEventListener("pagehide", () => {
+    revokePhotoObjectUrlSet(previewModalPhotoObjectUrls);
+    revokePhotoObjectUrlSet(sidebarPhotoObjectUrls);
+    revokePhotoObjectUrlSet(memberModalPhotoObjectUrls);
+    revokePhotoObjectUrl(householdPhotoPreviewState.objectUrl);
+    revokePhotoObjectUrl(headPhotoPreviewState.objectUrl);
+    householdPhotoPreviewState.objectUrl = "";
+    headPhotoPreviewState.objectUrl = "";
+  });
 
   if (sidebarToggle) {
     sidebarToggle.addEventListener("click", () => {
@@ -3169,23 +3987,55 @@ document.addEventListener("DOMContentLoaded", async () => {
     sidebar.addEventListener("click", (event) => {
       const link = event.target.closest("a");
       if (!link) return;
-      if (window.matchMedia("(max-width: 768px)").matches) {
+      if (sidebarDrawerMedia.matches) {
         setSidebarOpen(false);
       }
     });
   }
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
+  document.addEventListener("show.bs.modal", () => {
+    if (document.body.classList.contains("sidebar-open")) {
       setSidebarOpen(false);
     }
   });
 
-  window.addEventListener("resize", () => {
-    if (!window.matchMedia("(max-width: 768px)").matches) {
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
       setSidebarOpen(false);
+      return;
+    }
+
+    if (event.key === "Tab"
+      && sidebarDrawerMedia.matches
+      && document.body.classList.contains("sidebar-open")) {
+      const focusable = getSidebarFocusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const focusOutsideSidebar = !sidebar?.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === first || focusOutsideSidebar)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || focusOutsideSidebar)) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   });
+
+  window.addEventListener("resize", () => {
+    if (!sidebarDrawerMedia.matches) {
+      setSidebarOpen(false, { restoreFocus: false });
+    } else {
+      syncSidebarAccessibility(document.body.classList.contains("sidebar-open"));
+    }
+  });
+
+  setSidebarOpen(false, { restoreFocus: false });
 
   window.addEventListener("online", async () => {
     clearSyncSuccessState();
@@ -3293,8 +4143,21 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (loadExistingBtn) {
     loadExistingBtn.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) {
+        return;
+      }
       if (isEditMode) {
-        window.location.href = buildEditModeReturnUrl();
+        const returnUrl = buildEditModeReturnUrl();
+        loadExistingBtn.disabled = true;
+        try {
+          await clearRegistrationDraftState();
+          window.sessionStorage.removeItem(LOAD_EDIT_CONTEXT_KEY);
+          window.location.assign(returnUrl);
+        } catch (error) {
+          loadExistingBtn.disabled = false;
+          const message = error instanceof Error ? error.message : "Unable to clear the current household draft.";
+          showSyncToast(message, "danger", "Back to Registration");
+        }
         return;
       }
       await syncConnectivityState({ force: true });
@@ -3374,6 +4237,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     await localStorage.ready();
   }
 
+  try {
+    if (!householdPhotoController || !headProfilePhotoController) {
+      throw new Error("Photo capture helper is unavailable.");
+    }
+    await ensurePhotoStorageReady();
+  } catch {
+    markRegistrationPhotoCaptureUnavailable();
+  }
+
   await claimRegistrationDraftForCurrentUser();
 
   if (!isEditMode) {
@@ -3382,11 +4254,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await hydrateEditModeFromServerIfNeeded();
   loadHeadData();
+  await syncPhotoControllersFromDraft();
+  if (registrationPhotoCaptureUnavailable) {
+    markRegistrationPhotoCaptureUnavailable();
+  }
   updateAgeField();
   renderMembers();
   updateAddMemberState();
   await syncConnectivityState({ force: true });
   updateSyncStatus();
+  const quarantinedLegacyQueueCount = getQuarantinedLegacyQueueCount();
+  if (quarantinedLegacyQueueCount > 0) {
+    showSyncToast(
+      `${quarantinedLegacyQueueCount} older pending registration${quarantinedLegacyQueueCount === 1 ? " is" : "s are"} hidden because its account owner cannot be verified.`,
+      "warning",
+      "Protected Pending Data"
+    );
+  }
   if (isAppOnline()) {
     warmDuplicateIndexForYear(targetRecordYear, { force: true });
     flushSyncQueue({ showSuccessState: true });
@@ -3394,12 +4278,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (editMemberBtn) {
     editMemberBtn.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) return;
       if (currentMemberIndex === null) return;
       await localStorage.setItem(EDIT_KEY, String(currentMemberIndex));
       if (typeof localStorage.flush === "function") {
         await localStorage.flush();
       }
-      window.location.href = "member.php";
+      window.location.href = buildMemberFormUrl().toString();
     });
   }
 
@@ -3417,9 +4302,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (currentMemberIndex === null) return;
       const members = getMembers();
       if (!members[currentMemberIndex]) return;
+      const removedPhotoId = normalizePhotoId(members[currentMemberIndex].profile_photo_id);
       members.splice(currentMemberIndex, 1);
       setMembers(members);
       renderMembers();
+      void removeLocalPhotoIfUnreferenced(removedPhotoId);
       currentMemberIndex = null;
       syncMemberActionButtons(members);
       deleteMemberModal?.hide();
@@ -3428,18 +4315,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (previewBtn) {
-    previewBtn.addEventListener("click", () => {
-      renderPreview();
-      new bootstrap.Modal(document.getElementById("previewModal")).show();
+    previewBtn.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) return;
+      previewBtn.disabled = true;
+      try {
+        await renderPreview();
+        bootstrap.Modal.getOrCreateInstance(previewModalEl).show();
+      } finally {
+        previewBtn.disabled = false;
+      }
     });
   }
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
+      if (!requireRegistrationPhotosIdle()) return;
       clearModal?.show();
     });
   }
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
+      if (!requireRegistrationPhotosIdle()) return;
       if (censusForm && !censusForm.reportValidity()) {
         return;
       }
@@ -3514,12 +4409,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   if (clearConfirm) {
     clearConfirm.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) return;
       await clearRegistration();
       clearModal?.hide();
     });
   }
   if (saveConfirm) {
     saveConfirm.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) return;
       if (censusForm && !censusForm.reportValidity()) {
         return;
       }

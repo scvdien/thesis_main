@@ -104,6 +104,7 @@ $brandLabel = 'Cabarian Ligao City';
 $accessAreaLabel = $brandLabel;
 $loginStyleVersion = @filemtime(__DIR__ . '/assets/css/login-style.css');
 $loginStyleHref = 'assets/css/login-style.css' . ($loginStyleVersion ? '?v=' . rawurlencode((string) $loginStyleVersion) : '');
+$passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-toggle.js') ?: time());
 $panelEyebrow = $setupLocked ? 'Setup Locked' : ($setupRequired ? 'System Setup' : 'Welcome back');
 $panelHeading = $setupLocked
     ? 'Initial setup is disabled on this server'
@@ -126,6 +127,7 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="<?= htmlspecialchars($loginStyleHref, ENT_QUOTES, 'UTF-8') ?>">
+  <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body>
   <div class="page">
@@ -245,6 +247,7 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   </footer>
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/js/password-toggle.js?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/login-scripts.js"></script>
 </body>
 </html>

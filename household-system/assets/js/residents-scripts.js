@@ -27,6 +27,7 @@ window.addEventListener('resize', () => {
 
 const API_ENDPOINT = 'registration-sync.php';
 const RESIDENT_FETCH_LIMIT = 1000;
+const PROFILE_PHOTO_UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
 const state = {
@@ -107,6 +108,40 @@ const formatUpdatedDate = (value) => {
 };
 
 const normalizeText = (value) => String(value ?? '').trim();
+
+const normalizeProfilePhotoId = (value) => {
+  const photoId = normalizeText(value).toLowerCase();
+  return PROFILE_PHOTO_UUID_V4_PATTERN.test(photoId) ? photoId : '';
+};
+
+const buildProfilePhotoUrl = (photoId) => {
+  const normalizedPhotoId = normalizeProfilePhotoId(photoId);
+  return normalizedPhotoId
+    ? `registration-photo.php?id=${encodeURIComponent(normalizedPhotoId)}`
+    : '';
+};
+
+const renderResidentAvatar = (photoId) => {
+  const normalizedPhotoId = normalizeProfilePhotoId(photoId);
+  const imageUrl = buildProfilePhotoUrl(normalizedPhotoId);
+  const imageMarkup = imageUrl
+    ? `<img class="resident-avatar-image" data-resident-avatar-image src="${imageUrl}" alt="" loading="lazy" decoding="async">`
+    : '';
+  return `
+    <span class="resident-list-avatar" aria-hidden="true">
+      ${imageMarkup}
+      <i class="bi bi-person-fill resident-avatar-fallback"${imageUrl ? ' hidden' : ''}></i>
+    </span>
+  `;
+};
+
+const showResidentAvatarFallback = (image) => {
+  if (!(image instanceof HTMLImageElement)) return;
+  image.hidden = true;
+  image.removeAttribute('src');
+  const fallback = image.parentElement?.querySelector('.resident-avatar-fallback');
+  if (fallback) fallback.hidden = false;
+};
 
 const toYesNoOrDash = (value, fallback = '-') => {
   if (value === true) return 'Yes';
@@ -218,6 +253,9 @@ const residentZoneFilter = document.getElementById('residentZoneFilter');
 const residentVisibleCount = document.getElementById('residentVisibleCount');
 const residentDetailsModalEl = document.getElementById('residentDetailsModal');
 const residentDetailsModal = residentDetailsModalEl ? new bootstrap.Modal(residentDetailsModalEl) : null;
+const residentModalAvatar = document.getElementById('rdAvatar');
+const residentModalAvatarImage = document.getElementById('rdAvatarImage');
+const residentModalAvatarFallback = document.getElementById('rdAvatarFallback');
 const residentEditBtn = document.getElementById('residentEditBtn');
 const residentDeleteBtn = document.getElementById('residentDeleteBtn');
 const residentDeleteConfirmModalEl = document.getElementById('residentDeleteConfirmModal');
@@ -228,6 +266,41 @@ const residentDeleteConfirmBtn = document.getElementById('residentDeleteConfirmB
 
 let activeQuickFilter = 'all';
 let activeResidentAction = null;
+
+const setResidentModalAvatar = (photoId, fullName = '') => {
+  const normalizedPhotoId = normalizeProfilePhotoId(photoId);
+  const imageUrl = buildProfilePhotoUrl(normalizedPhotoId);
+  const residentName = normalizeText(fullName);
+
+  if (residentModalAvatar) {
+    residentModalAvatar.setAttribute(
+      'aria-label',
+      residentName ? `${residentName} profile photo` : 'Default resident profile'
+    );
+  }
+  if (!residentModalAvatarImage || !residentModalAvatarFallback) return;
+
+  residentModalAvatarImage.hidden = true;
+  residentModalAvatarFallback.hidden = false;
+  if (!imageUrl) {
+    residentModalAvatarImage.removeAttribute('src');
+    delete residentModalAvatarImage.dataset.photoId;
+    return;
+  }
+
+  residentModalAvatarImage.dataset.photoId = normalizedPhotoId;
+  residentModalAvatarImage.src = imageUrl;
+};
+
+residentModalAvatarImage?.addEventListener('load', () => {
+  if (!normalizeProfilePhotoId(residentModalAvatarImage.dataset.photoId)) return;
+  residentModalAvatarImage.hidden = false;
+  if (residentModalAvatarFallback) residentModalAvatarFallback.hidden = true;
+});
+
+residentModalAvatarImage?.addEventListener('error', () => {
+  showResidentAvatarFallback(residentModalAvatarImage);
+});
 
 const ensureZoneOptions = (rows = []) => {
   if (!residentZoneFilter) return;
@@ -375,6 +448,7 @@ const renderResidentsTable = () => {
       const sex = normalizeText(row.sex) || '-';
       const age = normalizeText(row.age) || '-';
       const fullName = normalizeText(row.full_name) || '-';
+      const profilePhotoId = normalizeProfilePhotoId(row.profile_photo_id);
       const zone = normalizeZoneLabel(row.zone) || '-';
       const zoneKey = normalizeZone(zone);
 
@@ -389,9 +463,15 @@ const renderResidentsTable = () => {
           data-zone="${escapeHtml(zoneKey)}"
           data-source-type="${escapeHtml(normalizeText(row.source_type).toLowerCase())}"
           data-member-order="${Number.isInteger(row.member_order) ? row.member_order : 0}"
+          data-profile-photo-id="${profilePhotoId}"
           data-base-household-id="${escapeHtml(householdId)}">
           <td>${escapeHtml(displayResidentId || '-')}</td>
-          <td>${escapeHtml(fullName)}</td>
+          <td>
+            <span class="resident-name-cell">
+              ${renderResidentAvatar(profilePhotoId)}
+              <span class="resident-name-text">${escapeHtml(fullName)}</span>
+            </span>
+          </td>
           <td>${escapeHtml(age)}</td>
           <td>${escapeHtml(sex)}</td>
           <td>${escapeHtml(displayHouseholdId || '-')}</td>
@@ -436,6 +516,7 @@ const normalizeResidentListItem = (item) => {
     member_order: memberOrder,
     full_name: normalizeText(item?.full_name),
     relation_to_head: normalizeText(item?.relation_to_head),
+    profile_photo_id: normalizeProfilePhotoId(item?.profile_photo_id),
     sex: normalizeText(item?.sex),
     age: ageText,
     zone: normalizeZoneLabel(item?.zone),
@@ -562,6 +643,7 @@ const getRowDetails = (row) => {
     base_household_id: normalizeText(row.dataset.baseHouseholdId || householdIdDisplay),
     source_type: normalizeText(row.dataset.sourceType).toLowerCase(),
     member_order: Number.isInteger(memberOrderRaw) ? memberOrderRaw : 0,
+    profile_photo_id: normalizeProfilePhotoId(row.dataset.profilePhotoId),
     zone: normalizeZoneLabel(cells[5]?.textContent),
     updated: normalizeText(cells[6]?.textContent)
   };
@@ -581,6 +663,7 @@ const buildResidentDefaults = (rowData = {}) => {
     member_order: Number.isInteger(rowData.member_order) ? rowData.member_order : 0,
     full_name: rowData.full_name || '-',
     relation_to_head: '-',
+    profile_photo_id: normalizeProfilePhotoId(rowData.profile_photo_id),
     birthday: '-',
     age: rowData.age || '-',
     sex: rowData.sex || '-',
@@ -673,6 +756,9 @@ const normalizeResidentDetails = (rowData, payload) => {
         : defaults.member_order,
     full_name: fullName || defaults.full_name,
     relation_to_head: normalizeText(payload.relation_to_head) || normalizeText(profile.relation_to_head) || defaults.relation_to_head,
+    profile_photo_id: normalizeProfilePhotoId(payload.profile_photo_id)
+      || normalizeProfilePhotoId(profile.profile_photo_id)
+      || defaults.profile_photo_id,
     age: ageValue || defaults.age,
     sex: normalizeText(payload.sex) || normalizeText(profile.sex) || defaults.sex,
     zone: zone || defaults.zone,
@@ -896,6 +982,7 @@ const populateResidentModal = (details, loadErrorMessage = '') => {
   const householdLabel = normalizeText(details.household_id) || '-';
   const headerLine = `Relation: ${relation} | Resident ID: ${residentLabel} | Household: ${householdLabel}`;
   setResidentText('rdRelation', loadErrorMessage ? `${headerLine} | Limited details` : headerLine);
+  setResidentModalAvatar(details.profile_photo_id, details.full_name);
 
   const fieldMap = [
     ['rdName', 'full_name'],
@@ -982,6 +1069,7 @@ residentDeleteBtn?.addEventListener('click', () => {
 residentDetailsModalEl?.addEventListener('hidden.bs.modal', () => {
   activeResidentAction = null;
   setResidentActionButtonsState(false);
+  setResidentModalAvatar('', '');
 });
 
 quickFilterButtons.forEach((button) => {
@@ -999,6 +1087,13 @@ yearSelect?.addEventListener('change', () => {
 });
 
 if (residentsTableBody) {
+  residentsTableBody.addEventListener('error', (event) => {
+    const image = event.target;
+    if (image instanceof HTMLImageElement && image.matches('[data-resident-avatar-image]')) {
+      showResidentAvatarFallback(image);
+    }
+  }, true);
+
   residentsTableBody.addEventListener('click', (event) => {
     const viewButton = event.target.closest('.resident-view-btn');
     if (!viewButton) return;

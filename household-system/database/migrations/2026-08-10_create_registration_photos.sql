@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS `registration_photos` (
+  `photo_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `subject_type` VARCHAR(16) NOT NULL,
+  `household_code` VARCHAR(64) NOT NULL DEFAULT '',
+  `storage_key` VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `mime_type` VARCHAR(32) NOT NULL DEFAULT 'image/jpeg',
+  `size_bytes` INT UNSIGNED NOT NULL DEFAULT 0,
+  `width` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `height` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `sha256` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `state` VARCHAR(16) NOT NULL DEFAULT 'staged',
+  `created_by_user_id` BIGINT UNSIGNED NULL,
+  `attached_at` DATETIME NULL,
+  `deleted_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`photo_id`),
+  KEY `idx_registration_photos_household` (`household_code`),
+  KEY `idx_registration_photos_state_created` (`state`, `created_at`),
+  KEY `idx_registration_photos_created_by` (`created_by_user_id`),
+  KEY `idx_registration_photos_sha256` (`sha256`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

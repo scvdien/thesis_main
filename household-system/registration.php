@@ -53,14 +53,18 @@ $registrationCurrentUsername = (string) ($authUser['username'] ?? '');
 $registrationCurrentUserId = (int) ($authUser['id'] ?? 0);
 $registrationCsrfToken = auth_csrf_token();
 $registrationStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
+$indexedDbStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/indexeddb-storage-scripts.js') ?: time());
 $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-scripts.js') ?: time());
+$passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-toggle.js') ?: time());
+$registrationPhotoStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-photo-storage.js') ?: time());
+$photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.js') ?: time());
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="csrf-token" content="<?= htmlspecialchars($registrationCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <meta name="theme-color" content="#0d6efd">
   <link rel="manifest" href="manifest.webmanifest">
@@ -71,6 +75,7 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/registration-style.css?v=<?= htmlspecialchars($registrationStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+  <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 
 <body
@@ -102,9 +107,6 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
           <span class="sidebar-panel-title">Members</span>
           <span class="badge rounded-pill" id="sidebarMemberCount">0</span>
         </div>
-        <button class="sidebar-members-toggle" type="button" id="sidebarMembersToggle" aria-controls="sidebarMembersList" aria-expanded="true">
-          <i class="bi bi-chevron-down"></i>
-        </button>
       </div>
       <a href="member.php" class="btn btn-light btn-sm sidebar-add-btn" id="addMemberBtn" aria-disabled="true">
         <i class="bi bi-person-plus"></i> Add Member
@@ -174,6 +176,52 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
         <span class="badge rounded-pill">Required fields are marked *</span>
       </div>
       <div class="card-body">
+        <section class="registration-photo-panel registration-photo-panel-single" aria-labelledby="registrationPhotosHeading">
+          <div class="registration-photo-panel-header">
+            <div class="registration-photo-panel-title" id="registrationPhotosHeading">
+              <i class="bi bi-camera-fill" aria-hidden="true"></i>
+              Household Head Photo
+            </div>
+            <span class="badge rounded-pill">Optional</span>
+          </div>
+          <div class="registration-photo-grid">
+            <section class="registration-photo-card" aria-labelledby="headProfilePhotoHeading">
+              <div class="registration-photo-preview registration-photo-preview-profile">
+                <img id="headProfilePhotoPreview" alt="Selected household head profile photo" hidden>
+                <div class="registration-photo-placeholder" id="headProfilePhotoPlaceholder">
+                  <i class="bi bi-person-fill" aria-hidden="true"></i>
+                  <span class="visually-hidden">No photo</span>
+                </div>
+              </div>
+              <div class="registration-photo-copy">
+                <div class="registration-photo-heading" id="headProfilePhotoHeading">
+                  Household Head
+                </div>
+                <div class="registration-photo-status text-muted" id="headProfilePhotoStatus" role="status" aria-live="polite">
+                  No photo yet
+                </div>
+                <input
+                  type="file"
+                  class="visually-hidden registration-photo-input"
+                  id="headProfilePhotoInput"
+                  accept="image/*"
+                  capture="environment"
+                >
+                <div class="registration-photo-actions">
+                  <button type="button" class="btn btn-primary btn-sm registration-photo-capture-btn" id="headProfilePhotoCaptureBtn">
+                    <i class="bi bi-camera-fill" aria-hidden="true"></i>
+                    <span id="headProfilePhotoTriggerText">Open Camera</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-danger btn-sm registration-photo-remove-btn" id="headProfilePhotoRemoveBtn" aria-label="Remove household head photo" title="Remove photo" hidden>
+                    <i class="bi bi-trash3" aria-hidden="true"></i>
+                    <span class="visually-hidden">Remove photo</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <div class="row g-3">
           <div class="col-md-3"><label class="form-label required">First Name</label><input type="text" class="form-control" name="first_name" required></div>
           <div class="col-md-3"><label class="form-label">Middle Name</label><input type="text" class="form-control" name="middle_name"></div>
@@ -703,8 +751,11 @@ $registrationScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/registra
 </div>
 
 <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/indexeddb-storage-scripts.js"></script>
+<script src="assets/js/indexeddb-storage-scripts.js?v=<?= htmlspecialchars($indexedDbStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($registrationOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+<script src="assets/js/password-toggle.js?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+<script src="assets/js/registration-photo-storage.js?v=<?= htmlspecialchars($registrationPhotoStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+<script src="assets/js/photo-capture.js?v=<?= htmlspecialchars($photoCaptureVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/registration-scripts.js?v=<?= htmlspecialchars($registrationScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 
 </body>

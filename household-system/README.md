@@ -13,6 +13,7 @@ This module is structured as a traditional multi-page PHP application with bundl
 - Household and resident registration workflow with create, update, delete, and lookup operations.
 - Year-based household rollover support through `registration-sync.php` and SQL migration procedures.
 - Offline-ready registration module powered by a service worker and IndexedDB queue storage.
+- Optional household and resident profile photos with mobile camera capture, offline Blob staging, and private authenticated delivery.
 - Dashboard analytics for population, gender, age groups, civil status, education, employment, household size, and housing/utility indicators.
 - Health-related analytics for pregnant women, malnourished children, persons with illness, and deaths by cause.
 - PDF and Excel annual report export using Composer-installed libraries.
@@ -50,6 +51,8 @@ household-system/
 |-- auth.php                       # Auth, sessions, role routing, CSRF helpers
 |-- db.php                         # PDO connection and environment-based DB config
 |-- registration-sync.php          # Household/member/resident sync API
+|-- registration-photo.php         # Authenticated private photo upload/stream API
+|-- registration-photo-storage.php # Photo validation, normalization, and storage helpers
 |-- dashboard-analytics-api.php    # Dashboard analytics data source
 |-- reports-api.php                # Report data API
 |-- report-export.php              # PDF/XLSX export pipeline
@@ -88,6 +91,8 @@ These are required by `report-export.php` for PDF and Excel output. If `vendor/a
 
 - PHP environment capable of running the included pages and Composer packages
 - MySQL database accessible through PDO
+- PHP GD, Fileinfo, and EXIF support for validating and normalizing registration photos
+- Writable private storage outside the public document root for registration photos
 - Writable storage for uploaded official seal images and generated backup files
 - Browser support for Service Worker and IndexedDB to use the offline registration experience
 
@@ -102,6 +107,8 @@ These are required by `report-export.php` for PDF and Excel output. If `vendor/a
 - Authentication uses the `hims_session` session name and routes users by role to `admin.php`, `index.php`, or `registration.php`.
 - The offline registration flow is centered on `registration.php`, `member.php`, `service-worker.js`, `assets/js/registration-offline-init.js`, and `assets/js/indexeddb-storage-scripts.js`.
 - `registration-sync.php` handles household, member, and resident sync operations and also supports year rollover and rollover reset actions.
+- Registration photos use UUID references in household JSON. The image files are re-encoded as JPEG and stored outside the public web root. Set `HIMS_REGISTRATION_PHOTO_STORAGE_DIR` to an absolute private writable directory when the default sibling `hims-private/registration-photos` location is not suitable.
+- The current JSON backup format does not embed private registration photo files. Backup and restore therefore fail closed once attached photos exist (or when an uploaded backup contains photo references) until a versioned photo-bundle backup format is implemented.
 - Stored procedures related to registration sync rollover are defined under `database/migrations/`.
 - `users-api.php` contains a large portion of the settings and system administration logic, including staff account creation, own credential updates, barangay profile updates, official seal handling, backup creation, backup download, and restore operations.
 - `dashboard-analytics-api.php` aggregates demographic, socio-economic, housing, and health indicators directly from stored household and resident data.

@@ -203,6 +203,7 @@ let isBackupActionBusy = false;
 let isSettingsRolloverBusy = false;
 let settingsRolloverBusyAction = '';
 let pendingBarangayProfileSavePayload = null;
+let pendingStaffCreatePayload = null;
 let pendingSettingsRolloverRequest = null;
 let pendingSettingsRolloverResetRequest = null;
 
@@ -315,6 +316,13 @@ const staffCreateContactNumber = document.getElementById('staffCreateContactNumb
 const staffCreateBtn = document.getElementById('staffCreateBtn');
 const staffCreateForm = document.getElementById('staffCreateForm');
 const staffAccountNotice = document.getElementById('staffAccountNotice');
+const staffCreateConfirmModalEl = document.getElementById('staffCreateConfirmModal');
+const staffCreateConfirmText = document.getElementById('staffCreateConfirmText');
+const staffCreateConfirmBtn = document.getElementById('staffCreateConfirmBtn');
+const staffCreateConfirmModal =
+  staffCreateConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(staffCreateConfirmModalEl)
+    : null;
 const staffAccountsList = document.getElementById('staffAccountsList');
 const activeUsersList = document.getElementById('activeUsersList');
 const activeUsersBadge = document.getElementById('activeUsersBadge');
@@ -4009,6 +4017,41 @@ backupRestoreBtn?.addEventListener('click', async (event) => {
   }
 });
 
+const executeStaffAccountCreate = async (payload) => {
+  const confirmButtonOriginalHtml = staffCreateConfirmBtn?.innerHTML || 'Create Account';
+
+  if (staffCreateConfirmBtn) {
+    staffCreateConfirmBtn.disabled = true;
+    staffCreateConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Creating...';
+  }
+  if (staffCreateBtn) staffCreateBtn.disabled = true;
+
+  try {
+    const response = await runSettingsAction(payload);
+    staffCreateConfirmModal?.hide();
+    pendingStaffCreatePayload = null;
+    if (staffCreateFullName) staffCreateFullName.value = '';
+    if (staffCreateUsername) staffCreateUsername.value = '';
+    if (staffCreatePassword) staffCreatePassword.value = '';
+    if (staffCreateContactNumber) staffCreateContactNumber.value = '';
+    rerenderSettingsPanels();
+    setStaffAccountNotice(response.message || 'Staff account created successfully.', 'success');
+  } catch (error) {
+    staffCreateConfirmModal?.hide();
+    pendingStaffCreatePayload = null;
+    const message = error instanceof Error ? error.message : 'Unable to create staff account right now.';
+    setStaffAccountNotice(message, 'danger');
+  } finally {
+    if (staffCreateConfirmBtn) {
+      staffCreateConfirmBtn.disabled = false;
+      staffCreateConfirmBtn.innerHTML = confirmButtonOriginalHtml;
+    }
+    if (staffCreateBtn) {
+      staffCreateBtn.disabled = readStaffAccounts().length >= STAFF_ACCOUNT_LIMIT;
+    }
+  }
+};
+
 staffCreateBtn?.addEventListener('click', async (event) => {
   event.preventDefault();
 
@@ -4043,23 +4086,41 @@ staffCreateBtn?.addEventListener('click', async (event) => {
     return;
   }
 
-  try {
-    const response = await runSettingsAction({
-      action: 'create_staff',
-      full_name: fullName,
-      username,
-      password,
-      contact_number: contactNumber
-    });
-    if (staffCreateFullName) staffCreateFullName.value = '';
-    if (staffCreateUsername) staffCreateUsername.value = '';
-    if (staffCreatePassword) staffCreatePassword.value = '';
-    if (staffCreateContactNumber) staffCreateContactNumber.value = '';
-    rerenderSettingsPanels();
-    setStaffAccountNotice(response.message || 'Staff account created successfully.', 'success');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to create staff account right now.';
-    setStaffAccountNotice(message, 'danger');
+  const payload = {
+    action: 'create_staff',
+    full_name: fullName,
+    username,
+    password,
+    contact_number: contactNumber
+  };
+  pendingStaffCreatePayload = payload;
+
+  if (staffCreateConfirmText) {
+    staffCreateConfirmText.textContent = `Create the staff account for ${fullName} with username "${username}"?`;
+  }
+  if (staffCreateConfirmModal) {
+    staffCreateConfirmModal.show();
+    return;
+  }
+
+  const confirmed = window.confirm(`Create the staff account for ${fullName} with username "${username}"?`);
+  if (!confirmed) {
+    pendingStaffCreatePayload = null;
+    setStaffAccountNotice('Staff account creation was cancelled.', 'muted');
+    return;
+  }
+
+  await executeStaffAccountCreate(payload);
+});
+
+staffCreateConfirmBtn?.addEventListener('click', async () => {
+  if (!pendingStaffCreatePayload) return;
+  await executeStaffAccountCreate(pendingStaffCreatePayload);
+});
+
+staffCreateConfirmModalEl?.addEventListener('hidden.bs.modal', () => {
+  if (!isSettingsMutating) {
+    pendingStaffCreatePayload = null;
   }
 });
 

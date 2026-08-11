@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "online.cabarianportal.registration",
+      "sha256_cert_fingerprints": [
+        "E5:87:AC:D5:9B:AF:0D:F3:29:95:F9:1F:50:69:DB:A9:49:F5:B1:66:8B:AA:F0:CE:BB:6C:F5:D7:FA:3F:35:B7"
+      ]
+    }
+  }
+]

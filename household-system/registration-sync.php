@@ -2,6 +2,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/registration-photo-storage.php';
+
+const REG_MAX_JSON_BODY_BYTES = 4 * 1024 * 1024;
+const REG_MAX_HOUSEHOLD_MEMBERS = 100;
 
 /**
  * @param array<string, mixed> $payload
@@ -241,6 +245,55 @@ function reg_normalize_person_text_fields(array $person): array
     return $person;
 }
 
+/**
+ * Keep only an opaque server-validated photo id in person data. Image bytes,
+ * data URLs, file paths, and client-provided URLs are never stored in JSON.
+ *
+ * @param array<string, mixed> $person
+ * @return array<string, mixed>
+ */
+function reg_normalize_person_photo_reference(array $person): array
+{
+    foreach ([
+        'photo',
+        'photo_url',
+        'photo_data',
+        'profile_photo',
+        'profile_photo_url',
+        'profile_photo_data',
+    ] as $unsafeField) {
+        unset($person[$unsafeField]);
+    }
+
+    $photoId = reg_photo_normalize_id($person['profile_photo_id'] ?? '');
+    if ($photoId === '') {
+        unset($person['profile_photo_id']);
+    } else {
+        $person['profile_photo_id'] = $photoId;
+    }
+    return $person;
+}
+
+/** @param array<string, mixed> $person */
+function reg_photo_person_match_key(array $person): string
+{
+    $parts = [];
+    foreach (['first_name', 'middle_name', 'last_name', 'extension_name', 'birthday'] as $field) {
+        $parts[] = strtolower(trim((string) ($person[$field] ?? '')));
+    }
+    $key = implode('|', $parts);
+    return trim(str_replace('|', '', $key)) === '' ? '' : $key;
+}
+
+function reg_optional_client_member_id(mixed $value): string
+{
+    try {
+        return reg_photo_normalize_id($value);
+    } catch (InvalidArgumentException $exception) {
+        return '';
+    }
+}
+
 function reg_json_encode(mixed $value): string
 {
     $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -281,9 +334,16 @@ function reg_normalize_members(mixed $value): array
  */
 function reg_read_json_body(): array
 {
+    $declaredLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($declaredLength > REG_MAX_JSON_BODY_BYTES) {
+        reg_error(413, 'Registration payload is too large.');
+    }
     $raw = file_get_contents('php://input');
     if ($raw === false || trim($raw) === '') {
         return [];
+    }
+    if (strlen($raw) > REG_MAX_JSON_BODY_BYTES) {
+        reg_error(413, 'Registration payload is too large.');
     }
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
@@ -413,6 +473,8 @@ function reg_bootstrap_tables(PDO $pdo): void
             KEY `idx_registration_year_rollovers_source_year` (`source_year`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
+
+    reg_photo_bootstrap_table($pdo);
 
     reg_add_registration_year_columns($pdo);
 }
@@ -1313,7 +1375,7 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     }
 
     $head = is_array($record['head'] ?? null) ? $record['head'] : [];
-    $head = reg_normalize_person_text_fields($head);
+    $head = reg_normalize_person_photo_reference(reg_normalize_person_text_fields($head));
     $headContact = reg_text($head['contact'] ?? '', 40);
     if (!preg_match('/^\d{11}$/', $headContact)) {
         throw new InvalidArgumentException('Household head contact number must contain exactly 11 digits.');
@@ -1322,7 +1384,13 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
 
     $members = [];
     foreach (reg_normalize_members($record['members'] ?? []) as $memberRow) {
-        $member = reg_normalize_person_text_fields($memberRow);
+        $member = reg_normalize_person_photo_reference(reg_normalize_person_text_fields($memberRow));
+        $clientMemberId = reg_optional_client_member_id($member['client_member_id'] ?? '');
+        if ($clientMemberId === '') {
+            unset($member['client_member_id']);
+        } else {
+            $member['client_member_id'] = $clientMemberId;
+        }
         $memberContact = reg_text($member['contact'] ?? '', 40);
         if ($memberContact !== '' && !preg_match('/^\d{11}$/', $memberContact)) {
             throw new InvalidArgumentException('Member contact number must contain exactly 11 digits when provided.');
@@ -1332,6 +1400,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     }
     if (count($members) === 0) {
         throw new InvalidArgumentException('At least one household member is required.');
+    }
+    if (count($members) > REG_MAX_HOUSEHOLD_MEMBERS) {
+        throw new InvalidArgumentException('A household cannot contain more than 100 members.');
     }
 
     $headName = reg_text(reg_title_case_text($record['head_name'] ?? ''), 180);
@@ -1361,6 +1432,8 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $members[$index] = $member;
     }
     $source = reg_text($record['source'] ?? 'registration-module', 80);
+    $photoSchemaAware = (int) ($record['photo_schema_version'] ?? 0) >= 1;
+    $householdPhotoId = reg_photo_normalize_id($record['household_photo_id'] ?? '');
     $rolloverSourceHouseholdCode = reg_text(
         $record['rolled_over_from_household_id'] ?? ($record['rollover_source_household_code'] ?? ''),
         64
@@ -1373,6 +1446,8 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         'household_id' => $householdCode,
         'mode' => reg_text($record['mode'] ?? 'update', 20),
         'source' => $source,
+        'photo_schema_version' => 1,
+        'household_photo_id' => $householdPhotoId,
         'head' => $head,
         'members' => $members,
         'head_name' => $headName,
@@ -1386,6 +1461,7 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     $duplicateLockName = reg_household_duplicate_lock_name($recordForStore);
 
     $startedTransaction = false;
+    $obsoletePhotoStorageKeys = [];
     try {
         reg_acquire_advisory_lock($pdo, $duplicateLockName);
 
@@ -1395,13 +1471,88 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         }
 
         $findStmt = $pdo->prepare(
-            'SELECT `id` FROM `registration_households`
+            'SELECT `id`, `head_data_json`, `members_data_json`, `record_data_json`
+             FROM `registration_households`
              WHERE `household_code` = :household_code
              LIMIT 1 FOR UPDATE'
         );
         $findStmt->execute(['household_code' => $householdCode]);
         $existing = $findStmt->fetch(PDO::FETCH_ASSOC);
         $householdDbId = is_array($existing) ? (int) ($existing['id'] ?? 0) : 0;
+
+        // Preserve photo references when an older cached client edits a record
+        // created by the photo-aware app. This prevents silent photo loss while
+        // the service worker/browser updates to the current scripts.
+        if (!$photoSchemaAware && $householdDbId > 0 && is_array($existing)) {
+            $existingRecord = reg_json_decode_assoc((string) ($existing['record_data_json'] ?? ''));
+            $existingHead = reg_json_decode_assoc((string) ($existing['head_data_json'] ?? ''));
+            $existingMembers = reg_normalize_members(
+                reg_json_decode_assoc((string) ($existing['members_data_json'] ?? ''))
+            );
+
+            $existingHouseholdPhotoId = reg_photo_normalize_id($existingRecord['household_photo_id'] ?? '');
+            if ($householdPhotoId === '' && $existingHouseholdPhotoId !== '') {
+                $householdPhotoId = $existingHouseholdPhotoId;
+            }
+            $existingHeadPhotoId = reg_photo_normalize_id($existingHead['profile_photo_id'] ?? '');
+            if (reg_photo_normalize_id($head['profile_photo_id'] ?? '') === '' && $existingHeadPhotoId !== '') {
+                $head['profile_photo_id'] = $existingHeadPhotoId;
+            }
+
+            $existingMembersByClientId = [];
+            $existingMembersByIdentity = [];
+            foreach ($existingMembers as $existingIndex => $existingMember) {
+                if (!is_array($existingMember)) continue;
+                $clientMemberId = reg_optional_client_member_id($existingMember['client_member_id'] ?? '');
+                if ($clientMemberId !== '') $existingMembersByClientId[$clientMemberId] = $existingMember;
+                $identityKey = reg_photo_person_match_key($existingMember);
+                if ($identityKey !== '') $existingMembersByIdentity[$identityKey] = $existingMember;
+                $existingMembers[$existingIndex] = $existingMember;
+            }
+            foreach ($members as $memberIndex => $member) {
+                if (!is_array($member)) continue;
+                if (reg_photo_normalize_id($member['profile_photo_id'] ?? '') !== '') continue;
+                $matchedMember = null;
+                $clientMemberId = reg_optional_client_member_id($member['client_member_id'] ?? '');
+                if ($clientMemberId !== '' && isset($existingMembersByClientId[$clientMemberId])) {
+                    $matchedMember = $existingMembersByClientId[$clientMemberId];
+                } else {
+                    $identityKey = reg_photo_person_match_key($member);
+                    if ($identityKey !== '' && isset($existingMembersByIdentity[$identityKey])) {
+                        $matchedMember = $existingMembersByIdentity[$identityKey];
+                    }
+                }
+                if (!is_array($matchedMember)) continue;
+                $matchedPhotoId = reg_photo_normalize_id($matchedMember['profile_photo_id'] ?? '');
+                if ($matchedPhotoId !== '') $member['profile_photo_id'] = $matchedPhotoId;
+                $matchedClientMemberId = reg_optional_client_member_id($matchedMember['client_member_id'] ?? '');
+                if ($clientMemberId === '' && $matchedClientMemberId !== '') {
+                    $member['client_member_id'] = $matchedClientMemberId;
+                }
+                $members[$memberIndex] = $member;
+            }
+
+            $recordForStore['household_photo_id'] = $householdPhotoId;
+            $recordForStore['head'] = $head;
+            $recordForStore['members'] = $members;
+        }
+
+        $photoReferences = [];
+        if ($householdPhotoId !== '') {
+            $photoReferences[$householdPhotoId] = 'household';
+        }
+        $headPhotoId = reg_photo_normalize_id($head['profile_photo_id'] ?? '');
+        if ($headPhotoId !== '') {
+            $photoReferences[$headPhotoId] = 'head';
+        }
+        foreach ($members as $member) {
+            if (!is_array($member)) continue;
+            $memberPhotoId = reg_photo_normalize_id($member['profile_photo_id'] ?? '');
+            if ($memberPhotoId !== '') {
+                $photoReferences[$memberPhotoId] = 'member';
+            }
+        }
+        reg_photo_attach_references($pdo, $photoReferences, $householdCode, $actorUserId);
 
         $duplicate = reg_find_duplicate_household($pdo, $recordForStore, $householdCode);
         if (is_array($duplicate)) {
@@ -1578,14 +1729,24 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             ]);
         }
 
+        if ($photoSchemaAware) {
+            $obsoletePhotoStorageKeys = reg_photo_mark_unreferenced(
+                $pdo,
+                $householdCode,
+                array_keys($photoReferences)
+            );
+        }
+
         if ($startedTransaction && $pdo->inTransaction()) {
             $pdo->commit();
+            reg_photo_delete_storage_keys($obsoletePhotoStorageKeys);
         }
         return [
             'household_id' => $householdCode,
             'record_year' => $recordYear,
             'synced_at' => $syncedAt,
             'total_records' => reg_total_households($pdo),
+            'record' => $recordForStore,
         ];
     } catch (Throwable $exception) {
         if ($startedTransaction && $pdo->inTransaction()) {
@@ -1770,16 +1931,21 @@ function reg_rollover_households(PDO $pdo, int $targetYear, int $sourceYear, arr
             $head = reg_normalize_person_text_fields(
                 reg_json_decode_assoc((string) ($sourceRow['head_data_json'] ?? ''))
             );
+            unset($head['profile_photo_id']);
             $members = [];
             foreach (reg_normalize_members(reg_json_decode_assoc((string) ($sourceRow['members_data_json'] ?? ''))) as $memberRow) {
-                $members[] = reg_normalize_person_text_fields($memberRow);
+                $normalizedMember = reg_normalize_person_text_fields($memberRow);
+                unset($normalizedMember['profile_photo_id']);
+                $members[] = $normalizedMember;
             }
 
             if (count($members) === 0) {
                 $loaded = reg_get_household($pdo, $sourceHouseholdCode);
                 $loadedMembers = is_array($loaded['record']['members'] ?? null) ? $loaded['record']['members'] : [];
                 foreach (reg_normalize_members($loadedMembers) as $memberRow) {
-                    $members[] = reg_normalize_person_text_fields($memberRow);
+                    $normalizedMember = reg_normalize_person_text_fields($memberRow);
+                    unset($normalizedMember['profile_photo_id']);
+                    $members[] = $normalizedMember;
                 }
             }
             if (count($members) === 0) {
@@ -1926,10 +2092,19 @@ function reg_reset_rollover_households(PDO $pdo, int $targetYear, array $authUse
     $deletedHouseholds = 0;
     $deletedStatus = false;
     $actorUserId = (int) ($authUser['id'] ?? 0);
+    $photoStorageKeys = [];
 
     $pdo->beginTransaction();
     try {
-        foreach ($householdIds as $householdId) {
+        foreach ($householdIds as $index => $householdId) {
+            $householdCode = $householdCodes[$index] ?? '';
+            if ($householdCode !== '') {
+                $photoStorageKeys = array_merge(
+                    $photoStorageKeys,
+                    reg_photo_mark_household_deleted($pdo, $householdCode)
+                );
+            }
+
             $deleteMembersStmt->execute(['household_id' => $householdId]);
             $deletedMembers += (int) $deleteMembersStmt->rowCount();
 
@@ -1954,6 +2129,11 @@ function reg_reset_rollover_households(PDO $pdo, int $targetYear, array $authUse
         }
         throw $exception;
     }
+
+    // The database is now authoritative. Delete private files only after the
+    // transaction commits so a rollback can never leave a live photo reference
+    // pointing to a missing file.
+    reg_photo_delete_storage_keys($photoStorageKeys);
 
     return [
         'target_year' => $targetYear,
@@ -2294,6 +2474,40 @@ function reg_get_member(PDO $pdo, string $residentCode): ?array
     ];
 }
 
+/**
+ * Remove legacy/raw photo fields and expose only a validated UUID-v4 photo id.
+ * Corrupt legacy values are treated as "no photo" so one bad row cannot break
+ * the residents directory.
+ *
+ * @param array<string, mixed> $profile
+ * @return array<string, mixed>
+ */
+function reg_resident_profile_for_output(array $profile): array
+{
+    foreach ([
+        'photo',
+        'photo_url',
+        'photo_data',
+        'profile_photo',
+        'profile_photo_url',
+        'profile_photo_data',
+    ] as $unsafeField) {
+        unset($profile[$unsafeField]);
+    }
+
+    try {
+        $profilePhotoId = reg_photo_normalize_id($profile['profile_photo_id'] ?? '');
+    } catch (InvalidArgumentException $exception) {
+        $profilePhotoId = '';
+    }
+    unset($profile['profile_photo_id']);
+    if ($profilePhotoId !== '') {
+        $profile['profile_photo_id'] = $profilePhotoId;
+    }
+
+    return $profile;
+}
+
 function reg_list_residents(PDO $pdo): array
 {
     $limit = max(1, min(1000, (int) ($_GET['limit'] ?? 300)));
@@ -2332,12 +2546,12 @@ function reg_list_residents(PDO $pdo): array
             $profile = is_array($resident['member'] ?? null)
                 ? $resident['member']
                 : (is_array($resident['head'] ?? null) ? $resident['head'] : $resident);
-            $profileRaw = is_array($profile) ? $profile : [];
+            $profileRaw = reg_resident_profile_for_output(is_array($profile) ? $profile : []);
             $pwd = (string) ($profileRaw['pwd'] ?? ($profileRaw['health_has_disability'] ?? ''));
             $pregnant = (string) ($profileRaw['pregnant'] ?? ($profileRaw['health_maternal_pregnant'] ?? ''));
-            $profile = reg_strip_health_fields($profileRaw);
+            $profilePhotoId = (string) ($profileRaw['profile_photo_id'] ?? '');
 
-            return [
+            $item = [
                 'resident_id' => (string) ($row['resident_code'] ?? ''),
                 'household_id' => (string) ($row['household_code'] ?? ''),
                 'record_year' => (int) ($row['record_year'] ?? 0),
@@ -2352,6 +2566,10 @@ function reg_list_residents(PDO $pdo): array
                 'pwd' => $pwd,
                 'pregnant' => $pregnant,
             ];
+            if ($profilePhotoId !== '') {
+                $item['profile_photo_id'] = $profilePhotoId;
+            }
+            return $item;
         }, $rows),
         'count' => count($rows),
         'limit' => $limit,
@@ -2374,12 +2592,14 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
         return null;
     }
     $resident = reg_json_decode_assoc((string) ($row['resident_data_json'] ?? ''));
+    $profilePhotoId = '';
     if (is_array($resident)) {
         $profile = is_array($resident['member'] ?? null)
             ? $resident['member']
             : (is_array($resident['head'] ?? null) ? $resident['head'] : $resident);
         if (is_array($profile)) {
-            $profile = reg_strip_health_fields($profile);
+            $profile = reg_strip_health_fields(reg_resident_profile_for_output($profile));
+            $profilePhotoId = (string) ($profile['profile_photo_id'] ?? '');
             $profile['zone'] = reg_normalize_zone_text($profile['zone'] ?? ($row['zone'] ?? ''));
             if (is_array($resident['member'] ?? null)) {
                 $resident['member'] = $profile;
@@ -2391,7 +2611,7 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
         }
     }
 
-    return [
+    $result = [
         'resident_id' => (string) ($row['resident_code'] ?? ''),
         'household_id' => (string) ($row['household_code'] ?? ''),
         'record_year' => (int) ($row['record_year'] ?? 0),
@@ -2406,6 +2626,10 @@ function reg_get_resident(PDO $pdo, string $residentCode): ?array
         'updated_at' => (string) ($row['updated_at'] ?? ''),
         'resident' => $resident,
     ];
+    if ($profilePhotoId !== '') {
+        $result['profile_photo_id'] = $profilePhotoId;
+    }
+    return $result;
 }
 
 function reg_delete_household(PDO $pdo, string $householdCode): bool
@@ -2421,8 +2645,10 @@ function reg_delete_household(PDO $pdo, string $householdCode): bool
         return false;
     }
 
+    $storageKeys = [];
     $pdo->beginTransaction();
     try {
+        $storageKeys = reg_photo_mark_household_deleted($pdo, $householdCode);
         $pdo->prepare('DELETE FROM `registration_members` WHERE `household_id` = :household_id')
             ->execute(['household_id' => $householdDbId]);
         $pdo->prepare('DELETE FROM `registration_residents` WHERE `household_id` = :household_id')
@@ -2430,6 +2656,9 @@ function reg_delete_household(PDO $pdo, string $householdCode): bool
         $pdo->prepare('DELETE FROM `registration_households` WHERE `id` = :id LIMIT 1')
             ->execute(['id' => $householdDbId]);
         $pdo->commit();
+        foreach ($storageKeys as $storageKey) {
+            reg_photo_delete_storage_key($storageKey);
+        }
         return true;
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
@@ -2441,7 +2670,12 @@ function reg_delete_household(PDO $pdo, string $householdCode): bool
 
 function reg_delete_member(PDO $pdo, string $residentCode): bool
 {
-    $stmt = $pdo->prepare('SELECT `id`, `household_id` FROM `registration_members` WHERE `resident_code` = :resident_code LIMIT 1');
+    $stmt = $pdo->prepare(
+        'SELECT `id`, `household_id`, `household_code`, `member_order`, `member_data_json`
+         FROM `registration_members`
+         WHERE `resident_code` = :resident_code
+         LIMIT 1'
+    );
     $stmt->execute(['resident_code' => $residentCode]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!is_array($row)) {
@@ -2450,19 +2684,147 @@ function reg_delete_member(PDO $pdo, string $residentCode): bool
 
     $memberId = (int) ($row['id'] ?? 0);
     $householdDbId = (int) ($row['household_id'] ?? 0);
+    $householdCode = reg_text($row['household_code'] ?? '', 64);
+    $memberOrder = max(0, (int) ($row['member_order'] ?? 0));
     if ($memberId <= 0 || $householdDbId <= 0) {
         return false;
     }
 
+    $obsoletePhotoStorageKeys = [];
     $pdo->beginTransaction();
     try {
+        $householdStmt = $pdo->prepare(
+            'SELECT `head_data_json`, `members_data_json`, `record_data_json`
+             FROM `registration_households`
+             WHERE `id` = :id
+             LIMIT 1 FOR UPDATE'
+        );
+        $householdStmt->execute(['id' => $householdDbId]);
+        $householdRow = $householdStmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($householdRow)) {
+            throw new RuntimeException('Household record was not found for this member.');
+        }
+
+        $targetMember = reg_json_decode_assoc((string) ($row['member_data_json'] ?? ''));
+        $targetClientId = reg_optional_client_member_id($targetMember['client_member_id'] ?? '');
+        $targetIdentity = reg_photo_person_match_key($targetMember);
+        $storedMembers = reg_normalize_members(
+            reg_json_decode_assoc((string) ($householdRow['members_data_json'] ?? ''))
+        );
+        $removedIndex = -1;
+        if ($memberOrder > 0 && isset($storedMembers[$memberOrder - 1]) && is_array($storedMembers[$memberOrder - 1])) {
+            $orderedMember = $storedMembers[$memberOrder - 1];
+            $orderedClientId = reg_optional_client_member_id($orderedMember['client_member_id'] ?? '');
+            $orderedIdentity = reg_photo_person_match_key($orderedMember);
+            if (
+                ($targetClientId !== '' && $orderedClientId === $targetClientId)
+                || ($targetClientId === '' && $targetIdentity !== '' && $orderedIdentity === $targetIdentity)
+            ) {
+                $removedIndex = $memberOrder - 1;
+            }
+        }
+        if ($removedIndex < 0) {
+            foreach ($storedMembers as $index => $storedMember) {
+                if (!is_array($storedMember)) continue;
+                $storedClientId = reg_optional_client_member_id($storedMember['client_member_id'] ?? '');
+                $storedIdentity = reg_photo_person_match_key($storedMember);
+                if (
+                    ($targetClientId !== '' && $storedClientId === $targetClientId)
+                    || ($targetClientId === '' && $targetIdentity !== '' && $storedIdentity === $targetIdentity)
+                ) {
+                    $removedIndex = (int) $index;
+                    break;
+                }
+            }
+        }
+        if ($removedIndex < 0 && $memberOrder > 0 && isset($storedMembers[$memberOrder - 1])) {
+            $removedIndex = $memberOrder - 1;
+        }
+        if ($removedIndex >= 0) {
+            array_splice($storedMembers, $removedIndex, 1);
+        }
+
+        $recordData = reg_json_decode_assoc((string) ($householdRow['record_data_json'] ?? ''));
+        $recordData['members'] = array_values($storedMembers);
+        $recordData['member_count'] = count($storedMembers) + 1;
+        $recordData['updated_at'] = gmdate('c');
+
         $pdo->prepare('DELETE FROM `registration_members` WHERE `id` = :id LIMIT 1')
             ->execute(['id' => $memberId]);
         $pdo->prepare('DELETE FROM `registration_residents` WHERE `resident_code` = :resident_code AND `source_type` = "member" LIMIT 1')
             ->execute(['resident_code' => $residentCode]);
-        $pdo->prepare('UPDATE `registration_households` SET `member_count` = GREATEST(1, `member_count` - 1), `updated_at` = CURRENT_TIMESTAMP WHERE `id` = :id LIMIT 1')
-            ->execute(['id' => $householdDbId]);
+
+        $remainingMembersStmt = $pdo->prepare(
+            'SELECT `id`, `resident_code`
+             FROM `registration_members`
+             WHERE `household_id` = :household_id
+             ORDER BY `member_order` ASC, `id` ASC'
+        );
+        $remainingMembersStmt->execute(['household_id' => $householdDbId]);
+        $remainingMemberRows = $remainingMembersStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $updateMemberOrder = $pdo->prepare(
+            'UPDATE `registration_members` SET `member_order` = :member_order WHERE `id` = :id LIMIT 1'
+        );
+        $updateResidentOrder = $pdo->prepare(
+            'UPDATE `registration_residents`
+             SET `member_order` = :member_order
+             WHERE `resident_code` = :resident_code AND `source_type` = "member"
+             LIMIT 1'
+        );
+        foreach ($remainingMemberRows as $remainingIndex => $remainingRow) {
+            if (!is_array($remainingRow)) continue;
+            $nextOrder = $remainingIndex + 1;
+            $updateMemberOrder->execute([
+                'member_order' => $nextOrder,
+                'id' => (int) ($remainingRow['id'] ?? 0),
+            ]);
+            $updateResidentOrder->execute([
+                'member_order' => $nextOrder,
+                'resident_code' => (string) ($remainingRow['resident_code'] ?? ''),
+            ]);
+        }
+
+        $updateHousehold = $pdo->prepare(
+            'UPDATE `registration_households`
+             SET `member_count` = :member_count,
+                 `members_data_json` = :members_data_json,
+                 `record_data_json` = :record_data_json,
+                 `updated_at` = CURRENT_TIMESTAMP
+             WHERE `id` = :id
+             LIMIT 1'
+        );
+        $updateHousehold->execute([
+            'member_count' => count($storedMembers) + 1,
+            'members_data_json' => reg_json_encode(array_values($storedMembers)),
+            'record_data_json' => reg_json_encode($recordData),
+            'id' => $householdDbId,
+        ]);
+
+        if ((int) ($recordData['photo_schema_version'] ?? 0) >= 1 && $householdCode !== '') {
+            $retainedPhotoIds = [];
+            $householdPhotoId = reg_photo_normalize_id($recordData['household_photo_id'] ?? '');
+            if ($householdPhotoId !== '') $retainedPhotoIds[] = $householdPhotoId;
+            $headData = is_array($recordData['head'] ?? null) ? $recordData['head'] : [];
+            $headPhotoId = reg_photo_normalize_id($headData['profile_photo_id'] ?? '');
+            if ($headPhotoId === '') {
+                $storedHeadData = reg_json_decode_assoc((string) ($householdRow['head_data_json'] ?? ''));
+                $headPhotoId = reg_photo_normalize_id($storedHeadData['profile_photo_id'] ?? '');
+            }
+            if ($headPhotoId !== '') $retainedPhotoIds[] = $headPhotoId;
+            foreach ($storedMembers as $storedMember) {
+                if (!is_array($storedMember)) continue;
+                $memberPhotoId = reg_photo_normalize_id($storedMember['profile_photo_id'] ?? '');
+                if ($memberPhotoId !== '') $retainedPhotoIds[] = $memberPhotoId;
+            }
+            $obsoletePhotoStorageKeys = reg_photo_mark_unreferenced(
+                $pdo,
+                $householdCode,
+                $retainedPhotoIds
+            );
+        }
+
         $pdo->commit();
+        reg_photo_delete_storage_keys($obsoletePhotoStorageKeys);
         return true;
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {

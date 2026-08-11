@@ -1,17 +1,17 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-04-06-v4";
+const CACHE_VERSION = "2026-08-11-v25";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
+const AUTH_STATE_CACHE_NAME = `${CACHE_PREFIX}-auth-state`;
 const APP_SCOPE_URL = new URL(self.registration.scope);
 const APP_SCOPE_PATH = APP_SCOPE_URL.pathname.endsWith("/")
   ? APP_SCOPE_URL.pathname
   : `${APP_SCOPE_URL.pathname}/`;
 const buildScopedUrl = (path = "") => new URL(path, APP_SCOPE_URL).toString();
 const OFFLINE_FALLBACK_URL = buildScopedUrl("offline-registration.html");
+const LOGGED_OUT_STATE_URL = buildScopedUrl(".registration-logged-out");
 const PRECACHE_URLS = [
-  "registration.php",
-  "member.php",
   "offline-registration.html",
   "manifest.webmanifest",
   "bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css",
@@ -22,6 +22,8 @@ const PRECACHE_URLS = [
   "assets/css/registration-style.css",
   "assets/js/indexeddb-storage-scripts.js",
   "assets/js/registration-offline-init.js",
+  "assets/js/registration-photo-storage.js",
+  "assets/js/photo-capture.js",
   "assets/js/registration-scripts.js",
   "assets/js/member-scripts.js",
   "assets/img/barangay-cabarian-logo.png"
@@ -29,6 +31,7 @@ const PRECACHE_URLS = [
 const REGISTRATION_PAGE_NAMES = new Set(["registration.php", "member.php", "offline-registration.html"]);
 const BYPASS_PAGE_NAMES = new Set([
   "registration-sync.php",
+  "registration-photo.php",
   "users-api.php",
   "auth-presence.php",
   "login.php",
@@ -64,10 +67,32 @@ const clearRegistrationCaches = async () => {
   );
 };
 
+const markLoggedOut = async () => {
+  await clearRegistrationCaches();
+  const authStateCache = await caches.open(AUTH_STATE_CACHE_NAME);
+  await authStateCache.put(LOGGED_OUT_STATE_URL, new Response("logged-out", {
+    headers: { "Content-Type": "text/plain; charset=utf-8" }
+  }));
+};
+
+const clearLoggedOutState = async () => {
+  const authStateCache = await caches.open(AUTH_STATE_CACHE_NAME);
+  await authStateCache.delete(LOGGED_OUT_STATE_URL);
+};
+
+const isMarkedLoggedOut = async () => {
+  const authStateCache = await caches.open(AUTH_STATE_CACHE_NAME);
+  return Boolean(await authStateCache.match(LOGGED_OUT_STATE_URL));
+};
+
 const cachePageResponse = async (request, response) => {
   const responseUrl = response && response.url ? response.url : request.url;
   if (!response || !response.ok || !REGISTRATION_PAGE_NAMES.has(getPageName(responseUrl))) {
     return;
+  }
+
+  if (getPageName(responseUrl) !== "offline-registration.html") {
+    await clearLoggedOutState();
   }
 
   const requestUrl = getUrl(request);
@@ -117,11 +142,16 @@ const findCachedRegistrationPage = async (request) => {
 };
 
 const handleRegistrationNavigation = async (request) => {
+  const loggedOut = await isMarkedLoggedOut();
   try {
     const response = await fetch(request);
     await cachePageResponse(request, response.clone());
     return response;
   } catch (error) {
+    if (loggedOut) {
+      const staticCache = await caches.open(STATIC_CACHE_NAME);
+      return (await staticCache.match(OFFLINE_FALLBACK_URL)) || Response.error();
+    }
     const cachedPage = await findCachedRegistrationPage(request);
     if (cachedPage) {
       return cachedPage;
@@ -206,7 +236,8 @@ self.addEventListener("activate", (event) => {
         .filter((cacheName) => cacheName.startsWith(CACHE_PREFIX) && ![
           STATIC_CACHE_NAME,
           PAGE_CACHE_NAME,
-          RUNTIME_CACHE_NAME
+          RUNTIME_CACHE_NAME,
+          AUTH_STATE_CACHE_NAME
         ].includes(cacheName))
         .map((cacheName) => caches.delete(cacheName))
     );
@@ -239,6 +270,16 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "CLEAR_REGISTRATION_OFFLINE") {
     event.waitUntil(clearRegistrationCaches());
+    return;
+  }
+
+  if (data.type === "PREPARE_LOGOUT") {
+    event.waitUntil((async () => {
+      await markLoggedOut();
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({ success: true });
+      }
+    })());
     return;
   }
 

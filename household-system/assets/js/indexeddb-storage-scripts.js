@@ -1,7 +1,8 @@
 (function () {
   const DB_NAME = "thesis_main_offline_db";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = "kv";
+  const PHOTO_STORE_NAME = "registration_photos";
 
   const hasIndexedDb = () => typeof window !== "undefined" && !!window.indexedDB;
 
@@ -14,14 +15,30 @@
   const openDb = () =>
     new Promise((resolve, reject) => {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+      let blocked = false;
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME);
         }
+        if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) {
+          db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "photo_id" });
+        }
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (blocked) {
+          db.close();
+          return;
+        }
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
       request.onerror = () => reject(request.error);
+      request.onblocked = () => {
+        blocked = true;
+        reject(new Error("IndexedDB upgrade is blocked by another open app tab."));
+      };
     });
 
   const idbGet = async (db, key) => {

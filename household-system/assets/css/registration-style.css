@@ -148,26 +148,6 @@ h1,h2,h3,h4,h5,h6{
   border:1px solid rgba(255,255,255,0.3);
   color:#fff;
 }
-.sidebar-members-toggle{
-  border:none;
-  background:rgba(255,255,255,0.18);
-  color:#fff;
-  width:30px;
-  height:30px;
-  border-radius:10px;
-  display:none;
-  align-items:center;
-  justify-content:center;
-}
-.sidebar-members-toggle i{
-  transition:transform 0.2s ease;
-}
-.sidebar-members.is-collapsed .sidebar-members-toggle i{
-  transform:rotate(-90deg);
-}
-.sidebar-members.is-collapsed .sidebar-member-list{
-  display:none;
-}
 .sidebar-add-btn{
   background:rgba(255,255,255,0.18);
   border:1px solid rgba(255,255,255,0.35);
@@ -1811,7 +1791,7 @@ footer.page-footer{
   }
 }
 
-@media (max-width: 992px){
+@media (max-width: 991.98px){
   .layout{
     grid-template-columns:1fr;
   }
@@ -1841,7 +1821,7 @@ footer.page-footer{
   }
 }
 
-@media (max-width: 768px){
+@media (max-width: 991.98px){
   .sidebar{
     position:fixed;
     top:8px;
@@ -1935,6 +1915,7 @@ footer.page-footer{
     font-size:0.84rem;
     padding:6px 8px;
     border-radius:10px;
+    min-height:44px;
   }
   .sidebar-section{
     gap:2px;
@@ -1943,6 +1924,11 @@ footer.page-footer{
     max-height:none;
     overflow:visible;
     padding-right:0;
+  }
+  .sidebar-add-btn,
+  .sidebar-member-item,
+  .sidebar-actions .btn{
+    min-height:44px;
   }
   .sidebar-quick .quick-card{
     padding:8px;
@@ -2125,5 +2111,1131 @@ footer.page-footer{
   .member-info-group .form-label{
     min-height:0;
     display:block;
+  }
+}
+
+/* Mobile registration polish: preserve the existing form and make it easier to use by touch. */
+@media (max-width: 767.98px){
+  html{
+    scroll-padding-top:82px;
+  }
+  body{
+    background:#f4f7fb;
+  }
+  .layout{
+    gap:14px;
+    padding:12px 10px max(22px, env(safe-area-inset-bottom));
+  }
+  #censusForm{
+    padding-bottom:16px;
+  }
+  .content-header.mb-4{
+    margin-bottom:16px !important;
+    border-radius:14px;
+    box-shadow:0 8px 22px rgba(15,23,42,0.08);
+  }
+  #censusForm .card.section-card.mb-4{
+    margin-bottom:16px !important;
+    border:1px solid #e4eaf1;
+    border-radius:14px;
+    box-shadow:0 8px 22px rgba(15,23,42,0.055);
+  }
+  #censusForm .section-card .card-body{
+    padding:16px 14px;
+  }
+  #censusForm .section-header{
+    min-height:46px;
+    padding:12px 14px;
+    gap:6px 10px;
+    flex-wrap:wrap;
+    font-size:0.86rem;
+    line-height:1.35;
+  }
+  #censusForm .section-header .badge{
+    max-width:100%;
+    white-space:normal;
+    text-align:left;
+    line-height:1.3;
+  }
+  #censusForm .row.g-3{
+    --bs-gutter-x:1rem;
+    --bs-gutter-y:0.9rem;
+  }
+  #censusForm .form-label{
+    display:block;
+    min-height:0;
+    margin-bottom:7px;
+    color:#334155;
+    font-size:0.8rem;
+    font-weight:700;
+    line-height:1.35;
+    letter-spacing:0.02em;
+    text-transform:none;
+  }
+  #censusForm .form-control,
+  #censusForm .form-select{
+    min-height:50px;
+    padding:0.7rem 0.85rem;
+    border-radius:11px;
+    background:#fff;
+    font-size:16px;
+    line-height:1.35;
+  }
+  #censusForm .form-control[readonly]{
+    background:#eef2f7;
+    color:#475569;
+  }
+  #censusForm .form-check{
+    min-height:44px;
+  }
+  #censusForm .form-check-input{
+    width:1.15rem;
+    height:1.15rem;
+    flex:0 0 auto;
+  }
+  #censusForm .form-check-label{
+    font-size:0.95rem;
+  }
+}
+
+@media (max-width: 520px){
+  .content-header{
+    flex-direction:row;
+    align-items:center;
+    gap:8px;
+    padding:10px 12px;
+  }
+  .content-heading{
+    flex:1 1 auto;
+    min-width:0;
+    width:auto;
+    flex-wrap:nowrap;
+  }
+  .content-heading > div{
+    min-width:0;
+  }
+  .content-title{
+    overflow:hidden;
+    font-size:1rem;
+    line-height:1.25;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .content-subtitle,
+  .content-subtitle-mobile{
+    display:none;
+  }
+  .content-meta{
+    width:auto;
+    margin-left:0;
+    align-self:center;
+  }
+  .content-meta-actions{
+    width:auto;
+  }
+  .sidebar-toggle,
+  #loadExistingBtn{
+    width:44px;
+    min-width:44px;
+    height:44px;
+    min-height:44px;
+    padding:0;
+    justify-content:center;
+    border-radius:12px;
+  }
+  #loadExistingBtn{
+    font-size:0;
+  }
+  #loadExistingBtn i{
+    margin:0;
+    font-size:1.1rem;
+  }
+  #censusForm .section-header .badge{
+    display:none;
+  }
+  #censusForm .action-bar{
+    bottom:max(8px, env(safe-area-inset-bottom));
+    padding:8px;
+    border-radius:16px;
+  }
+  #censusForm .action-buttons{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px;
+  }
+  #censusForm .action-buttons .btn{
+    width:100%;
+    min-height:46px;
+    padding:8px 10px;
+    justify-content:center;
+    font-size:0.86rem;
+  }
+  #censusForm #saveBtn{
+    grid-column:1 / -1;
+    grid-row:1;
+  }
+  #censusForm #previewBtn,
+  #censusForm #clearBtn{
+    grid-row:2;
+  }
+  #censusForm #previewBtn:nth-last-child(2){
+    grid-column:1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sidebar{
+    transition:none;
+  }
+}
+
+/* Optional household and resident photos. */
+.registration-photo-panel{
+  overflow:hidden;
+  margin-bottom:20px;
+  border:1px solid #dbe5ee;
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 8px 22px rgba(15, 76, 107, 0.05);
+}
+.registration-photo-panel-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:11px 14px;
+  border-bottom:1px solid #e1eaf0;
+  background:#f7fafc;
+}
+.registration-photo-panel-title{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  color:#173c52;
+  font-size:0.92rem;
+  font-weight:750;
+}
+.registration-photo-panel-title i{
+  color:#0d6efd;
+}
+.registration-photo-panel-header .badge{
+  border:1px solid #cbdbe5;
+  background:#eef5f8;
+  color:#47677b;
+  font-size:0.64rem;
+  font-weight:700;
+}
+.registration-photo-grid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:0;
+  margin:0;
+}
+.registration-photo-panel-single .registration-photo-grid{
+  grid-template-columns:1fr;
+}
+.registration-photo-card{
+  display:grid;
+  grid-template-columns:78px minmax(0, 1fr);
+  align-items:center;
+  gap:12px;
+  min-width:0;
+  padding:14px;
+  border:0;
+  border-radius:0;
+  background:#fff;
+  box-shadow:none;
+}
+.registration-photo-card + .registration-photo-card{
+  border-left:1px solid #e1eaf0;
+}
+.registration-photo-panel-single .registration-photo-card{
+  border-left:0;
+}
+.registration-photo-preview{
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:78px;
+  height:62px;
+  overflow:hidden;
+  border:1px solid #d6e3eb;
+  border-radius:12px;
+  background:#edf3f7;
+  color:#577084;
+}
+.registration-photo-preview-profile{
+  width:64px;
+  height:64px;
+  justify-self:center;
+  border-radius:50%;
+}
+.registration-photo-preview > img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.registration-photo-preview > img[hidden],
+.registration-photo-placeholder[hidden]{
+  display:none !important;
+}
+.registration-photo-placeholder{
+  display:flex;
+  width:100%;
+  height:100%;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:6px;
+  text-align:center;
+}
+.registration-photo-placeholder i{
+  font-size:1.45rem;
+  line-height:1;
+  color:#6e8ea3;
+}
+.registration-photo-placeholder span{
+  max-width:100%;
+  font-size:0.64rem;
+  font-weight:650;
+  line-height:1.25;
+}
+.registration-photo-copy{
+  display:grid;
+  align-content:center;
+  gap:7px;
+  min-width:0;
+}
+.registration-photo-heading{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  color:#183c52;
+  font-size:0.88rem;
+  font-weight:750;
+  line-height:1.3;
+}
+.registration-photo-actions{
+  display:flex;
+  align-items:center;
+  flex-wrap:nowrap;
+  gap:8px;
+}
+.registration-photo-actions .btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:38px;
+  padding:7px 11px;
+  border-radius:10px;
+  font-size:0.8rem;
+  font-weight:650;
+}
+.registration-photo-actions .registration-photo-capture-btn{
+  min-width:0;
+  flex:1 1 auto;
+  cursor:pointer;
+}
+.registration-photo-actions .registration-photo-remove-btn{
+  width:40px;
+  flex:0 0 40px;
+  padding:0;
+}
+.registration-photo-actions .btn[hidden]{
+  display:none !important;
+}
+.registration-photo-input:disabled + .registration-photo-actions .registration-photo-capture-btn{
+  opacity:0.55;
+  pointer-events:none;
+}
+.registration-photo-status{
+  min-height:1em;
+  margin:0;
+  font-size:0.7rem;
+  line-height:1.25;
+}
+.registration-photo-status.is-error{
+  color:#b42318 !important;
+}
+
+body.registration-camera-open{
+  overflow:hidden;
+}
+.registration-camera-overlay{
+  position:fixed;
+  inset:0;
+  z-index:2100;
+  display:grid;
+  place-items:center;
+  padding:14px;
+  background:rgba(3, 12, 20, 0.94);
+  backdrop-filter:blur(8px);
+}
+.registration-camera-overlay[hidden]{
+  display:none !important;
+}
+.registration-camera-dialog{
+  display:grid;
+  grid-template-rows:auto auto auto auto;
+  align-content:start;
+  width:min(640px, calc(100vw - 32px));
+  height:auto;
+  max-height:calc(100vh - 28px);
+  max-height:calc(100dvh - 28px);
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,0.18);
+  border-radius:20px;
+  background:#07131d;
+  color:#fff;
+  box-shadow:0 24px 80px rgba(0,0,0,0.45);
+}
+.registration-camera-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:12px 16px;
+  background:#0b1d2b;
+}
+.registration-camera-heading{
+  display:grid;
+  gap:3px;
+  min-width:0;
+}
+.registration-camera-title-row{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:9px;
+}
+.registration-camera-header strong{
+  font-size:1rem;
+}
+.registration-camera-header small{
+  color:#bed0dc;
+  font-size:0.75rem;
+  line-height:1.35;
+}
+.registration-camera-ready{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 8px;
+  border:1px solid rgba(74,222,128,0.35);
+  border-radius:999px;
+  background:rgba(22,163,74,0.14);
+  color:#bbf7d0;
+  font-size:0.67rem;
+  font-weight:750;
+  line-height:1.2;
+}
+.registration-camera-ready[hidden]{
+  display:none !important;
+}
+.registration-camera-ready-dot{
+  width:7px;
+  height:7px;
+  flex:0 0 7px;
+  border-radius:50%;
+  background:#4ade80;
+  box-shadow:0 0 0 3px rgba(74,222,128,0.13);
+}
+.registration-camera-source{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px;
+  border-top:1px solid rgba(255,255,255,0.08);
+  border-bottom:1px solid rgba(255,255,255,0.12);
+  background:#0b1d2b;
+}
+.registration-camera-source[hidden]{
+  display:none !important;
+}
+.registration-camera-source label{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  margin:0;
+  color:#d7e6ef;
+  font-size:0.78rem;
+  font-weight:700;
+}
+.registration-camera-select{
+  width:min(100%, 320px);
+  min-width:0;
+  min-height:38px;
+  margin-left:auto;
+  padding:6px 34px 6px 10px;
+  border:1px solid #a9bdca;
+  border-radius:9px;
+  background:#fff;
+  color:#183c52;
+  font-size:0.82rem;
+  font-weight:650;
+}
+.registration-camera-select:focus-visible{
+  outline:3px solid rgba(96,165,250,0.75);
+  outline-offset:2px;
+}
+.registration-camera-close{
+  display:grid;
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
+  place-items:center;
+  border:1px solid rgba(255,255,255,0.24);
+  border-radius:50%;
+  background:rgba(255,255,255,0.08);
+  color:#fff;
+  cursor:pointer;
+}
+.registration-camera-close:focus-visible{
+  outline:3px solid rgba(255,255,255,0.9);
+  outline-offset:3px;
+}
+.registration-camera-viewfinder{
+  position:relative;
+  min-height:220px;
+  max-height:calc(100vh - 220px);
+  max-height:calc(100dvh - 220px);
+  aspect-ratio:4 / 3;
+  overflow:hidden;
+  background:#000;
+}
+.registration-camera-viewfinder video{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:#000;
+}
+.registration-camera-overlay.is-desktop-camera .registration-camera-viewfinder video{
+  object-fit:contain;
+}
+.registration-camera-overlay.is-camera-mirrored .registration-camera-viewfinder video{
+  transform:scaleX(-1);
+}
+.registration-camera-overlay.is-desktop-camera .registration-camera-frame-guide{
+  display:block;
+}
+.registration-camera-frame-guide{
+  position:absolute;
+  inset:7%;
+  z-index:1;
+  display:none;
+  border:1px solid rgba(255,255,255,0.3);
+  border-radius:18px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,0.08);
+  pointer-events:none;
+}
+.registration-camera-message{
+  position:absolute;
+  inset:auto 14px 14px;
+  padding:10px 12px;
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:12px;
+  background:rgba(0,0,0,0.72);
+  color:#fff;
+  font-size:0.82rem;
+  text-align:center;
+  z-index:2;
+}
+.registration-camera-message[hidden]{
+  display:none !important;
+}
+.registration-camera-actions{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  padding:12px 16px max(12px, env(safe-area-inset-bottom));
+  background:#0b1d2b;
+}
+.registration-camera-actions .btn{
+  min-height:44px;
+  padding:8px 20px;
+  border-radius:999px;
+  font-weight:750;
+}
+.registration-camera-cancel{
+  min-width:116px;
+}
+.registration-camera-shutter{
+  min-width:172px;
+  border-color:#0d6efd;
+  background:#0d6efd;
+  color:#fff;
+  box-shadow:0 8px 20px rgba(13,110,253,0.3);
+}
+.registration-camera-shutter:hover:not(:disabled),
+.registration-camera-shutter:focus-visible:not(:disabled){
+  border-color:#0b5ed7;
+  background:#0b5ed7;
+  color:#fff;
+}
+
+.registration-camera-overlay.is-mobile-camera{
+  padding:0;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-dialog{
+  width:100%;
+  height:100vh;
+  height:100dvh;
+  max-height:none;
+  border:0;
+  border-radius:0;
+  grid-template-rows:auto auto minmax(0, 1fr) auto;
+  align-content:stretch;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-header{
+  padding-top:max(14px, env(safe-area-inset-top));
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-viewfinder{
+  min-height:0;
+  max-height:none;
+  aspect-ratio:auto;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-actions .btn{
+  min-width:0;
+  min-height:48px;
+  flex:1 1 0;
+}
+
+@media (min-width:576px) and (max-height:680px){
+  .registration-camera-overlay.is-desktop-camera{
+    padding:8px;
+  }
+  .registration-camera-overlay.is-desktop-camera .registration-camera-dialog{
+    width:min(600px, calc(100vw - 16px));
+    height:calc(100vh - 16px);
+    height:calc(100dvh - 16px);
+    max-height:none;
+    grid-template-rows:auto auto minmax(0, 1fr) auto;
+    align-content:stretch;
+  }
+  .registration-camera-overlay.is-desktop-camera .registration-camera-viewfinder{
+    min-height:0;
+    max-height:none;
+    aspect-ratio:auto;
+  }
+}
+
+@media (max-width:575.98px){
+  .registration-camera-overlay{
+    padding:0;
+  }
+  .registration-camera-dialog{
+    width:100%;
+    height:100vh;
+    height:100dvh;
+    max-height:none;
+    border:0;
+    border-radius:0;
+    grid-template-rows:auto auto minmax(0, 1fr) auto;
+    align-content:stretch;
+  }
+  .registration-camera-header{
+    padding-top:max(14px, env(safe-area-inset-top));
+  }
+  .registration-camera-source{
+    padding:8px 12px;
+  }
+  .registration-camera-select{
+    flex:1 1 auto;
+  }
+  .registration-camera-viewfinder video{
+    height:100%;
+  }
+  .registration-camera-viewfinder{
+    min-height:0;
+    max-height:none;
+    aspect-ratio:auto;
+  }
+  .registration-camera-actions .btn{
+    min-width:0;
+    flex:1 1 0;
+  }
+}
+
+/* Native-style camera controls for mobile browsers only. */
+.registration-camera-overlay.is-mobile-camera{
+  display:block;
+  padding:0;
+  background:#000;
+  backdrop-filter:none;
+  overscroll-behavior:contain;
+  touch-action:manipulation;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-dialog{
+  position:relative;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  grid-template-rows:minmax(0, 1fr);
+  width:100vw;
+  height:100vh;
+  height:100dvh;
+  max-width:none;
+  max-height:none;
+  margin:0;
+  overflow:hidden;
+  border:0;
+  border-radius:0;
+  background:#000;
+  box-shadow:none;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-header,
+.registration-camera-overlay.is-mobile-camera .registration-camera-viewfinder,
+.registration-camera-overlay.is-mobile-camera .registration-camera-actions{
+  grid-column:1;
+  grid-row:1;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-source{
+  display:none !important;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-viewfinder{
+  z-index:0;
+  width:100%;
+  height:100%;
+  min-height:0;
+  max-height:none;
+  aspect-ratio:auto;
+  background:#000;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-viewfinder video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-header{
+  position:relative;
+  z-index:3;
+  align-self:start;
+  padding:calc(12px + env(safe-area-inset-top))
+          calc(16px + env(safe-area-inset-right))
+          48px
+          calc(16px + env(safe-area-inset-left));
+  background:linear-gradient(to bottom, rgba(0,0,0,.76) 0%, rgba(0,0,0,.34) 58%, transparent 100%);
+  pointer-events:none;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-heading{
+  gap:0;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-title-row{
+  flex-wrap:nowrap;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-header strong{
+  font-size:1rem;
+  text-shadow:0 1px 8px rgba(0,0,0,.75);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-help,
+.registration-camera-overlay.is-mobile-camera .registration-camera-ready{
+  display:none !important;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-close{
+  width:44px;
+  height:44px;
+  flex-basis:44px;
+  border:0;
+  background:rgba(15,23,42,.52);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  pointer-events:auto;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-frame-guide{
+  display:block;
+  inset:50% auto auto 50%;
+  width:min(68vw, 290px);
+  height:min(84vw, 370px);
+  transform:translate(-50%, -53%);
+  border:1.5px solid rgba(255,255,255,.55);
+  border-radius:48%;
+  box-shadow:0 0 0 999vmax rgba(0,0,0,.08);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-message{
+  inset:auto calc(16px + env(safe-area-inset-right))
+        calc(132px + env(safe-area-inset-bottom))
+        calc(16px + env(safe-area-inset-left));
+  z-index:4;
+  max-width:420px;
+  margin-inline:auto;
+  border-color:rgba(255,255,255,.18);
+  background:rgba(0,0,0,.68);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-actions{
+  position:relative;
+  z-index:3;
+  align-self:end;
+  display:grid;
+  grid-template-columns:minmax(72px,1fr) 84px minmax(72px,1fr);
+  align-items:end;
+  gap:12px;
+  min-height:154px;
+  padding:64px calc(16px + env(safe-area-inset-right))
+          max(18px, calc(12px + env(safe-area-inset-bottom)))
+          calc(16px + env(safe-area-inset-left));
+  background:linear-gradient(to top, rgba(0,0,0,.82) 0%, rgba(0,0,0,.42) 58%, transparent 100%);
+  pointer-events:none;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-actions .btn{
+  flex:none;
+  min-width:0;
+  min-height:44px;
+  pointer-events:auto;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-cancel{
+  grid-column:1;
+  justify-self:start;
+  min-width:44px;
+  padding:8px 4px;
+  border:0;
+  background:transparent;
+  color:#fff;
+  font-size:.9rem;
+  box-shadow:none;
+  text-shadow:0 1px 6px rgba(0,0,0,.8);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-cancel:hover,
+.registration-camera-overlay.is-mobile-camera .registration-camera-cancel:active,
+.registration-camera-overlay.is-mobile-camera .registration-camera-cancel:focus-visible{
+  border:0;
+  background:rgba(255,255,255,.12);
+  color:#fff;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter{
+  grid-column:2;
+  justify-self:center;
+  display:grid;
+  width:78px;
+  height:78px;
+  min-width:78px;
+  min-height:78px;
+  padding:0;
+  place-items:center;
+  border:3px solid rgba(255,255,255,.96);
+  border-radius:50%;
+  background:transparent;
+  color:transparent;
+  font-size:0;
+  box-shadow:0 4px 18px rgba(0,0,0,.36);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter::before{
+  content:"";
+  width:58px;
+  height:58px;
+  border-radius:50%;
+  background:#fff;
+  transition:transform .12s ease, opacity .12s ease;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter i,
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter-label{
+  display:none;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter:hover:not(:disabled),
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter:focus-visible:not(:disabled){
+  border-color:#fff;
+  background:transparent;
+  color:transparent;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter:active:not(:disabled)::before{
+  transform:scale(.9);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter:disabled{
+  opacity:.45;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-switch{
+  grid-column:3;
+  justify-self:end;
+  display:grid;
+  width:48px;
+  height:48px;
+  min-width:48px;
+  min-height:48px;
+  padding:0;
+  place-items:center;
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:50%;
+  background:rgba(15,23,42,.5);
+  color:#fff;
+  font-size:1.3rem;
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-switch[hidden]{
+  display:none !important;
+}
+.registration-camera-overlay.is-mobile-camera .registration-camera-close:focus-visible,
+.registration-camera-overlay.is-mobile-camera .registration-camera-cancel:focus-visible,
+.registration-camera-overlay.is-mobile-camera .registration-camera-shutter:focus-visible,
+.registration-camera-overlay.is-mobile-camera .registration-camera-switch:focus-visible{
+  outline:3px solid #fff;
+  outline-offset:3px;
+}
+
+@media (orientation:landscape) and (max-height:500px){
+  .registration-camera-overlay.is-mobile-camera .registration-camera-actions{
+    grid-template-columns:minmax(64px,1fr) 72px minmax(64px,1fr);
+    min-height:112px;
+    padding-top:36px;
+  }
+  .registration-camera-overlay.is-mobile-camera .registration-camera-shutter{
+    width:66px;
+    height:66px;
+    min-width:66px;
+    min-height:66px;
+  }
+  .registration-camera-overlay.is-mobile-camera .registration-camera-shutter::before{
+    width:48px;
+    height:48px;
+  }
+  .registration-camera-overlay.is-mobile-camera .registration-camera-message{
+    bottom:calc(100px + env(safe-area-inset-bottom));
+  }
+  .registration-camera-overlay.is-mobile-camera .registration-camera-frame-guide{
+    width:min(42vw, 250px);
+    height:min(70vh, 280px);
+  }
+}
+
+.sidebar-member-item{
+  flex-direction:row;
+  align-items:center;
+  gap:10px;
+}
+.sidebar-member-avatar{
+  position:relative;
+  display:grid;
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,0.3);
+  border-radius:50%;
+  background:rgba(255,255,255,0.16);
+  color:#fff;
+}
+.sidebar-member-avatar img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.registration-photo-display-image[hidden],
+.registration-photo-display-placeholder[hidden]{
+  display:none !important;
+}
+.registration-photo-display-placeholder{
+  display:grid;
+  width:100%;
+  height:100%;
+  place-items:center;
+}
+.sidebar-member-avatar i{
+  font-size:1.25rem;
+}
+.sidebar-member-copy{
+  display:flex;
+  min-width:0;
+  flex:1 1 auto;
+  flex-direction:column;
+  gap:2px;
+}
+.sidebar-member-copy .sidebar-member-name,
+.sidebar-member-copy .sidebar-member-meta{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.member-modal-profile{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  margin-bottom:16px;
+  padding:14px;
+  border:1px solid #dbe5ee;
+  border-radius:16px;
+  background:#f7fafc;
+}
+.member-modal-profile-avatar{
+  position:relative;
+  display:grid;
+  width:78px;
+  height:78px;
+  flex:0 0 78px;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid #d3e0e8;
+  border-radius:50%;
+  background:#e8f0f4;
+  color:#5d7b8d;
+}
+.member-modal-profile-avatar img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.member-modal-profile-avatar i{
+  font-size:2rem;
+}
+.member-modal-profile-copy{
+  min-width:0;
+}
+.member-modal-profile-name{
+  overflow-wrap:anywhere;
+  color:#173c52;
+  font-size:1rem;
+  font-weight:750;
+}
+.member-modal-profile-meta{
+  margin-top:3px;
+  color:#64748b;
+  font-size:0.8rem;
+  line-height:1.35;
+}
+
+.registration-preview-photos{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:12px;
+  margin-bottom:16px;
+}
+.registration-preview-photos-single{
+  grid-template-columns:1fr;
+}
+.registration-preview-photo{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+  padding:12px;
+  border:1px solid #dbe5ee;
+  border-radius:14px;
+  background:#f8fafc;
+}
+.registration-preview-photo-frame{
+  position:relative;
+  display:grid;
+  width:78px;
+  height:62px;
+  flex:0 0 78px;
+  place-items:center;
+  overflow:hidden;
+  border-radius:11px;
+  background:#e8f0f4;
+  color:#668296;
+}
+.registration-preview-photo.is-profile .registration-preview-photo-frame,
+.registration-preview-photo-frame.is-profile,
+.registration-preview-photo-frame-profile{
+  width:62px;
+  height:62px;
+  flex-basis:62px;
+  border-radius:50%;
+}
+.registration-preview-photo-frame img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.registration-preview-photo-placeholder{
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+}
+.registration-preview-photo-placeholder i{
+  font-size:1.45rem;
+}
+
+@media (max-width: 900px){
+  .registration-photo-grid{
+    grid-template-columns:1fr;
+  }
+  .registration-photo-card + .registration-photo-card{
+    border-top:1px solid #e1eaf0;
+    border-left:0;
+  }
+}
+
+@media (max-width: 767.98px){
+  .registration-photo-panel{
+    margin-bottom:16px;
+    border-radius:16px;
+  }
+  .registration-photo-panel-header{
+    padding:10px 12px;
+  }
+  .registration-photo-card{
+    grid-template-columns:72px minmax(0, 1fr);
+    gap:11px;
+    padding:12px;
+  }
+  .registration-photo-preview{
+    width:72px;
+    height:58px;
+    border-radius:11px;
+  }
+  .registration-photo-preview-profile{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+  }
+  .registration-photo-actions .btn{
+    min-height:40px;
+  }
+  .registration-photo-status{
+    font-size:0.7rem;
+  }
+}
+
+@media (max-width: 420px){
+  .registration-photo-card{
+    grid-template-columns:64px minmax(0, 1fr);
+    gap:10px;
+    padding:11px;
+  }
+  .registration-photo-preview{
+    width:64px;
+    height:52px;
+  }
+  .registration-photo-preview-profile{
+    width:56px;
+    height:56px;
+  }
+  .registration-photo-heading{
+    font-size:0.84rem;
+  }
+  .registration-photo-actions{
+    width:100%;
+  }
+  .registration-photo-actions .registration-photo-capture-btn{
+    flex:1 1 auto;
+    padding-inline:8px;
+    font-size:0.8rem;
+  }
+  .registration-photo-actions .registration-photo-remove-btn{
+    width:40px;
+    flex:0 0 40px;
+  }
+  .registration-preview-photos{
+    grid-template-columns:1fr;
+  }
+  .member-modal-profile{
+    align-items:flex-start;
   }
 }

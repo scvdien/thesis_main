@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+// Keep PHP and MySQL timestamps consistent across localhost and live hosting.
+date_default_timezone_set('Asia/Manila');
+
 /**
  * @return array<string, string>
  */
@@ -121,6 +124,7 @@ function db_connection(?callable $envReader = null): PDO
 
     try {
         $pdo = new PDO("mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4", $username, $password, $options);
+        $pdo->exec("SET SESSION time_zone = '+08:00'");
         return $pdo;
     } catch (Throwable $exception) {
         throw new RuntimeException(

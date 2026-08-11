@@ -2128,6 +2128,63 @@ function users_api_backup_payload_years(array $tablePayload): array
     return $years;
 }
 
+function users_api_backup_has_attached_registration_photos(PDO $pdo): bool
+{
+    $photoTable = '';
+    foreach (users_api_backup_table_names($pdo) as $tableName) {
+        if (strcasecmp($tableName, 'registration_photos') === 0) {
+            $photoTable = $tableName;
+            break;
+        }
+    }
+    if ($photoTable === '') {
+        return false;
+    }
+
+    $stmt = $pdo->query(
+        'SELECT 1 FROM ' . users_api_quote_identifier($photoTable)
+        . " WHERE `state` = 'attached' AND `deleted_at` IS NULL LIMIT 1"
+    );
+    return $stmt instanceof PDOStatement && $stmt->fetchColumn() !== false;
+}
+
+function users_api_backup_payload_contains_photo_references(mixed $value, string $parentKey = ''): bool
+{
+    $photoReferenceKeys = [
+        'household_photo_id' => true,
+        'head_photo_id' => true,
+        'profile_photo_id' => true,
+    ];
+    $uuidPattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
+
+    if (is_array($value)) {
+        foreach ($value as $key => $childValue) {
+            $normalizedKey = strtolower(trim((string) $key));
+            if (isset($photoReferenceKeys[$normalizedKey])
+                && preg_match($uuidPattern, trim((string) $childValue)) === 1) {
+                return true;
+            }
+            if (users_api_backup_payload_contains_photo_references($childValue, $normalizedKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (!is_string($value) || $value === '') {
+        return false;
+    }
+    if (isset($photoReferenceKeys[strtolower($parentKey)])
+        && preg_match($uuidPattern, trim($value)) === 1) {
+        return true;
+    }
+
+    return preg_match(
+        '/"(?:household_photo_id|head_photo_id|profile_photo_id)"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/i',
+        $value
+    ) === 1;
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -2167,8 +2224,20 @@ function users_api_backup_export_payload(PDO $pdo, ?int $scopeYear = null): arra
  */
 function users_api_backup_create(PDO $pdo, ?int $scopeYear = null): array
 {
+    if (users_api_backup_has_attached_registration_photos($pdo)) {
+        users_api_error(
+            422,
+            'Backup is blocked because household photos exist and this JSON backup version cannot include private image files yet.'
+        );
+    }
     $directory = users_api_backup_ensure_directory();
     $backupPayload = users_api_backup_export_payload($pdo, $scopeYear);
+    if (users_api_backup_payload_contains_photo_references($backupPayload)) {
+        users_api_error(
+            422,
+            'Backup is blocked because household records contain photo references that this JSON backup version cannot preserve.'
+        );
+    }
     $encoded = json_encode(
         $backupPayload,
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
@@ -2314,6 +2383,18 @@ function users_api_backup_normalize_columns(array $columns): array
  */
 function users_api_backup_restore(PDO $pdo, array $backupPayload): array
 {
+    if (users_api_backup_has_attached_registration_photos($pdo)) {
+        users_api_error(
+            422,
+            'Restore is blocked because current household photos would be orphaned by this JSON-only backup format.'
+        );
+    }
+    if (users_api_backup_payload_contains_photo_references($backupPayload)) {
+        users_api_error(
+            422,
+            'Restore is blocked because the backup contains photo references but no supported private photo bundle.'
+        );
+    }
     $tablesNode = $backupPayload['tables'] ?? null;
     if (!is_array($tablesNode) || $tablesNode === []) {
         users_api_error(422, 'Backup file does not contain restorable table data.');

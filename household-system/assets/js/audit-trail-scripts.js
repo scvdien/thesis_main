@@ -97,6 +97,21 @@ const escapeHtml = (value) => {
 };
 
 const normalizeText = (value) => String(value ?? '').trim();
+const AUDIT_TIME_ZONE = 'Asia/Manila';
+const AUDIT_TIME_ZONE_OFFSET = '+08:00';
+
+const parseAuditDateTime = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+
+  const isDatabaseDateTime = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(normalized);
+  const isoCompatible = normalized.replace(' ', 'T');
+  const timestamp = isDatabaseDateTime
+    ? `${isoCompatible}${AUDIT_TIME_ZONE_OFFSET}`
+    : isoCompatible;
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 const roleLabelMap = {
   captain: 'Barangay Captain',
@@ -115,14 +130,15 @@ const actionBadgeMap = {
 const formatDateTime = (value) => {
   const normalized = normalizeText(value);
   if (!normalized) return '-';
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return normalized;
+  const parsed = parseAuditDateTime(normalized);
+  if (!parsed) return normalized;
   return parsed.toLocaleString('en-US', {
     month: 'short',
     day: '2-digit',
     year: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZone: AUDIT_TIME_ZONE
   });
 };
 
@@ -203,10 +219,8 @@ const getActivePillValue = (buttons, attributeName, fallback = 'all') => {
 };
 
 const getTimestampValue = (value) => {
-  const normalized = normalizeText(value);
-  if (!normalized) return 0;
-  const parsed = Date.parse(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  const parsed = parseAuditDateTime(value);
+  return parsed ? parsed.getTime() : 0;
 };
 
 const getSortedAuditItems = (items) => {

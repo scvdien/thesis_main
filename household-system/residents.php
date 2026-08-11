@@ -230,11 +230,17 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
   <!-- RESIDENT DETAILS MODAL -->
   <div class="modal fade" id="residentDetailsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered">
-      <div class="modal-content modern-modal">
-        <div class="modal-header border-0 pb-0">
-          <div>
-            <h5 class="modal-title mb-1">Resident Details</h5>
-            <p class="text-muted small mb-0" id="rdRelation">-</p>
+        <div class="modal-content modern-modal">
+          <div class="modal-header border-0 pb-0">
+          <div class="resident-modal-heading">
+            <span class="resident-modal-avatar" id="rdAvatar" role="img" aria-label="Default resident profile">
+              <img id="rdAvatarImage" alt="" hidden>
+              <i class="bi bi-person-fill" id="rdAvatarFallback" aria-hidden="true"></i>
+            </span>
+            <div>
+              <h5 class="modal-title mb-1">Resident Details</h5>
+              <p class="text-muted small mb-0" id="rdRelation">-</p>
+            </div>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
