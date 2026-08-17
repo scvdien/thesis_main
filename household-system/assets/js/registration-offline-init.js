@@ -8,6 +8,8 @@
     : `${SERVICE_WORKER_SCOPE_URL.pathname}/`;
   const REGISTRATION_URL = new URL("registration.php", APP_BASE_URL).toString();
   const MEMBER_URL = new URL("member.php", APP_BASE_URL).toString();
+  const HOUSEHOLDS_URL = new URL("households.php", APP_BASE_URL).toString();
+  const HOUSEHOLD_VIEW_URL = new URL("household-view.php", APP_BASE_URL).toString();
   const OFFLINE_NOTICE_ID = "registrationOfflineSetupNotice";
   const OFFLINE_STATUS_EVENT = "registration-offline-status";
   const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -164,6 +166,14 @@
     postToWorker({
       type: "CACHE_CURRENT_ROUTE",
       url: MEMBER_URL
+    }),
+    postToWorker({
+      type: "CACHE_CURRENT_ROUTE",
+      url: HOUSEHOLDS_URL
+    }),
+    postToWorker({
+      type: "CACHE_CURRENT_ROUTE",
+      url: HOUSEHOLD_VIEW_URL
     })
   ]);
 

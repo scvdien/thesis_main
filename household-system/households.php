@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 $authUser = auth_require_page(['captain', 'admin', 'secretary']);
 $authRole = auth_user_role($authUser);
+$householdsCurrentUserId = (int) ($authUser['id'] ?? 0);
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -42,6 +43,8 @@ if ($brandSidebarLabel === '') {
 }
 $systemLabel = trim($brandFooterLabel . ' Online Household Information Management System');
 $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
+$indexedDbStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/indexeddb-storage-scripts.js') ?: time());
+$registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households-scripts.js') ?: time());
 ?>
 <!doctype html>
@@ -51,6 +54,8 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 <title>Households | Barangay Captain Dashboard</title>
 <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d6efd">
+<link rel="manifest" href="manifest.webmanifest">
 
 <!-- Bootstrap CSS -->
 <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
@@ -58,7 +63,10 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
 
 </head>
-<body data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>">
+<body
+  data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-user-id="<?= $householdsCurrentUserId ?>"
+>
 <?php echo auth_client_role_script($authRole); ?>
 
 <div id="wrapper">
@@ -98,6 +106,8 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
           </button>
         </div>
       </div>
+
+      <div class="alert alert-warning d-none" id="householdsOfflineNotice" role="status" aria-live="polite"></div>
 
       <section class="module households-module">
         <div class="module-header">
@@ -406,6 +416,8 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 
   <!-- Bootstrap JS bundle -->
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/js/indexeddb-storage-scripts.js?v=<?= htmlspecialchars($indexedDbStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+  <script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($registrationOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/responsive-table-scripts.js"></script>
   <script src="assets/js/households-scripts.js?v=<?= htmlspecialchars($householdsScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 

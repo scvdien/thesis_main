@@ -89,6 +89,14 @@ const storage = window.createIndexedStorageProxy
 
 const memberDetailsModalEl = document.getElementById('memberDetailsModal');
 const memberDetailsModal = memberDetailsModalEl ? new bootstrap.Modal(memberDetailsModalEl) : null;
+const profilePhotoModalEl = document.getElementById('profilePhotoModal');
+const profilePhotoModal = profilePhotoModalEl ? new bootstrap.Modal(profilePhotoModalEl) : null;
+const profilePhotoPreview = document.getElementById('profilePhotoPreview');
+const profilePhotoModalLabel = document.getElementById('profilePhotoModalLabel');
+let photoPreviewSourceModal = null;
+let photoPreviewSourceModalEl = null;
+let photoPreviewTrigger = null;
+let photoPreviewTransitioning = false;
 const logoutBtn = document.getElementById('logoutBtn');
 const logoutModalEl = document.getElementById('logoutModal');
 const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
@@ -350,7 +358,7 @@ const memberProfilePhotoId = (member = {}) => firstValidRegistrationPhotoId(
   member.formData?.profile_photo_id
 );
 
-const setRegistrationPhotoFrame = (image, fallback, photoId, altText) => {
+const setRegistrationPhotoFrame = (image, fallback, photoId, altText, previewable = false) => {
   if (!(image instanceof HTMLImageElement) || !(fallback instanceof HTMLElement)) return;
 
   const normalized = normalizeRegistrationPhotoId(photoId);
@@ -361,6 +369,12 @@ const setRegistrationPhotoFrame = (image, fallback, photoId, altText) => {
   fallback.hidden = false;
   delete image.dataset.photoId;
   image.alt = toTextOrEmpty(altText) || 'Profile photo';
+  image.classList.remove('is-previewable');
+  image.removeAttribute('role');
+  image.removeAttribute('tabindex');
+  image.removeAttribute('title');
+  image.removeAttribute('aria-label');
+  image.removeAttribute('aria-haspopup');
 
   if (!normalized) return;
 
@@ -369,6 +383,14 @@ const setRegistrationPhotoFrame = (image, fallback, photoId, altText) => {
     if (image.dataset.photoId !== normalized) return;
     image.hidden = false;
     fallback.hidden = true;
+    if (previewable) {
+      image.classList.add('is-previewable');
+      image.setAttribute('role', 'button');
+      image.tabIndex = 0;
+      image.title = 'View full-size photo';
+      image.setAttribute('aria-label', `View ${image.alt}`);
+      image.setAttribute('aria-haspopup', 'dialog');
+    }
   };
   image.onerror = () => {
     if (image.dataset.photoId !== normalized) return;
@@ -378,6 +400,93 @@ const setRegistrationPhotoFrame = (image, fallback, photoId, altText) => {
   };
   image.src = registrationPhotoUrl(normalized);
 };
+
+const openProfilePhotoPreview = (image) => {
+  if (
+    !(image instanceof HTMLImageElement)
+    || image.hidden
+    || !image.classList.contains('is-previewable')
+    || !profilePhotoModal
+    || !(profilePhotoPreview instanceof HTMLImageElement)
+    || photoPreviewTransitioning
+    || profilePhotoModalEl?.classList.contains('show')
+  ) return;
+
+  const photoSource = image.currentSrc || image.src;
+  if (!photoSource) return;
+
+  photoPreviewTransitioning = true;
+  photoPreviewTrigger = image;
+  profilePhotoPreview.src = photoSource;
+  profilePhotoPreview.alt = image.alt || 'Profile photo';
+  if (profilePhotoModalLabel) {
+    profilePhotoModalLabel.textContent = image.alt || 'Profile Photo';
+  }
+
+  const sourceModalEl = image.closest('.modal.show');
+  if (sourceModalEl instanceof HTMLElement && sourceModalEl !== profilePhotoModalEl) {
+    const sourceModal = bootstrap.Modal.getOrCreateInstance(sourceModalEl);
+    photoPreviewSourceModal = sourceModal;
+    photoPreviewSourceModalEl = sourceModalEl;
+    sourceModalEl.addEventListener('hidden.bs.modal', () => profilePhotoModal.show(), { once: true });
+    sourceModal.hide();
+    return;
+  }
+
+  photoPreviewSourceModal = null;
+  photoPreviewSourceModalEl = null;
+  profilePhotoModal.show();
+};
+
+document.addEventListener('click', (event) => {
+  const image = event.target instanceof Element
+    ? event.target.closest('#mdProfilePhoto.is-previewable')
+    : null;
+  if (image instanceof HTMLImageElement) {
+    openProfilePhotoPreview(image);
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const image = event.target instanceof Element
+    ? event.target.closest('#mdProfilePhoto.is-previewable')
+    : null;
+  if (!(image instanceof HTMLImageElement)) return;
+  event.preventDefault();
+  openProfilePhotoPreview(image);
+});
+
+profilePhotoModalEl?.addEventListener('shown.bs.modal', () => {
+  photoPreviewTransitioning = false;
+});
+
+profilePhotoModalEl?.addEventListener('hidden.bs.modal', () => {
+  if (profilePhotoPreview instanceof HTMLImageElement) {
+    profilePhotoPreview.removeAttribute('src');
+    profilePhotoPreview.alt = '';
+  }
+
+  const sourceModal = photoPreviewSourceModal;
+  const sourceModalEl = photoPreviewSourceModalEl;
+  const trigger = photoPreviewTrigger;
+  photoPreviewSourceModal = null;
+  photoPreviewSourceModalEl = null;
+  photoPreviewTrigger = null;
+
+  if (sourceModal && sourceModalEl) {
+    photoPreviewTransitioning = true;
+    sourceModalEl.addEventListener('shown.bs.modal', () => {
+      photoPreviewTransitioning = false;
+      if (trigger?.isConnected) trigger.focus();
+    }, { once: true });
+    sourceModal.show();
+    return;
+  }
+
+  photoPreviewTransitioning = false;
+  if (trigger?.isConnected) trigger.focus();
+});
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -468,7 +577,7 @@ const mapApiHouseholdToViewRecord = (payload) => {
   return {
     id: householdId,
     householdPhotoId: normalizeRegistrationPhotoId(record.household_photo_id),
-    status: 'Synced',
+    status: toTextOrEmpty(payload?._offlineStatus) || 'Synced',
     updated: formatServerDate(apiData.updated_at || record.updated_at || apiData.created_at),
     head: {
       name: headName,
@@ -543,6 +652,91 @@ const mapApiHouseholdToViewRecord = (payload) => {
   };
 };
 
+const readOfflineArray = (key) => {
+  try {
+    const parsed = JSON.parse(storage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+const isCurrentUserOfflineRecord = (record) => (
+  Boolean(currentUserId)
+  && String(record?.[LOCAL_OWNER_FIELD] || '').trim() === currentUserId
+);
+
+const cacheHouseholdPayload = async (payload) => {
+  const apiData = payload?.data;
+  const record = apiData?.record;
+  const householdId = toTextOrEmpty(apiData?.household_id || record?.household_id);
+  if (!currentUserId || !householdId || !record || typeof record !== 'object') return;
+
+  const hasPendingVersion = readOfflineArray(REGISTRATION_SYNC_QUEUE_KEY).some((item) => (
+    isCurrentUserOfflineRecord(item)
+    && toTextOrEmpty(item?.household_id) === householdId
+  ));
+  if (hasPendingVersion) return;
+
+  const records = readOfflineArray(REGISTRATION_RECORDS_KEY);
+  const nextRecord = {
+    ...record,
+    household_id: householdId,
+    record_year: Number(apiData?.record_year || record.record_year || 0),
+    head_name: toTextOrEmpty(apiData?.head_name || record.head_name),
+    zone: toTextOrEmpty(apiData?.zone || record.zone || record?.head?.zone),
+    member_count: Number(apiData?.member_count || record.member_count || 0),
+    source: toTextOrEmpty(apiData?.source || record.source || 'registration-module'),
+    row_version: Number(apiData?.row_version || record.row_version || 0),
+    base_version: Number(apiData?.row_version || record.base_version || record.row_version || 0),
+    created_at: toTextOrEmpty(apiData?.created_at || record.created_at),
+    updated_at: toTextOrEmpty(apiData?.updated_at || record.updated_at),
+    base_updated_at: toTextOrEmpty(apiData?.updated_at),
+    [LOCAL_OWNER_FIELD]: currentUserId
+  };
+  const filtered = records.filter((item) => !(
+    isCurrentUserOfflineRecord(item)
+    && toTextOrEmpty(item?.household_id) === householdId
+  ));
+  await storage.setItem(REGISTRATION_RECORDS_KEY, JSON.stringify([nextRecord, ...filtered]));
+};
+
+const getCachedHouseholdPayload = (householdIds, { pendingOnly = false } = {}) => {
+  const ids = new Set((Array.isArray(householdIds) ? householdIds : [householdIds])
+    .map((value) => toTextOrEmpty(value))
+    .filter(Boolean));
+  if (!ids.size) return null;
+
+  const sources = [
+    { records: readOfflineArray(REGISTRATION_SYNC_QUEUE_KEY), status: 'Pending Sync' },
+    ...(!pendingOnly
+      ? [{ records: readOfflineArray(REGISTRATION_RECORDS_KEY), status: 'Offline Cached' }]
+      : [])
+  ];
+  for (const source of sources) {
+    const record = source.records.find((item) => (
+      isCurrentUserOfflineRecord(item)
+      && ids.has(toTextOrEmpty(item?.household_id))
+    ));
+    if (!record) continue;
+    return {
+      _offlineStatus: source.status,
+      data: {
+        household_id: toTextOrEmpty(record.household_id),
+        record_year: Number(record.record_year || 0),
+        head_name: toTextOrEmpty(record.head_name),
+        zone: toTextOrEmpty(record.zone || record?.head?.zone),
+        member_count: Number(record.member_count || (Array.isArray(record.members) ? record.members.length + 1 : 0)),
+        source: toTextOrEmpty(record.source || 'registration-module'),
+        created_at: toTextOrEmpty(record.created_at),
+        updated_at: toTextOrEmpty(record.updated_at || record.created_at),
+        record
+      }
+    };
+  }
+  return null;
+};
+
 const fetchHouseholdFromServer = async (householdId) => {
   const candidate = toTextOrEmpty(householdId);
   if (!candidate) return null;
@@ -568,9 +762,12 @@ const fetchHouseholdFromServer = async (householdId) => {
     const message = payload && payload.error
       ? String(payload.error)
       : `Failed to load household (${response.status}).`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = Number(response.status || 0);
+    throw error;
   }
 
+  await cacheHouseholdPayload(payload);
   return mapApiHouseholdToViewRecord(payload);
 };
 
@@ -649,6 +846,13 @@ const loadHouseholdRecordFromApi = async (requestedId) => {
     ? [primaryId, normalizedId]
     : [primaryId];
 
+  const pendingPayload = getCachedHouseholdPayload(idsToTry, { pendingOnly: true });
+  if (pendingPayload) {
+    return mapApiHouseholdToViewRecord(pendingPayload);
+  }
+
+  let authoritativeFailure = false;
+  let transientFailure = false;
   for (const householdId of idsToTry) {
     try {
       const mapped = await fetchHouseholdFromServer(householdId);
@@ -656,11 +860,21 @@ const loadHouseholdRecordFromApi = async (requestedId) => {
         return mapped;
       }
     } catch (error) {
-      // Try next fallback id.
+      const status = Number(error?.status || 0);
+      if ([401, 403, 404].includes(status)) {
+        authoritativeFailure = true;
+      } else {
+        transientFailure = true;
+      }
     }
   }
 
-  return null;
+  if (authoritativeFailure && !transientFailure) {
+    return null;
+  }
+
+  const cachedPayload = getCachedHouseholdPayload(idsToTry);
+  return cachedPayload ? mapApiHouseholdToViewRecord(cachedPayload) : null;
 };
 
 const isHeadMemberRow = (member, headName = '') => {
@@ -977,7 +1191,8 @@ const openMemberDetails = (memberIndex) => {
     document.getElementById('mdProfilePhoto'),
     document.getElementById('mdProfilePhotoFallback'),
     firstValidRegistrationPhotoId(memberData.profile_photo_id, memberProfilePhotoId(member)),
-    `${fullName === '-' ? 'Household member' : fullName} profile photo`
+    `${fullName === '-' ? 'Household member' : fullName} profile photo`,
+    true
   );
 
   setText('mdName', fullName);
@@ -1121,6 +1336,11 @@ const main = async () => {
     setText('hvId', applyHouseholdYear(requestedId, selectedYear) || requestedId);
     setText('hvUpdated', '-');
     renderMembersTable([]);
+    const statusEl = document.getElementById('hvStatus');
+    if (statusEl) {
+      statusEl.textContent = navigator.onLine === false ? 'Not Cached' : 'Unavailable';
+      statusEl.className = 'badge status pending';
+    }
     return;
   }
 

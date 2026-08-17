@@ -317,6 +317,20 @@ html{
   object-fit:cover;
 }
 
+.hv-photo-image.is-previewable{
+  cursor:zoom-in;
+  transition:filter .18s ease;
+}
+
+.hv-photo-image.is-previewable:hover{
+  filter:brightness(.92);
+}
+
+.hv-photo-image.is-previewable:focus-visible{
+  outline:3px solid rgba(13,110,253,.55);
+  outline-offset:-3px;
+}
+
 .hv-photo-image[hidden],
 .hv-photo-fallback[hidden]{
   display:none !important;
@@ -717,13 +731,13 @@ html{
 }
 
 .hv-member-modal-avatar{
-  width:72px;
-  height:72px;
+  width:54px;
+  height:54px;
   border-radius:50%;
 }
 
 .hv-member-modal-avatar .hv-photo-fallback i{
-  font-size:2.2rem;
+  font-size:1.7rem;
 }
 
 .hv-member-modal-copy{
@@ -776,6 +790,30 @@ html{
 
 #memberDetailsModal .member-modal-footer .btn i{
   margin-right:.35rem;
+}
+
+.hv-photo-preview-content{
+  overflow:hidden;
+}
+
+.hv-photo-preview-body{
+  min-height:280px;
+  padding:16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#f3f7fb;
+}
+
+.hv-photo-preview-image{
+  display:block;
+  width:auto;
+  height:auto;
+  max-width:100%;
+  max-height:72vh;
+  object-fit:contain;
+  border-radius:12px;
+  box-shadow:0 12px 30px rgba(15,23,42,.18);
 }
 
 @keyframes cardIn{
@@ -926,8 +964,13 @@ html{
   }
 
   .hv-member-modal-avatar{
-    width:58px;
-    height:58px;
+    width:48px;
+    height:48px;
+  }
+
+  .hv-photo-preview-body{
+    min-height:200px;
+    padding:10px;
   }
 
   .hv-page-copy{

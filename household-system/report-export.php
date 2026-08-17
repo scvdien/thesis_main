@@ -24,7 +24,7 @@ function clearOutputBuffers(): void
     }
 }
 
-function text($value, int $max = 2000): string
+function text(mixed $value, int $max = 2000): string
 {
     $v = trim((string) $value);
     $v = preg_replace('/[\x00-\x1F\x7F]/', '', $v);
@@ -37,7 +37,7 @@ function text($value, int $max = 2000): string
     return $v;
 }
 
-function signatoryText($value, int $max = 160): string
+function signatoryText(mixed $value, int $max = 160): string
 {
     $textValue = text($value, $max);
     if ($textValue === '') {
@@ -51,7 +51,7 @@ function signatoryText($value, int $max = 160): string
     return text(strtoupper($textValue), $max);
 }
 
-function esc($value): string
+function esc(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
@@ -213,7 +213,7 @@ function normalizeAssocArray($value): array
     return is_array($value) ? $value : [];
 }
 
-function toPdfText($value): string
+function toPdfText(mixed $value): string
 {
     $txt = (string) $value;
     if (function_exists('iconv')) {
@@ -225,7 +225,7 @@ function toPdfText($value): string
     return $txt;
 }
 
-function parseSelectedYear($value): int
+function parseSelectedYear(mixed $value): int
 {
     $current = (int) date('Y');
     if (is_numeric($value)) {
@@ -493,7 +493,7 @@ function dbConnection(): ?PDO
     }
 }
 
-function nfmt($value, int $decimals = 0): string
+function nfmt(mixed $value, int $decimals = 0): string
 {
     return number_format((float) $value, $decimals);
 }
@@ -802,7 +802,7 @@ function prepareFpdfWatermarkImage(string $absoluteSealPath): array
     $sourceWidth = imagesx($source);
     $sourceHeight = imagesy($source);
     if ($sourceWidth <= 0 || $sourceHeight <= 0) {
-        imagedestroy($source);
+        unset($source);
         return $fallback;
     }
 
@@ -813,7 +813,7 @@ function prepareFpdfWatermarkImage(string $absoluteSealPath): array
 
     $canvas = imagecreatetruecolor($targetWidth, $targetHeight);
     if (!is_resource($canvas) && !($canvas instanceof GdImage)) {
-        imagedestroy($source);
+        unset($source);
         return $fallback;
     }
 
@@ -836,8 +836,7 @@ function prepareFpdfWatermarkImage(string $absoluteSealPath): array
     try {
         $tempBase = reportCreateTempFile('hims_pdf_wm_');
     } catch (Throwable $exception) {
-        imagedestroy($canvas);
-        imagedestroy($source);
+        unset($canvas, $source);
         return $fallback;
     }
     if (is_file($tempBase)) {
@@ -846,8 +845,7 @@ function prepareFpdfWatermarkImage(string $absoluteSealPath): array
     $tempPath = $tempBase . '.png';
 
     $saved = @imagepng($canvas, $tempPath, 8);
-    imagedestroy($canvas);
-    imagedestroy($source);
+    unset($canvas, $source);
 
     if ($saved !== true || !is_file($tempPath)) {
         @unlink($tempPath);
@@ -1024,7 +1022,7 @@ function reportFileName(array $profile, int $year, string $format): string
     return $slug . '_Annual_Report_' . $year . '.' . $extension;
 }
 
-function toInt($value, int $default = 0): int
+function toInt(mixed $value, int $default = 0): int
 {
     if (is_numeric($value)) {
         $num = (int) round((float) $value);
@@ -1042,7 +1040,7 @@ function toInt($value, int $default = 0): int
     return $num >= 0 ? $num : 0;
 }
 
-function toFloat($value, float $default = 0.0): float
+function toFloat(mixed $value, float $default = 0.0): float
 {
     if (is_numeric($value)) {
         $num = (float) $value;
@@ -2448,7 +2446,13 @@ function sheetColumnLetter(int $columnIndex): string
  *     rows:list<list<string>>
  * } $table
  */
-function renderSheetTable($sheet, int &$row, array $table, string $alignmentClass, string $borderClass): void
+function renderSheetTable(
+    \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+    int &$row,
+    array $table,
+    string $alignmentClass,
+    string $borderClass
+): void
 {
     $table = normalizeReportTable($table);
     $columns = $table['columns'];
@@ -2556,7 +2560,7 @@ function outputRbiFormCSpreadsheet(
 
     $tableStart = $row;
     foreach (['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'] as $index => $header) {
-        $sheet->setCellValueByColumnAndRow($index + 1, $row, $header);
+        $sheet->setCellValue([$index + 1, $row], $header);
     }
     $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
     $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
@@ -2567,7 +2571,7 @@ function outputRbiFormCSpreadsheet(
     $row++;
     foreach ((array) ($report['age_rows'] ?? []) as $cells) {
         foreach (array_values((array) $cells) as $index => $value) {
-            $sheet->setCellValueByColumnAndRow($index + 1, $row, $value);
+            $sheet->setCellValue([$index + 1, $row], $value);
         }
         $row++;
     }
@@ -2578,7 +2582,7 @@ function outputRbiFormCSpreadsheet(
     $sectorRows = array_values((array) ($report['sector_rows'] ?? []));
     foreach ($sectorRows as $index => $cells) {
         foreach (array_values((array) $cells) as $cellIndex => $value) {
-            $sheet->setCellValueByColumnAndRow($cellIndex + 1, $row, $value);
+            $sheet->setCellValue([$cellIndex + 1, $row], $value);
         }
         $row++;
         if ($index === 2) {

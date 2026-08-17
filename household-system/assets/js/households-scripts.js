@@ -27,12 +27,25 @@ window.addEventListener('resize', () => {
 
 const API_ENDPOINT = 'registration-sync.php';
 const HOUSEHOLD_FETCH_LIMIT = 500;
+const OFFLINE_INDEX_KEY = 'household_offline_index';
+const REGISTRATION_RECORDS_KEY = 'household_registration_records';
+const REGISTRATION_SYNC_QUEUE_KEY = 'household_registration_sync_queue';
+const LOCAL_OWNER_FIELD = 'local_owner_user_id';
+const currentUserId = String(document.body?.dataset.currentUserId || '').trim();
+const offlineStorage = window.createIndexedStorageProxy
+  ? window.createIndexedStorageProxy([
+      OFFLINE_INDEX_KEY,
+      REGISTRATION_RECORDS_KEY,
+      REGISTRATION_SYNC_QUEUE_KEY
+    ])
+  : window.localStorage;
 
 const state = {
   rows: [],
   years: [],
   loading: false,
-  error: ''
+  error: '',
+  offline: false
 };
 
 const escapeHtml = (value) => {
@@ -42,6 +55,113 @@ const escapeHtml = (value) => {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+};
+
+const readStoredArray = (key) => {
+  try {
+    const parsed = JSON.parse(offlineStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+const isOwnedOfflineRecord = (record) => (
+  Boolean(currentUserId)
+  && String(record?.[LOCAL_OWNER_FIELD] || '').trim() === currentUserId
+);
+
+const readOwnedOfflineArray = (key) => readStoredArray(key).filter(isOwnedOfflineRecord);
+
+const householdIdYear = (householdId) => {
+  const match = String(householdId || '').match(/^HH-(\d{4})-/i);
+  return match ? Number.parseInt(match[1], 10) : 0;
+};
+
+const recordHeadName = (record = {}) => {
+  const direct = String(record?.head_name || '').trim();
+  if (direct) return direct;
+  const head = record?.head && typeof record.head === 'object' ? record.head : {};
+  return [head.first_name, head.middle_name, head.last_name, head.extension_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || 'Unnamed household head';
+};
+
+const toOfflineSummary = (record = {}, options = {}) => {
+  const householdId = String(record?.household_id || '').trim();
+  if (!householdId) return null;
+  const members = Array.isArray(record?.members) ? record.members : [];
+  return {
+    household_id: householdId,
+    record_year: Number(record?.record_year || householdIdYear(householdId) || 0),
+    head_name: recordHeadName(record),
+    zone: normalizeZoneLabel(record?.zone || record?.head?.zone),
+    member_count: Number(record?.member_count || members.length + 1 || 0),
+    updated_at: String(record?.updated_at || record?.created_at || ''),
+    source: String(record?.source || 'offline-cache'),
+    offline_available: Boolean(options.offlineAvailable),
+    pending_sync: Boolean(options.pendingSync)
+  };
+};
+
+const getOfflineHouseholdRows = () => {
+  const rowsById = new Map();
+  readOwnedOfflineArray(OFFLINE_INDEX_KEY).forEach((row) => {
+    const summary = toOfflineSummary(row, { offlineAvailable: false });
+    if (summary) rowsById.set(summary.household_id, summary);
+  });
+  readOwnedOfflineArray(REGISTRATION_RECORDS_KEY).forEach((record) => {
+    const summary = toOfflineSummary(record, { offlineAvailable: true });
+    if (summary) rowsById.set(summary.household_id, summary);
+  });
+  readOwnedOfflineArray(REGISTRATION_SYNC_QUEUE_KEY).forEach((record) => {
+    const summary = toOfflineSummary(record, { offlineAvailable: true, pendingSync: true });
+    if (summary) rowsById.set(summary.household_id, summary);
+  });
+  return Array.from(rowsById.values());
+};
+
+const cacheHouseholdIndex = async (rows, selectedYear = '') => {
+  if (!currentUserId) return;
+  const allStored = readStoredArray(OFFLINE_INDEX_KEY);
+  const preserved = allStored.filter((row) => !isOwnedOfflineRecord(row));
+  const safeYear = Number.parseInt(String(selectedYear || ''), 10);
+  const retainedOwned = Number.isInteger(safeYear) && safeYear > 0
+    ? allStored.filter((row) => (
+        isOwnedOfflineRecord(row)
+        && Number(row?.record_year || householdIdYear(row?.household_id)) !== safeYear
+      ))
+    : [];
+  const owned = (Array.isArray(rows) ? rows : []).map((row) => ({
+    ...row,
+    [LOCAL_OWNER_FIELD]: currentUserId
+  }));
+  await offlineStorage.setItem(OFFLINE_INDEX_KEY, JSON.stringify([...preserved, ...retainedOwned, ...owned]));
+};
+
+const mergePendingRows = (serverRows) => {
+  const rowsById = new Map((Array.isArray(serverRows) ? serverRows : []).map((row) => [row.household_id, row]));
+  const fullCachedIds = new Set(
+    readOwnedOfflineArray(REGISTRATION_RECORDS_KEY).map((record) => String(record?.household_id || '').trim())
+  );
+  rowsById.forEach((row, householdId) => {
+    rowsById.set(householdId, { ...row, offline_available: fullCachedIds.has(householdId) });
+  });
+  readOwnedOfflineArray(REGISTRATION_SYNC_QUEUE_KEY).forEach((record) => {
+    const summary = toOfflineSummary(record, { offlineAvailable: true, pendingSync: true });
+    if (summary) rowsById.set(summary.household_id, summary);
+  });
+  return Array.from(rowsById.values());
+};
+
+const renderOfflineNotice = () => {
+  const notice = document.getElementById('householdsOfflineNotice');
+  if (!notice) return;
+  notice.classList.toggle('d-none', !state.offline);
+  notice.textContent = state.offline
+    ? 'Offline mode: showing cached households. Open is available for records previously viewed, edited, or saved on this device.'
+    : '';
 };
 
 const normalizeZoneLabel = (value) => {
@@ -324,6 +444,7 @@ const updateAddHouseholdLink = () => {
 
 const renderHouseholdTable = () => {
   if (!householdsTableBody) return;
+  renderOfflineNotice();
 
   if (state.loading) {
     setLoadingState();
@@ -348,6 +469,8 @@ const renderHouseholdTable = () => {
       const memberCount = Number.isFinite(Number(row.member_count)) ? Number(row.member_count) : 0;
       const baseUpdated = formatUpdatedDate(row.updated_at);
       const displayUpdated = baseUpdated;
+      const offlineUnavailable = state.offline && !row.offline_available;
+      const statusLabel = row.pending_sync ? 'Pending sync' : (state.offline ? 'Cached' : 'Synced');
 
       return `
         <tr data-household-id="${escapeHtml(householdId)}" data-base-household-id="${escapeHtml(householdId)}" data-zone="${escapeHtml(zoneKey)}">
@@ -363,12 +486,13 @@ const renderHouseholdTable = () => {
               data-head="${escapeHtml(headName)}"
               data-zone="${escapeHtml(zoneLabel)}"
               data-members="${escapeHtml(String(memberCount))}"
-              data-status="Synced"
+              data-status="${escapeHtml(statusLabel)}"
               data-updated="${escapeHtml(displayUpdated)}"
               data-base-updated="${escapeHtml(baseUpdated)}"
               data-address="${escapeHtml(zoneLabel)}"
-              title="View household"
-              aria-label="View household">
+              title="${offlineUnavailable ? 'Open this household online once to make it available offline' : 'View household'}"
+              aria-label="${offlineUnavailable ? 'Household is not available offline yet' : 'View household'}"
+              ${offlineUnavailable ? 'disabled' : ''}>
               <i class="bi bi-eye" aria-hidden="true"></i>
             </button>
           </td>
@@ -406,7 +530,9 @@ const fetchHouseholdYears = async () => {
     const message = payload && payload.error
       ? String(payload.error)
       : `Failed to load household years (${response.status}).`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = Number(response.status || 0);
+    throw error;
   }
 
   return normalizeAvailableYears(payload?.data?.years);
@@ -439,12 +565,13 @@ const fetchHouseholds = async () => {
     const message = payload && payload.error
       ? String(payload.error)
       : `Failed to load households (${response.status}).`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = Number(response.status || 0);
+    throw error;
   }
 
   const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
-  return {
-    items: items.map((item) => ({
+  const normalizedItems = items.map((item) => ({
       household_id: String(item?.household_id || ''),
       record_year: Number(item?.record_year || 0),
       head_name: String(item?.head_name || ''),
@@ -452,7 +579,10 @@ const fetchHouseholds = async () => {
       member_count: Number(item?.member_count || 0),
       updated_at: String(item?.updated_at || ''),
       source: String(item?.source || '')
-    }))
+    }));
+  await cacheHouseholdIndex(normalizedItems, selectedYear);
+  return {
+    items: mergePendingRows(normalizedItems)
   };
 };
 
@@ -464,15 +594,20 @@ async function loadHouseholds() {
   try {
     const payload = await fetchHouseholds();
     state.rows = Array.isArray(payload?.items) ? payload.items : [];
+    state.offline = false;
     ensureYearOptions(state.rows, state.years);
     ensureZoneOptions(state.rows);
     updateAddHouseholdLink();
     syncHouseholdsUrlState();
   } catch (error) {
-    state.rows = [];
-    state.error = error instanceof Error ? error.message : 'Unable to load households.';
-    ensureYearOptions([], state.years);
-    ensureZoneOptions([]);
+    const authoritativeFailure = [401, 403, 404].includes(Number(error?.status || 0));
+    state.rows = authoritativeFailure ? [] : getOfflineHouseholdRows();
+    state.offline = !authoritativeFailure;
+    state.error = authoritativeFailure
+      ? (error instanceof Error ? error.message : 'Unable to load households.')
+      : (state.rows.length > 0 ? '' : 'No cached households are available on this device yet.');
+    ensureYearOptions(state.rows, state.years);
+    ensureZoneOptions(state.rows);
     updateAddHouseholdLink();
   } finally {
     state.loading = false;
@@ -481,6 +616,9 @@ async function loadHouseholds() {
 }
 
 async function initializeHouseholds() {
+  if (typeof offlineStorage.ready === 'function') {
+    await offlineStorage.ready();
+  }
   try {
     state.years = await fetchHouseholdYears();
   } catch (error) {
@@ -573,3 +711,11 @@ yearSelect?.addEventListener('change', () => {
 });
 
 void initializeHouseholds();
+
+window.addEventListener('online', () => {
+  void loadHouseholds();
+});
+
+window.addEventListener('offline', () => {
+  void loadHouseholds();
+});

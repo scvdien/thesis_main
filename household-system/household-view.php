@@ -33,13 +33,17 @@ if ($brandCity !== '' && stripos($brandLabel, $brandCity) === false) {
 $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $householdViewStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/household-view.css') ?: time());
 $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/household-view.js') ?: time());
+$indexedDbStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/indexeddb-storage-scripts.js') ?: time());
+$registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/registration-offline-init.js') ?: time());
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0d6efd">
   <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>Household Details | Admin</title>
   <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
@@ -472,6 +476,21 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
     </div>
   </div>
 
+  <!-- PROFILE PHOTO PREVIEW MODAL -->
+  <div class="modal fade" id="profilePhotoModal" tabindex="-1" aria-labelledby="profilePhotoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content modern-modal hv-photo-preview-content">
+        <div class="modal-header border-0">
+          <h5 class="modal-title" id="profilePhotoModalLabel">Profile Photo</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close photo preview"></button>
+        </div>
+        <div class="modal-body hv-photo-preview-body">
+          <img id="profilePhotoPreview" class="hv-photo-preview-image" alt="">
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="logoutModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content modern-modal text-center p-4">
@@ -491,7 +510,8 @@ $householdViewScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/househo
 </div>
 
 <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/indexeddb-storage-scripts.js"></script>
+<script src="assets/js/indexeddb-storage-scripts.js?v=<?= htmlspecialchars($indexedDbStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+<script src="assets/js/registration-offline-init.js?v=<?= htmlspecialchars($registrationOfflineInitVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/responsive-table-scripts.js"></script>
 <script src="assets/js/household-view.js?v=<?= htmlspecialchars($householdViewScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>

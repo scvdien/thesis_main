@@ -49,6 +49,27 @@ final class RegDuplicateHouseholdException extends RuntimeException
     }
 }
 
+final class RegHouseholdConflictException extends RuntimeException
+{
+    /** @var array<string, mixed> */
+    private $current;
+
+    /** @param array<string, mixed> $current */
+    public function __construct(array $current, string $message = '')
+    {
+        parent::__construct($message !== ''
+            ? $message
+            : 'This household changed on the server after the offline copy was loaded.');
+        $this->current = $current;
+    }
+
+    /** @return array<string, mixed> */
+    public function getCurrent(): array
+    {
+        return is_array($this->current) ? $this->current : [];
+    }
+}
+
 function reg_text(mixed $value, int $maxLength = 255): string
 {
     $text = trim((string) $value);
@@ -385,6 +406,7 @@ function reg_bootstrap_tables(PDO $pdo): void
         'CREATE TABLE IF NOT EXISTS `registration_households` (
             `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             `household_code` VARCHAR(64) NOT NULL,
+            `client_record_id` VARCHAR(64) NULL DEFAULT NULL,
             `record_year` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             `rollover_source_household_code` VARCHAR(64) NOT NULL DEFAULT "",
             `source` VARCHAR(80) NOT NULL DEFAULT "registration-module",
@@ -396,10 +418,12 @@ function reg_bootstrap_tables(PDO $pdo): void
             `record_data_json` LONGTEXT NOT NULL,
             `created_by_user_id` BIGINT UNSIGNED NULL,
             `updated_by_user_id` BIGINT UNSIGNED NULL,
+            `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uq_registration_households_code` (`household_code`),
+            UNIQUE KEY `uq_registration_households_client_record` (`client_record_id`),
             KEY `idx_registration_households_record_year` (`record_year`),
             KEY `idx_registration_households_zone` (`zone`),
             KEY `idx_registration_households_updated_at` (`updated_at`)
@@ -477,6 +501,7 @@ function reg_bootstrap_tables(PDO $pdo): void
     reg_photo_bootstrap_table($pdo);
 
     reg_add_registration_year_columns($pdo);
+    reg_add_household_version_column($pdo);
 }
 
 function reg_table_column_exists(PDO $pdo, string $tableName, string $columnName): bool
@@ -532,6 +557,28 @@ function reg_add_index_if_missing(PDO $pdo, string $tableName, string $indexName
         return;
     }
     $pdo->exec(sprintf('ALTER TABLE `%s` ADD %s', $tableName, $indexSql));
+}
+
+function reg_add_household_version_column(PDO $pdo): void
+{
+    reg_add_column_if_missing(
+        $pdo,
+        'registration_households',
+        'client_record_id',
+        'VARCHAR(64) NULL DEFAULT NULL AFTER `household_code`'
+    );
+    reg_add_index_if_missing(
+        $pdo,
+        'registration_households',
+        'uq_registration_households_client_record',
+        'UNIQUE KEY `uq_registration_households_client_record` (`client_record_id`)'
+    );
+    reg_add_column_if_missing(
+        $pdo,
+        'registration_households',
+        'row_version',
+        'BIGINT UNSIGNED NOT NULL DEFAULT 1 AFTER `updated_by_user_id`'
+    );
 }
 
 function reg_add_registration_year_columns(PDO $pdo): void
@@ -872,7 +919,7 @@ function reg_friendly_server_error(Throwable $exception): string
     return 'Unable to process registration request right now.';
 }
 
-const REG_SCHEMA_MAINTENANCE_SESSION_KEY = '__registration_schema_maintenance_at';
+const REG_SCHEMA_MAINTENANCE_SESSION_KEY = '__registration_schema_maintenance_v2_at';
 const REG_SCHEMA_MAINTENANCE_TTL_SECONDS = 60 * 5;
 
 function reg_should_run_schema_maintenance(bool $force = false): bool
@@ -1000,6 +1047,25 @@ function reg_household_code_for_year(string $householdCode, int $targetYear): st
     }
     $sequence = reg_text($matches[1] ?? '', 40);
     return $sequence === '' ? '' : sprintf('HH-%04d-%s', $targetYear, $sequence);
+}
+
+function reg_next_household_code(PDO $pdo, int $recordYear): string
+{
+    if (!reg_valid_record_year($recordYear)) {
+        throw new InvalidArgumentException('A valid household record year is required.');
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT MAX(CAST(SUBSTRING_INDEX(`household_code`, "-", -1) AS UNSIGNED))
+         FROM `registration_households`
+         WHERE `record_year` = :record_year OR `household_code` LIKE :year_prefix'
+    );
+    $stmt->execute([
+        'record_year' => $recordYear,
+        'year_prefix' => sprintf('HH-%04d-%%', $recordYear),
+    ]);
+    $nextSequence = max(0, (int) $stmt->fetchColumn()) + 1;
+    return sprintf('HH-%04d-%03d', $recordYear, $nextSequence);
 }
 
 function reg_identity_part(mixed $value): string
@@ -1359,6 +1425,60 @@ function reg_audit_log(
 }
 
 /**
+ * @param array<string, mixed> $payload
+ * @return array<string, mixed>
+ */
+function reg_idempotent_sync_result(PDO $pdo, array $payload, string $syncedAt): array
+{
+    return [
+        'household_id' => (string) ($payload['household_id'] ?? ''),
+        'record_year' => (int) ($payload['record_year'] ?? 0),
+        'synced_at' => $syncedAt,
+        'updated_at' => (string) ($payload['updated_at'] ?? ''),
+        'row_version' => max(1, (int) ($payload['row_version'] ?? 1)),
+        'total_records' => reg_total_households($pdo),
+        'record' => is_array($payload['record'] ?? null) ? $payload['record'] : [],
+        'idempotent' => true,
+    ];
+}
+
+function reg_canonical_sync_value(mixed $value): mixed
+{
+    if (!is_array($value)) {
+        return $value;
+    }
+    $normalized = [];
+    foreach ($value as $key => $item) {
+        $normalized[$key] = reg_canonical_sync_value($item);
+    }
+    $isList = count($normalized) === 0
+        || array_keys($normalized) === range(0, count($normalized) - 1);
+    if (!$isList) {
+        ksort($normalized, SORT_STRING);
+    }
+    return $normalized;
+}
+
+/** @param array<string, mixed> $record */
+function reg_household_sync_fingerprint(array $record): string
+{
+    $content = [
+        'client_record_id' => reg_text($record['client_record_id'] ?? '', 64),
+        'source' => reg_text($record['source'] ?? '', 80),
+        'photo_schema_version' => (int) ($record['photo_schema_version'] ?? 0),
+        'household_photo_id' => reg_photo_normalize_id($record['household_photo_id'] ?? ''),
+        'head' => is_array($record['head'] ?? null) ? $record['head'] : [],
+        'members' => is_array($record['members'] ?? null) ? $record['members'] : [],
+        'head_name' => reg_text($record['head_name'] ?? '', 180),
+        'zone' => reg_normalize_zone_text($record['zone'] ?? ''),
+        'member_count' => (int) ($record['member_count'] ?? 0),
+        'record_year' => (int) ($record['record_year'] ?? 0),
+        'rollover_source_household_id' => reg_text($record['rollover_source_household_id'] ?? '', 64),
+    ];
+    return hash('sha256', reg_json_encode(reg_canonical_sync_value($content)));
+}
+
+/**
  * @param array<string, mixed> $record
  * @param array<string, mixed> $authUser
  * @return array<string, mixed>
@@ -1373,6 +1493,11 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     if (!reg_valid_record_year($recordYear)) {
         throw new InvalidArgumentException('household_id must contain a valid record year.');
     }
+    $mode = strtolower(reg_text($record['mode'] ?? 'update', 20));
+    if (!in_array($mode, ['create', 'update', 'rollover'], true)) {
+        $mode = 'update';
+    }
+    $clientRecordId = reg_text($record['client_record_id'] ?? '', 64);
 
     $head = is_array($record['head'] ?? null) ? $record['head'] : [];
     $head = reg_normalize_person_photo_reference(reg_normalize_person_text_fields($head));
@@ -1444,7 +1569,8 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
 
     $recordForStore = [
         'household_id' => $householdCode,
-        'mode' => reg_text($record['mode'] ?? 'update', 20),
+        'client_record_id' => $clientRecordId,
+        'mode' => $mode,
         'source' => $source,
         'photo_schema_version' => 1,
         'household_photo_id' => $householdPhotoId,
@@ -1459,19 +1585,65 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         'server_synced_at' => $syncedAt,
     ];
     $duplicateLockName = reg_household_duplicate_lock_name($recordForStore);
+    $codeLockName = $mode === 'create' ? sprintf('reg_hh_code_%04d', $recordYear) : '';
 
     $startedTransaction = false;
+    $codeLockAcquired = false;
     $obsoletePhotoStorageKeys = [];
     try {
         reg_acquire_advisory_lock($pdo, $duplicateLockName);
+        if ($codeLockName !== '') {
+            $codeLockAcquired = reg_acquire_advisory_lock($pdo, $codeLockName);
+            if (!$codeLockAcquired) {
+                throw new RuntimeException('Unable to reserve a household ID right now. Please retry.');
+            }
+        }
 
         if (!$pdo->inTransaction()) {
             $pdo->beginTransaction();
             $startedTransaction = true;
         }
 
+        if ($mode === 'create' && $clientRecordId !== '') {
+            $clientRecordStmt = $pdo->prepare(
+                'SELECT `household_code`, `record_data_json`, `row_version`
+                 FROM `registration_households`
+                 WHERE `client_record_id` = :client_record_id
+                 LIMIT 1 FOR UPDATE'
+            );
+            $clientRecordStmt->execute(['client_record_id' => $clientRecordId]);
+            $clientRecordRow = $clientRecordStmt->fetch(PDO::FETCH_ASSOC);
+            $clientRecordRow = is_array($clientRecordRow) ? $clientRecordRow : [];
+            $clientRecordHouseholdCode = reg_text($clientRecordRow['household_code'] ?? '', 64);
+            if ($clientRecordHouseholdCode !== '') {
+                $storedReplayRecord = reg_json_decode_assoc((string) ($clientRecordRow['record_data_json'] ?? ''));
+                if (!hash_equals(
+                    reg_household_sync_fingerprint($storedReplayRecord),
+                    reg_household_sync_fingerprint($recordForStore)
+                )) {
+                    throw new RegHouseholdConflictException(
+                        [
+                            'household_id' => $clientRecordHouseholdCode,
+                            'row_version' => max(1, (int) ($clientRecordRow['row_version'] ?? 1)),
+                            'state' => 'create_replay_changed',
+                        ],
+                        'This offline household was already synced, but its queued copy contains newer changes.'
+                    );
+                }
+                $existingPayload = reg_get_household($pdo, $clientRecordHouseholdCode);
+                if (!is_array($existingPayload)) {
+                    throw new RuntimeException('Unable to reload the existing household after sync.');
+                }
+                if ($startedTransaction && $pdo->inTransaction()) {
+                    $pdo->commit();
+                }
+                return reg_idempotent_sync_result($pdo, $existingPayload, $syncedAt);
+            }
+        }
+
         $findStmt = $pdo->prepare(
-            'SELECT `id`, `head_data_json`, `members_data_json`, `record_data_json`
+            'SELECT `id`, `household_code`, `client_record_id`, `record_year`, `head_name`, `zone`, `row_version`, `updated_at`,
+                    `head_data_json`, `members_data_json`, `record_data_json`
              FROM `registration_households`
              WHERE `household_code` = :household_code
              LIMIT 1 FOR UPDATE'
@@ -1479,6 +1651,47 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $findStmt->execute(['household_code' => $householdCode]);
         $existing = $findStmt->fetch(PDO::FETCH_ASSOC);
         $householdDbId = is_array($existing) ? (int) ($existing['id'] ?? 0) : 0;
+        if ($mode === 'create' && $householdDbId > 0) {
+            $householdCode = reg_next_household_code($pdo, $recordYear);
+            $recordForStore['household_id'] = $householdCode;
+            $findStmt->execute(['household_code' => $householdCode]);
+            $existing = $findStmt->fetch(PDO::FETCH_ASSOC);
+            $householdDbId = is_array($existing) ? (int) ($existing['id'] ?? 0) : 0;
+        }
+
+        if ($mode === 'update' && $householdDbId <= 0) {
+            throw new RegHouseholdConflictException([
+                'household_id' => $householdCode,
+                'state' => 'missing',
+            ], 'This household no longer exists on the server. Reload the household list before editing again.');
+        }
+        if ($mode === 'rollover' && $householdDbId > 0) {
+            throw new RegHouseholdConflictException([
+                'household_id' => $householdCode,
+                'state' => 'already_exists',
+            ], 'The rollover target household already exists.');
+        }
+
+        $baseVersion = max(0, (int) ($record['base_version'] ?? 0));
+        $currentVersion = is_array($existing) ? max(1, (int) ($existing['row_version'] ?? 1)) : 0;
+        $currentClientRecordId = is_array($existing) ? reg_text($existing['client_record_id'] ?? '', 64) : '';
+        $currentUpdatedAt = is_array($existing) ? reg_text($existing['updated_at'] ?? '', 40) : '';
+        if ($mode === 'update' && $householdDbId > 0) {
+            $versionMatches = $baseVersion > 0 && $baseVersion === $currentVersion;
+            $clientIdentityMatches = $currentClientRecordId === ''
+                || ($clientRecordId !== '' && hash_equals($currentClientRecordId, $clientRecordId));
+            if (!$versionMatches || !$clientIdentityMatches) {
+                throw new RegHouseholdConflictException([
+                    'household_id' => (string) ($existing['household_code'] ?? $householdCode),
+                    'head_name' => (string) ($existing['head_name'] ?? ''),
+                    'row_version' => $currentVersion,
+                    'updated_at' => $currentUpdatedAt,
+                    'state' => !$clientIdentityMatches
+                        ? 'record_replaced'
+                        : ($baseVersion > 0 ? 'stale' : 'refresh_required'),
+                ]);
+            }
+        }
 
         // Preserve photo references when an older cached client edits a record
         // created by the photo-aware app. This prevents silent photo loss while
@@ -1566,6 +1779,7 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             $updateStmt = $pdo->prepare(
                 'UPDATE `registration_households`
                  SET `record_year` = :record_year,
+                     `client_record_id` = COALESCE(NULLIF(:client_record_id, ""), `client_record_id`),
                      `rollover_source_household_code` = :rollover_source_household_code,
                      `source` = :source,
                      `head_name` = :head_name,
@@ -1575,11 +1789,13 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
                      `members_data_json` = :members_data_json,
                      `record_data_json` = :record_data_json,
                      `updated_by_user_id` = :updated_by_user_id,
+                     `row_version` = `row_version` + 1,
                      `updated_at` = CURRENT_TIMESTAMP
                  WHERE `id` = :id LIMIT 1'
             );
             $updateStmt->execute([
                 'record_year' => $recordYear,
+                'client_record_id' => $clientRecordId,
                 'rollover_source_household_code' => $rolloverSourceHouseholdCode,
                 'source' => $source,
                 'head_name' => $headName,
@@ -1594,14 +1810,15 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         } else {
             $insertStmt = $pdo->prepare(
                 'INSERT INTO `registration_households`
-                 (`household_code`, `record_year`, `rollover_source_household_code`, `source`, `head_name`, `zone`, `member_count`,
-                  `head_data_json`, `members_data_json`, `record_data_json`, `created_by_user_id`, `updated_by_user_id`)
+                 (`household_code`, `client_record_id`, `record_year`, `rollover_source_household_code`, `source`, `head_name`, `zone`, `member_count`,
+                   `head_data_json`, `members_data_json`, `record_data_json`, `created_by_user_id`, `updated_by_user_id`)
                  VALUES
-                 (:household_code, :record_year, :rollover_source_household_code, :source, :head_name, :zone, :member_count,
-                  :head_data_json, :members_data_json, :record_data_json, :created_by_user_id, :updated_by_user_id)'
+                 (:household_code, :client_record_id, :record_year, :rollover_source_household_code, :source, :head_name, :zone, :member_count,
+                   :head_data_json, :members_data_json, :record_data_json, :created_by_user_id, :updated_by_user_id)'
             );
             $insertStmt->execute([
                 'household_code' => $householdCode,
+                'client_record_id' => $clientRecordId !== '' ? $clientRecordId : null,
                 'record_year' => $recordYear,
                 'rollover_source_household_code' => $rolloverSourceHouseholdCode,
                 'source' => $source,
@@ -1737,6 +1954,18 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             );
         }
 
+        $versionStmt = $pdo->prepare(
+            'SELECT `row_version`, `updated_at` FROM `registration_households` WHERE `id` = :id LIMIT 1'
+        );
+        $versionStmt->execute(['id' => $householdDbId]);
+        $versionRow = $versionStmt->fetch(PDO::FETCH_ASSOC);
+        $serverRowVersion = is_array($versionRow) ? max(1, (int) ($versionRow['row_version'] ?? 1)) : 1;
+        $serverUpdatedAt = is_array($versionRow) ? reg_text($versionRow['updated_at'] ?? '', 40) : '';
+        if ($serverUpdatedAt !== '') {
+            $recordForStore['updated_at'] = $serverUpdatedAt;
+        }
+        $recordForStore['row_version'] = $serverRowVersion;
+        $recordForStore['base_version'] = $serverRowVersion;
         if ($startedTransaction && $pdo->inTransaction()) {
             $pdo->commit();
             reg_photo_delete_storage_keys($obsoletePhotoStorageKeys);
@@ -1745,6 +1974,8 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             'household_id' => $householdCode,
             'record_year' => $recordYear,
             'synced_at' => $syncedAt,
+            'updated_at' => $serverUpdatedAt,
+            'row_version' => $serverRowVersion,
             'total_records' => reg_total_households($pdo),
             'record' => $recordForStore,
         ];
@@ -1754,6 +1985,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         }
         throw $exception;
     } finally {
+        if ($codeLockAcquired) {
+            reg_release_advisory_lock($pdo, $codeLockName);
+        }
         reg_release_advisory_lock($pdo, $duplicateLockName);
     }
 }
@@ -2316,15 +2550,19 @@ function reg_build_household_payload(PDO $pdo, array $row): array
 {
     $householdCode = (string) ($row['household_code'] ?? '');
     $householdId = (int) ($row['id'] ?? 0);
+    $rowVersion = max(1, (int) ($row['row_version'] ?? 1));
 
     $record = reg_json_decode_assoc((string) ($row['record_data_json'] ?? ''));
     $record['household_id'] = (string) ($row['household_code'] ?? $householdCode);
+    $record['client_record_id'] = (string) ($row['client_record_id'] ?? ($record['client_record_id'] ?? ''));
     $record['record_year'] = (int) ($row['record_year'] ?? ($record['record_year'] ?? 0));
     $record['rollover_source_household_id'] = (string) ($row['rollover_source_household_code'] ?? ($record['rollover_source_household_id'] ?? ''));
     $record['head_name'] = (string) ($row['head_name'] ?? ($record['head_name'] ?? ''));
     $record['zone'] = reg_normalize_zone_text($row['zone'] ?? ($record['zone'] ?? ''));
     $record['member_count'] = (int) ($row['member_count'] ?? ($record['member_count'] ?? 0));
     $record['source'] = (string) ($row['source'] ?? ($record['source'] ?? 'registration-module'));
+    $record['row_version'] = $rowVersion;
+    $record['base_version'] = $rowVersion;
     $record['head'] = reg_strip_health_fields(reg_json_decode_assoc((string) ($row['head_data_json'] ?? '')));
     $record['members'] = array_map(
         static fn (array $member): array => reg_strip_health_fields($member),
@@ -2367,12 +2605,14 @@ function reg_build_household_payload(PDO $pdo, array $row): array
 
     return [
         'household_id' => (string) ($row['household_code'] ?? ''),
+        'client_record_id' => (string) ($row['client_record_id'] ?? ''),
         'record_year' => (int) ($row['record_year'] ?? 0),
         'rollover_source_household_id' => (string) ($row['rollover_source_household_code'] ?? ''),
         'head_name' => (string) ($row['head_name'] ?? ''),
         'zone' => reg_normalize_zone_text($row['zone'] ?? ''),
         'member_count' => (int) ($row['member_count'] ?? 0),
         'source' => (string) ($row['source'] ?? ''),
+        'row_version' => $rowVersion,
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
         'record' => $record,
@@ -2382,8 +2622,8 @@ function reg_build_household_payload(PDO $pdo, array $row): array
 function reg_get_household(PDO $pdo, string $householdCode): ?array
 {
     $stmt = $pdo->prepare(
-        'SELECT `id`, `household_code`, `record_year`, `rollover_source_household_code`, `head_name`, `zone`, `member_count`, `source`,
-                `head_data_json`, `members_data_json`, `record_data_json`, `created_at`, `updated_at`
+        'SELECT `id`, `household_code`, `client_record_id`, `record_year`, `rollover_source_household_code`, `head_name`, `zone`, `member_count`, `source`,
+                `row_version`, `head_data_json`, `members_data_json`, `record_data_json`, `created_at`, `updated_at`
          FROM `registration_households`
          WHERE `household_code` = :household_code
          LIMIT 1'
@@ -2789,6 +3029,7 @@ function reg_delete_member(PDO $pdo, string $residentCode): bool
              SET `member_count` = :member_count,
                  `members_data_json` = :members_data_json,
                  `record_data_json` = :record_data_json,
+                 `row_version` = `row_version` + 1,
                  `updated_at` = CURRENT_TIMESTAMP
              WHERE `id` = :id
              LIMIT 1'
@@ -2926,24 +3167,37 @@ try {
         if ($householdCode === '') {
             reg_error(422, 'household_id is required.');
         }
-        $duplicate = reg_find_duplicate_household($pdo, $record, $householdCode);
-        if (is_array($duplicate)) {
-            reg_respond(409, reg_duplicate_household_payload($duplicate));
+        $requestMode = strtolower(reg_text($record['mode'] ?? 'update', 20));
+        if (!in_array($requestMode, ['create', 'update'], true)) {
+            $requestMode = 'update';
         }
-        $wasExisting = reg_household_exists($pdo, $householdCode);
+        $record['mode'] = $requestMode;
+        if ($requestMode !== 'create') {
+            $duplicate = reg_find_duplicate_household($pdo, $record, $householdCode);
+            if (is_array($duplicate)) {
+                reg_respond(409, reg_duplicate_household_payload($duplicate));
+            }
+        }
+        $wasExisting = $requestMode === 'update' && reg_household_exists($pdo, $householdCode);
         $memberRows = reg_normalize_members($record['members'] ?? []);
         try {
             $result = reg_upsert_household($pdo, $record, $authUser);
         } catch (InvalidArgumentException $exception) {
             reg_error(422, reg_text($exception->getMessage(), 220));
         }
+        $syncedHouseholdCode = reg_text($result['household_id'] ?? $householdCode, 64);
+        $wasIdempotent = ($result['idempotent'] ?? false) === true;
         reg_audit_log(
             $authUser,
-            $wasExisting ? 'registration_household_updated' : 'registration_household_created',
-            $wasExisting ? 'updated' : 'created',
-            $wasExisting ? 'Updated household record.' : 'Created household record.',
+            $wasIdempotent
+                ? 'registration_household_sync_replayed'
+                : ($wasExisting ? 'registration_household_updated' : 'registration_household_created'),
+            $wasIdempotent ? 'synced' : ($wasExisting ? 'updated' : 'created'),
+            $wasIdempotent
+                ? 'Confirmed an already completed household sync.'
+                : ($wasExisting ? 'Updated household record.' : 'Created household record.'),
             'household',
-            $householdCode,
+            $syncedHouseholdCode,
             [
                 'member_rows' => count($memberRows),
                 'source' => reg_text($record['source'] ?? '', 80),
@@ -3057,6 +3311,13 @@ try {
     reg_error(400, 'Unsupported action.');
 } catch (RegDuplicateHouseholdException $exception) {
     reg_respond(409, reg_duplicate_household_payload($exception->getDuplicate()));
+} catch (RegHouseholdConflictException $exception) {
+    reg_respond(409, [
+        'success' => false,
+        'code' => 'household_edit_conflict',
+        'error' => $exception->getMessage(),
+        'current' => $exception->getCurrent(),
+    ]);
 } catch (Throwable $exception) {
     reg_error(500, reg_friendly_server_error($exception));
 }

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-08-11-v25";
+const CACHE_VERSION = "2026-08-17-v27";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
@@ -20,15 +20,26 @@ const PRECACHE_URLS = [
   "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2",
   "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff",
   "assets/css/registration-style.css",
+  "assets/css/site-style.css",
+  "assets/css/household-view.css",
   "assets/js/indexeddb-storage-scripts.js",
   "assets/js/registration-offline-init.js",
   "assets/js/registration-photo-storage.js",
   "assets/js/photo-capture.js",
   "assets/js/registration-scripts.js",
   "assets/js/member-scripts.js",
+  "assets/js/households-scripts.js",
+  "assets/js/household-view.js",
+  "assets/js/responsive-table-scripts.js",
   "assets/img/barangay-cabarian-logo.png"
 ].map((path) => buildScopedUrl(path));
-const REGISTRATION_PAGE_NAMES = new Set(["registration.php", "member.php", "offline-registration.html"]);
+const REGISTRATION_PAGE_NAMES = new Set([
+  "registration.php",
+  "member.php",
+  "households.php",
+  "household-view.php",
+  "offline-registration.html"
+]);
 const BYPASS_PAGE_NAMES = new Set([
   "registration-sync.php",
   "registration-photo.php",
@@ -50,9 +61,14 @@ const isSameOriginGet = (request) => request.method === "GET" && getUrl(request)
 const isRegistrationNavigation = (request) => request.mode === "navigate" && REGISTRATION_PAGE_NAMES.has(getPageName(request));
 const isBypassedRequest = (request) => BYPASS_PAGE_NAMES.has(getPageName(request));
 const isAssetRequest = (request) => ASSET_PATH_PATTERN.test(getUrl(request).pathname);
+const isRegistrationPhotoRequest = (request) => getPageName(request) === "registration-photo.php";
 
 const normalizedAssetKey = (request) => {
   const url = getUrl(request);
+  if (getPageName(request) === "registration-photo.php") {
+    url.hash = "";
+    return url.toString();
+  }
   url.search = "";
   url.hash = "";
   return url.toString();
@@ -247,9 +263,16 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (!isSameOriginGet(request) || isBypassedRequest(request)) {
+  if (!isSameOriginGet(request)) {
     return;
   }
+
+  if (isRegistrationPhotoRequest(request)) {
+    event.respondWith(handleAssetRequest(request));
+    return;
+  }
+
+  if (isBypassedRequest(request)) return;
 
   if (isRegistrationNavigation(request)) {
     event.respondWith(handleRegistrationNavigation(request));

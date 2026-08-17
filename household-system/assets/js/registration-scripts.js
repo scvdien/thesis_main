@@ -242,6 +242,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     return PHOTO_ID_PATTERN.test(normalized) ? normalized : "";
   };
 
+  const createClientRecordId = () => {
+    if (typeof window.crypto?.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return `record-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  };
+
   const readPhotoDraftId = (key) => {
     try {
       const rawValue = String(localStorage.getItem(key) || "").trim();
@@ -824,7 +831,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const updateLoadExistingButtonVisibility = () => {
     if (!loadExistingBtn) return;
 
-    const shouldHideLoadExisting = !isEditMode && !isAppOnline();
+    const hasCachedHouseholds = getRegistrationRecords().length > 0 || getSyncQueue().length > 0;
+    const shouldHideLoadExisting = !isEditMode && !isAppOnline() && !hasCachedHouseholds;
     loadExistingBtn.classList.toggle("d-none", shouldHideLoadExisting);
     loadExistingBtn.setAttribute("aria-hidden", shouldHideLoadExisting ? "true" : "false");
 
@@ -1180,6 +1188,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       : String(fallbackMessage || "").trim();
     if (code === "duplicate_household") {
       message = "Household already exists in database. Duplicate entries are not allowed.";
+    } else if (code === "household_edit_conflict") {
+      message = "The server record changed or no longer exists. Delete this pending copy, then load the latest household list online before editing again.";
     }
     return buildSyncIssue({
       message: message || "Unable to sync right now.",
@@ -1474,6 +1484,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     return {
       household_id: householdId,
+      client_record_id: String(existingRecord?.client_record_id || "").trim() || createClientRecordId(),
       mode: isEditMode ? "update" : "create",
       source: "registration-module",
       record_year: targetRecordYear,
@@ -1485,6 +1496,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       zone: normalizedZone,
       member_count: members.length + 1,
       created_at: existingRecord?.created_at || now,
+      base_version: Number(existingRecord?.base_version || existingRecord?.row_version || 0),
+      base_updated_at: String(existingRecord?.base_updated_at || "").trim(),
       updated_at: now
     };
   };
@@ -1574,8 +1587,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       zone: String(source?.zone || record.zone || "").trim(),
       member_count: Number.parseInt(String(source?.member_count || record.member_count || ""), 10) || 0,
       source: String(source?.source || record.source || "registration-module").trim() || "registration-module",
+      row_version: Number(source?.row_version || record.row_version || 0),
+      base_version: Number(source?.row_version || record.base_version || record.row_version || 0),
       created_at: String(source?.created_at || record.created_at || "").trim(),
-      updated_at: String(source?.updated_at || record.updated_at || "").trim()
+      updated_at: String(source?.updated_at || record.updated_at || "").trim(),
+      base_updated_at: String(source?.updated_at || record.base_updated_at || "").trim()
     });
   };
 
@@ -1651,6 +1667,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     return candidates.sort((left, right) => getRecordTimestamp(right) - getRecordTimestamp(left))[0] || null;
+  };
+
+  const getOfflineLookupRecords = () => {
+    const recordsById = new Map();
+    getRegistrationRecords().forEach((item) => {
+      const normalized = normalizeLookupHouseholdRecord(item);
+      if (normalized) recordsById.set(normalized.household_id, { ...normalized, offline_cached: true });
+    });
+    getSyncQueue().forEach((item) => {
+      const normalized = normalizeLookupHouseholdRecord(item);
+      if (normalized) {
+        recordsById.set(normalized.household_id, {
+          ...normalized,
+          offline_cached: true,
+          pending_sync: true
+        });
+      }
+    });
+    return sortHouseholdLookupRecords(Array.from(recordsById.values()));
+  };
+
+  const getOfflineLookupYears = () => Array.from(new Set(
+    getOfflineLookupRecords()
+      .map((record) => Number(record.record_year || getHouseholdYearFromId(record.household_id)))
+      .filter((year) => isValidRecordYear(year))
+  )).sort((left, right) => right - left);
+
+  const searchOfflineHouseholds = ({ year, query } = {}) => {
+    const safeYear = Number.parseInt(String(year || ''), 10);
+    const term = String(query || '').trim().toLowerCase();
+    return getOfflineLookupRecords().filter((record) => {
+      const recordYear = Number(record.record_year || getHouseholdYearFromId(record.household_id));
+      if (isValidRecordYear(safeYear) && recordYear !== safeYear) return false;
+      const head = record.head && typeof record.head === 'object' ? record.head : {};
+      const searchable = [record.household_id, record.head_name, record.zone, head.address]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+      return !term || searchable.includes(term);
+    }).slice(0, 15);
   };
 
   const getHouseholdIdentityCore = (head = {}) => {
@@ -2061,6 +2116,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     return nextQueue.length;
   };
 
+  const cacheSuccessfulSync = (record, payload = {}) => {
+    const sourceRecord = record && typeof record === "object" ? record : {};
+    const serverRecord = payload?.record && typeof payload.record === "object" ? payload.record : {};
+    const serverUpdatedAt = String(payload?.updated_at || "").trim();
+    const sourceHouseholdId = String(sourceRecord.household_id || "").trim();
+    const syncedHouseholdId = String(payload?.household_id || serverRecord.household_id || sourceHouseholdId).trim();
+    const serverRowVersion = Number(payload?.row_version || serverRecord.row_version || 0);
+    const syncedRecord = {
+      ...sourceRecord,
+      ...serverRecord,
+      household_id: syncedHouseholdId,
+      row_version: serverRowVersion,
+      base_version: serverRowVersion,
+      updated_at: serverUpdatedAt || String(serverRecord.updated_at || sourceRecord.updated_at || "").trim(),
+      base_updated_at: serverUpdatedAt || String(sourceRecord.base_updated_at || "").trim()
+    };
+    if (sourceHouseholdId && syncedHouseholdId && sourceHouseholdId !== syncedHouseholdId) {
+      removeRegistrationRecord(sourceHouseholdId);
+    }
+    upsertRegistrationRecord(syncedRecord);
+    return syncedRecord;
+  };
+
   const clearSyncSuccessState = () => {
     syncSuccessMessage = "";
     syncSuccessExpiresAt = 0;
@@ -2457,7 +2535,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       queue[index] = nextRecord;
       setSyncQueue(queue);
       try {
-        await syncRecordToServer(nextRecord);
+        const syncPayload = await syncRecordToServer(nextRecord);
+        cacheSuccessfulSync(nextRecord, syncPayload);
         queue.splice(index, 1);
         setSyncQueue(queue);
         syncedCount += 1;
@@ -2611,7 +2690,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           : "Duplicate found. Go online, then use Load Existing Household to re-encode changes or delete this pending record.");
       const errorText = issueCode === "duplicate_household"
         ? duplicateMessage
-        : (issueMessage || "Waiting to sync once internet/server is available.");
+        : issueCode === "household_edit_conflict"
+          ? "Server data changed or was deleted. Delete this pending copy, then use Load Existing Household online to review the latest list."
+          : (issueMessage || "Waiting to sync once internet/server is available.");
       const errorClass = issueMessage ? "" : " is-waiting";
 
       return `
@@ -2830,6 +2911,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             removeSyncRecord(previousHouseholdId);
             upsertRegistrationRecord(record);
           }
+
+          record = cacheSuccessfulSync(record, syncPayload);
 
           removeSyncRecord(record.household_id);
           setLastSyncedAt(new Date().toISOString());
@@ -3207,11 +3290,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const fetchLoadHouseholdYears = async () => {
-    const response = await fetch(`${SYNC_ENDPOINT}?action=list_household_years`, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store"
-    });
+    const cachedYears = getOfflineLookupYears();
+    if (!isAppOnline()) return cachedYears;
+
+    let response = null;
+    try {
+      response = await fetch(`${SYNC_ENDPOINT}?action=list_household_years`, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+    } catch (error) {
+      if (cachedYears.length > 0) return cachedYears;
+      throw error;
+    }
 
     let payload = null;
     try {
@@ -3221,10 +3313,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (!response.ok || !payload || payload.success !== true) {
+      const authoritativeFailure = [401, 403, 404].includes(Number(response.status || 0));
+      if (cachedYears.length > 0 && !authoritativeFailure) return cachedYears;
       const message = payload && payload.error
         ? String(payload.error)
         : `Unable to load household years (${response.status}).`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = Number(response.status || 0);
+      throw error;
     }
 
     return Array.isArray(payload?.data?.years)
@@ -3342,9 +3438,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         `${memberCount} member${memberCount === 1 ? "" : "s"}`,
         updatedAt ? `Updated ${updatedAt}` : ""
       ].filter(Boolean);
-      const note = rolloverSourceId
-        ? `Rolled over from ${rolloverSourceId}`
-        : `Source: ${String(item?.source || "registration-module").replace(/-/g, " ")}`;
+      const note = item?.pending_sync
+        ? "Pending sync on this device"
+        : item?.offline_cached
+          ? "Cached and available offline"
+          : rolloverSourceId
+            ? `Rolled over from ${rolloverSourceId}`
+            : `Source: ${String(item?.source || "registration-module").replace(/-/g, " ")}`;
       const currentTag = isCurrentRecord
         ? '<span class="load-household-result-tag is-current"><i class="bi bi-pencil-square"></i> Current Edit</span>'
         : '<span class="load-household-result-action">Load record <i class="bi bi-chevron-right"></i></span>';
@@ -3380,6 +3480,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       params.set("q", trimmedQuery);
     }
 
+    if (!isAppOnline()) {
+      return searchOfflineHouseholds({ year: safeYear, query: trimmedQuery });
+    }
+
     try {
       const response = await fetch(`${SYNC_ENDPOINT}?${params.toString()}`, {
         method: "GET",
@@ -3398,11 +3502,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         const message = payload && payload.error
           ? String(payload.error)
           : `Unable to load households (${response.status}).`;
-        throw new Error(message);
+        const responseError = new Error(message);
+        responseError.status = Number(response.status || 0);
+        throw responseError;
       }
 
       return Array.isArray(payload?.data?.items) ? payload.data.items : [];
     } catch (error) {
+      const authoritativeFailure = [401, 403, 404].includes(Number(error?.status || 0));
+      const cachedRows = authoritativeFailure
+        ? []
+        : searchOfflineHouseholds({ year: safeYear, query: trimmedQuery });
+      if (cachedRows.length > 0) return cachedRows;
       throw error instanceof Error ? error : new Error("Unable to load households right now.");
     }
   };
@@ -3518,7 +3629,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (!response.ok || !payload || payload.success !== true) {
       const message = payload && payload.error ? String(payload.error) : `Failed to load household (${response.status}).`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = Number(response.status || 0);
+      throw error;
     }
     return payload;
   };
@@ -3614,7 +3727,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (getMembers().length > 0 || hasHeadDraft()) return;
 
     const storedRecord = getStoredHouseholdRecord(editHouseholdId);
-    if (storedRecord) {
+    const hasPendingRecord = getSyncQueue().some(
+      (item) => String(item?.household_id || "").trim() === editHouseholdId
+    );
+    if (storedRecord && (hasPendingRecord || !isAppOnline())) {
       await hydrateDraftFromHouseholdRecord(storedRecord);
       return;
     }
@@ -3627,6 +3743,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
     } catch (error) {
+      const authoritativeFailure = [401, 403, 404].includes(Number(error?.status || 0));
+      if (storedRecord && !authoritativeFailure) {
+        await hydrateDraftFromHouseholdRecord(storedRecord);
+        showSyncToast("Loaded the cached household because the server is unavailable.", "warning", "Offline Copy");
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unable to load edit record from server.";
       showSyncToast(message, "warning", "Load Warning");
     }
@@ -4161,10 +4283,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       await syncConnectivityState({ force: true });
-      if (!isAppOnline()) {
-        updateLoadExistingButtonVisibility();
-        return;
-      }
       if (loadHouseholdSearch) {
         loadHouseholdSearch.value = "";
       }
