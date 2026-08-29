@@ -93,6 +93,7 @@ const profilePhotoModalEl = document.getElementById('profilePhotoModal');
 const profilePhotoModal = profilePhotoModalEl ? new bootstrap.Modal(profilePhotoModalEl) : null;
 const profilePhotoPreview = document.getElementById('profilePhotoPreview');
 const profilePhotoModalLabel = document.getElementById('profilePhotoModalLabel');
+const profilePhotoModalMeta = document.getElementById('profilePhotoModalMeta');
 let photoPreviewSourceModal = null;
 let photoPreviewSourceModalEl = null;
 let photoPreviewTrigger = null;
@@ -420,7 +421,13 @@ const openProfilePhotoPreview = (image) => {
   profilePhotoPreview.src = photoSource;
   profilePhotoPreview.alt = image.alt || 'Profile photo';
   if (profilePhotoModalLabel) {
-    profilePhotoModalLabel.textContent = image.alt || 'Profile Photo';
+    const personName = String(image.alt || '').replace(/\s+profile photo$/i, '').trim();
+    profilePhotoModalLabel.textContent = personName || 'Profile Photo';
+  }
+  if (profilePhotoModalMeta) {
+    profilePhotoModalMeta.textContent = image.id === 'hvHeadPhoto'
+      ? 'Household Head'
+      : 'Household Member';
   }
 
   const sourceModalEl = image.closest('.modal.show');
@@ -440,7 +447,7 @@ const openProfilePhotoPreview = (image) => {
 
 document.addEventListener('click', (event) => {
   const image = event.target instanceof Element
-    ? event.target.closest('#mdProfilePhoto.is-previewable')
+    ? event.target.closest('#hvHeadPhoto.is-previewable, #mdProfilePhoto.is-previewable')
     : null;
   if (image instanceof HTMLImageElement) {
     openProfilePhotoPreview(image);
@@ -450,7 +457,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
   const image = event.target instanceof Element
-    ? event.target.closest('#mdProfilePhoto.is-previewable')
+    ? event.target.closest('#hvHeadPhoto.is-previewable, #mdProfilePhoto.is-previewable')
     : null;
   if (!(image instanceof HTMLImageElement)) return;
   event.preventDefault();
@@ -1099,7 +1106,8 @@ const hydratePage = (record) => {
     document.getElementById('hvHeadPhoto'),
     document.getElementById('hvHeadPhotoFallback'),
     firstValidRegistrationPhotoId(head.profilePhotoId, head.profile_photo_id),
-    `${toTextOrEmpty(head.name) || 'Household head'} profile photo`
+    `${toTextOrEmpty(head.name) || 'Household head'} profile photo`,
+    true
   );
 
   setText('hvId', currentDisplayHouseholdId || record.id);

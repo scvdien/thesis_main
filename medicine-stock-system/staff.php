@@ -7,8 +7,10 @@ $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-das
 $notificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/notifications.css');
 $staffCssVersion = (string) @filemtime(__DIR__ . '/assets/css/staff.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
+$passwordToggleCssVersion = (string) @filemtime(__DIR__ . '/assets/css/password-toggle.css');
 $staffJsVersion = (string) @filemtime(__DIR__ . '/assets/js/staff.js');
 $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
+$passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-toggle.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -35,6 +37,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <link rel="stylesheet" href="assets/css/notifications.css?v=<?= urlencode($notificationsCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/staff.css?v=<?= urlencode($staffCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= urlencode($passwordToggleCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page" data-requires-credential-update="<?= $requiresCredentialUpdate ? 'true' : 'false' ?>">
   <div id="wrapper">
@@ -489,6 +492,22 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
     </div>
   </div>
 
+  <div class="modal fade" id="removeDispenseMedicineModal" tabindex="-1" aria-labelledby="removeDispenseMedicineModalTitle" aria-describedby="removeDispenseMedicineModalMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content notification-confirm-modal text-center p-4">
+        <div class="notification-confirm-modal__icon mb-3 text-danger" aria-hidden="true">
+          <i class="bi bi-trash3 fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2" id="removeDispenseMedicineModalTitle">Remove selected medicine?</h5>
+        <p class="mb-3 text-muted" id="removeDispenseMedicineModalMessage">Remove this medicine from the dispensing list? Inventory stock will not be changed.</p>
+        <div class="d-flex justify-content-center gap-2 flex-wrap">
+          <button type="button" class="btn btn-secondary btn-modern" id="cancelRemoveDispenseMedicineBtn" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="confirmRemoveDispenseMedicineBtn">Remove Medicine</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="staffNotificationMessageModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content notification-message-modal">
@@ -531,13 +550,13 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
     </div>
   </div>
 
-  <div class="modal fade" id="residentFormModal" tabindex="-1" aria-hidden="true">
+  <div class="modal fade" id="residentFormModal" tabindex="-1" aria-labelledby="residentFormModalTitle" aria-describedby="residentFormModalDescription" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered staff-resident-form-dialog">
       <div class="modal-content staff-resident-modal">
         <div class="modal-header border-0">
           <div class="staff-account-modal-copy">
-            <h5 class="modal-title mb-0">Add Patient Account</h5>
-            <p>Search a Cabarian resident from the household database, or switch to manual entry for walk-in and non-Cabarian patients.</p>
+            <h5 class="modal-title mb-0" id="residentFormModalTitle">Add Patient Account</h5>
+            <p id="residentFormModalDescription">Search the Cabarian household database or add a walk-in patient manually.</p>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -550,6 +569,9 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                 class="staff-account-mode is-active"
                 id="residentModeCabarianBtn"
                 data-resident-mode="cabarian"
+                role="tab"
+                aria-controls="residentHouseholdPanel"
+                aria-selected="true"
                 aria-pressed="true"
               >
                 <i class="bi bi-search"></i>
@@ -560,6 +582,9 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                 class="staff-account-mode"
                 id="residentModeManualBtn"
                 data-resident-mode="manual"
+                role="tab"
+                aria-controls="residentFormPanel"
+                aria-selected="false"
                 aria-pressed="false"
               >
                 <i class="bi bi-pencil-square"></i>
@@ -567,7 +592,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               </button>
             </div>
 
-            <section class="staff-account-pane" id="residentHouseholdPanel">
+            <section class="staff-account-pane" id="residentHouseholdPanel" role="tabpanel" aria-labelledby="residentModeCabarianBtn">
               <div class="staff-account-searchbar">
                 <div class="staff-account-searchbox">
                   <label class="staff-account-searchfield" for="residentCabarianSearch">
@@ -583,41 +608,61 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                     <i class="bi bi-search"></i>
                   </button>
                 </div>
-                <span class="staff-record-count" id="residentCabarianCount"></span>
+                <span class="staff-record-count" id="residentCabarianCount" aria-live="polite"></span>
               </div>
 
-              <div class="staff-account-results" id="residentCabarianResults">
+              <div class="staff-account-results" id="residentCabarianResults" aria-live="polite">
                 <div class="staff-empty">Search a resident name, resident ID, or household ID to view matches.</div>
               </div>
             </section>
 
-            <section class="staff-account-pane staff-account-pane--manual d-none" id="residentFormPanel">
-              <p class="staff-account-pane__copy">Enter the patient details manually for walk-in or non-Cabarian patients who are not in the household system.</p>
-              <form id="residentForm" class="staff-form-grid" autocomplete="off">
-                <div class="col-span-2">
-                  <label for="quickResidentName" class="form-label">Full Name</label>
-                  <input type="text" id="quickResidentName" class="form-control" placeholder="Juan Dela Cruz" required>
+            <section class="staff-account-pane staff-account-pane--manual d-none" id="residentFormPanel" role="tabpanel" aria-labelledby="residentModeManualBtn">
+              <div class="staff-manual-intro">
+                <span class="staff-manual-intro__icon" aria-hidden="true"><i class="bi bi-person-vcard"></i></span>
+                <div class="staff-manual-intro__copy">
+                  <strong>Manual patient details</strong>
+                  <p>For walk-in or non-Cabarian patients who are not listed in the household system.</p>
+                </div>
+                <span class="staff-manual-required-note"><span aria-hidden="true">*</span> Required</span>
+              </div>
+
+              <form id="residentForm" class="staff-form-grid staff-manual-form" autocomplete="off">
+                <div class="col-span-2 staff-manual-field">
+                  <label for="quickResidentName" class="form-label">Full Name <span class="staff-required-marker" aria-hidden="true">*</span></label>
+                  <div class="staff-manual-control">
+                    <i class="bi bi-person" aria-hidden="true"></i>
+                    <input type="text" id="quickResidentName" class="form-control" required>
+                  </div>
                 </div>
 
-                <div>
-                  <label for="quickResidentBarangay" class="form-label">Barangay</label>
-                  <input type="text" id="quickResidentBarangay" class="form-control" placeholder="Other barangay or walk-in area" required>
+                <div class="staff-manual-field">
+                  <label for="quickResidentBarangay" class="form-label">Barangay <span class="staff-required-marker" aria-hidden="true">*</span></label>
+                  <div class="staff-manual-control">
+                    <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                    <input type="text" id="quickResidentBarangay" class="form-control" required>
+                  </div>
                 </div>
 
-                <div>
-                  <label for="quickResidentZone" class="form-label">Zone</label>
-                  <input type="text" id="quickResidentZone" class="form-control" placeholder="Zone 2">
+                <div class="staff-manual-field">
+                  <label for="quickResidentZone" class="form-label">Zone <span class="staff-required-marker" aria-hidden="true">*</span></label>
+                  <div class="staff-manual-control">
+                    <i class="bi bi-signpost-split" aria-hidden="true"></i>
+                    <input type="text" id="quickResidentZone" class="form-control" required>
+                  </div>
                 </div>
 
-                <div class="col-span-2">
+                <div class="col-span-2 staff-manual-field">
                   <label for="quickResidentCity" class="form-label">City / Municipality</label>
-                  <input type="text" id="quickResidentCity" class="form-control" value="Ligao City" placeholder="Ligao City">
+                  <div class="staff-manual-control">
+                    <i class="bi bi-buildings" aria-hidden="true"></i>
+                    <input type="text" id="quickResidentCity" class="form-control">
+                  </div>
                 </div>
 
-                <div class="col-span-2 staff-form-actions">
-                  <button type="button" class="btn btn-light" id="closeResidentFormBtn" data-bs-dismiss="modal">Cancel</button>
-                  <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-person-plus"></i>Save Manual Entry
+                <div class="col-span-2 staff-form-actions staff-manual-form-actions">
+                  <button type="button" class="btn staff-manual-cancel-btn" id="closeResidentFormBtn" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn staff-manual-save-btn">
+                    <i class="bi bi-person-plus" aria-hidden="true"></i><span>Save Patient</span>
                   </button>
                 </div>
               </form>
@@ -684,7 +729,8 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
+  <script src="assets/js/password-toggle.js?v=<?= urlencode($passwordToggleJsVersion) ?>"></script>
   <script src="assets/js/staff.js?v=<?= urlencode($staffJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>

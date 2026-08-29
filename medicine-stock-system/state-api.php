@@ -7,14 +7,47 @@ final class MSSStateValidationException extends RuntimeException
 {
 }
 
+final class MSSStateActionException extends RuntimeException
+{
+    private int $statusCode;
+    private array $context;
+
+    public function __construct(string $message, int $statusCode = 422, array $context = [])
+    {
+        parent::__construct($message);
+        $this->statusCode = $statusCode;
+        $this->context = $context;
+    }
+
+    public function statusCode(): int
+    {
+        return $this->statusCode;
+    }
+
+    public function context(): array
+    {
+        return $this->context;
+    }
+}
+
 function mss_state_text(mixed $value): string
 {
     return trim((string) ($value ?? ''));
 }
 
+function mss_state_actor_is_staff(?array $actor): bool
+{
+    return is_array($actor) && mss_auth_user_role($actor) === 'staff';
+}
+
+function mss_state_actor_id(?array $actor): string
+{
+    return is_array($actor) ? mss_state_text($actor['id'] ?? '') : '';
+}
+
 function mss_state_online_window_seconds(): int
 {
-    return 1800;
+    return 120;
 }
 
 function mss_state_int(mixed $value, int $default = 0, ?int $min = 0): int
@@ -193,6 +226,133 @@ function mss_state_assert_unique_inventory_records(array $rows): void
     }
 }
 
+function mss_state_inventory_version(mixed $value): string
+{
+    $raw = mss_state_text($value);
+    $timestamp = $raw !== '' ? strtotime($raw) : false;
+    return $timestamp === false ? '' : date('Y-m-d H:i:s', $timestamp);
+}
+
+function mss_state_assert_inventory_versions(PDO $pdo, array $versions): void
+{
+    $expected = [];
+    foreach ($versions as $id => $version) {
+        $normalizedId = mss_state_text($id);
+        $normalizedVersion = mss_state_inventory_version($version);
+        if ($normalizedId !== '' && $normalizedVersion !== '') {
+            $expected[$normalizedId] = $normalizedVersion;
+        }
+    }
+
+    $rows = $pdo->query(
+        'SELECT `id`, `last_updated_at`
+         FROM `mss_inventory_records`
+         ORDER BY `id`
+         FOR UPDATE'
+    )->fetchAll(PDO::FETCH_ASSOC);
+    $serverIds = [];
+    foreach ($rows as $row) {
+        $id = mss_state_text($row['id'] ?? '');
+        if ($id === '') {
+            continue;
+        }
+        $serverIds[$id] = true;
+        $serverVersion = mss_state_inventory_version($row['last_updated_at'] ?? '');
+        if (!isset($expected[$id]) || $expected[$id] !== $serverVersion) {
+            throw new MSSStateValidationException(
+                'Inventory changed in another session. Refresh the page, review the latest stock, and try again.'
+            );
+        }
+    }
+
+    foreach ($expected as $id => $_version) {
+        if (!isset($serverIds[$id])) {
+            throw new MSSStateValidationException(
+                'Inventory changed in another session. Refresh the page, review the latest stock, and try again.'
+            );
+        }
+    }
+}
+
+function mss_state_linked_delivery_fingerprint(array $row): string
+{
+    return mss_state_json_encode([
+        'id' => mss_state_text($row['id'] ?? ''),
+        'medicineId' => mss_state_text($row['medicineId'] ?? $row['medicine_id'] ?? ''),
+        'medicineName' => mss_state_text($row['medicineName'] ?? $row['medicine_name'] ?? ''),
+        'actionType' => strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? '')),
+        'quantity' => mss_state_int($row['quantity'] ?? 0),
+        'note' => mss_state_text($row['note'] ?? ''),
+        'stockBefore' => mss_state_int($row['stockBefore'] ?? $row['stock_before'] ?? 0),
+        'stockAfter' => mss_state_int($row['stockAfter'] ?? $row['stock_after'] ?? 0),
+        'createdAt' => mss_state_datetime($row['createdAt'] ?? $row['created_at'] ?? '', '1970-01-01 00:00:00'),
+        'linkedRequestId' => mss_state_text($row['linkedRequestId'] ?? $row['linked_request_id'] ?? ''),
+        'linkedRequestItemId' => mss_state_text($row['linkedRequestItemId'] ?? $row['linked_request_item_id'] ?? ''),
+        'linkedRequestGroupId' => mss_state_text($row['linkedRequestGroupId'] ?? $row['linked_request_group_id'] ?? ''),
+        'linkedRequestCode' => mss_state_text($row['linkedRequestCode'] ?? $row['linked_request_code'] ?? ''),
+    ], '{}');
+}
+
+function mss_state_is_linked_delivery(array $row): bool
+{
+    if (strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? '')) !== 'restock') {
+        return false;
+    }
+
+    return mss_state_text($row['linkedRequestId'] ?? $row['linked_request_id'] ?? '') !== ''
+        || mss_state_text($row['linkedRequestItemId'] ?? $row['linked_request_item_id'] ?? '') !== ''
+        || mss_state_text($row['linkedRequestGroupId'] ?? $row['linked_request_group_id'] ?? '') !== ''
+        || mss_state_text($row['linkedRequestCode'] ?? $row['linked_request_code'] ?? '') !== '';
+}
+
+function mss_state_assert_linked_deliveries_unchanged(PDO $pdo, array $rows): void
+{
+    $existingRows = $pdo->query(
+        'SELECT *
+         FROM `mss_inventory_movements`
+         WHERE `action_type` = \'restock\'
+           AND (
+             `linked_request_id` <> \'\'
+             OR `linked_request_item_id` <> \'\'
+             OR `linked_request_group_id` <> \'\'
+             OR `linked_request_code` <> \'\'
+           )
+         FOR UPDATE'
+    )->fetchAll(PDO::FETCH_ASSOC);
+    $existing = [];
+    foreach ($existingRows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = mss_state_text($row['id'] ?? '');
+        if ($id !== '') {
+            $existing[$id] = mss_state_linked_delivery_fingerprint($row);
+        }
+    }
+
+    $seen = [];
+    foreach ($rows as $row) {
+        if (!is_array($row) || !mss_state_is_linked_delivery($row)) {
+            continue;
+        }
+        $id = mss_state_text($row['id'] ?? '');
+        if ($id === '' || !isset($existing[$id]) || $existing[$id] !== mss_state_linked_delivery_fingerprint($row)) {
+            throw new MSSStateValidationException(
+                'CHO-linked deliveries must be recorded through Receive CHO Delivery.'
+            );
+        }
+        $seen[$id] = true;
+    }
+
+    foreach ($existing as $id => $_fingerprint) {
+        if (!isset($seen[$id])) {
+            throw new MSSStateValidationException(
+                'A newer CHO delivery exists. Refresh the page before saving inventory changes.'
+            );
+        }
+    }
+}
+
 /**
  * @return array<string, string>
  */
@@ -240,9 +400,15 @@ function mss_state_assert_password_changed(string $password, string $existingHas
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_users(PDO $pdo): array
+function mss_state_fetch_users(PDO $pdo, ?array $viewer = null): array
 {
-    $rows = $pdo->query('SELECT * FROM `mss_users` ORDER BY `updated_at` DESC, `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    if (mss_state_actor_is_staff($viewer)) {
+        $stmt = $pdo->prepare('SELECT * FROM `mss_users` WHERE `id` = :id LIMIT 1');
+        $stmt->execute([':id' => mss_state_actor_id($viewer)]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $rows = $pdo->query('SELECT * FROM `mss_users` ORDER BY `updated_at` DESC, `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     return array_map(static function (array $row): array {
         return [
@@ -266,9 +432,15 @@ function mss_state_fetch_users(PDO $pdo): array
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_sessions(PDO $pdo): array
+function mss_state_fetch_sessions(PDO $pdo, ?array $viewer = null): array
 {
-    $rows = $pdo->query('SELECT * FROM `mss_sessions` ORDER BY `last_seen_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    if (mss_state_actor_is_staff($viewer)) {
+        $stmt = $pdo->prepare('SELECT * FROM `mss_sessions` WHERE `user_id` = :user_id ORDER BY `last_seen_at` DESC');
+        $stmt->execute([':user_id' => mss_state_actor_id($viewer)]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $rows = $pdo->query('SELECT * FROM `mss_sessions` ORDER BY `last_seen_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    }
     $latestByUser = [];
 
     foreach ($rows as $row) {
@@ -336,9 +508,23 @@ function mss_state_log_action_type(array $row): string
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_logs(PDO $pdo): array
+function mss_state_fetch_logs(PDO $pdo, ?array $viewer = null): array
 {
-    $rows = $pdo->query('SELECT * FROM `mss_activity_logs` ORDER BY `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    if (mss_state_actor_is_staff($viewer)) {
+        $stmt = $pdo->prepare(
+            'SELECT *
+             FROM `mss_activity_logs`
+             WHERE (
+                 LOWER(`category`) <> \'dispensing\'
+                 AND LOWER(`action`) NOT LIKE \'%dispens%\'
+             ) OR LOWER(`username`) = LOWER(:username)
+             ORDER BY `created_at` DESC'
+        );
+        $stmt->execute([':username' => mss_state_text($viewer['username'] ?? '')]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $rows = $pdo->query('SELECT * FROM `mss_activity_logs` ORDER BY `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     return array_map(static function (array $row): array {
         return [
@@ -389,9 +575,21 @@ function mss_state_fetch_inventory(PDO $pdo): array
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_movements(PDO $pdo): array
+function mss_state_fetch_movements(PDO $pdo, ?array $viewer = null): array
 {
-    $rows = $pdo->query('SELECT * FROM `mss_inventory_movements` ORDER BY `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    if (mss_state_actor_is_staff($viewer)) {
+        $stmt = $pdo->prepare(
+            'SELECT *
+             FROM `mss_inventory_movements`
+             WHERE LOWER(`action_type`) IN (\'dispense\', \'issue\', \'release\', \'released\')
+               AND `released_by_user_id` = :released_by_user_id
+             ORDER BY `created_at` DESC'
+        );
+        $stmt->execute([':released_by_user_id' => mss_state_actor_id($viewer)]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $rows = $pdo->query('SELECT * FROM `mss_inventory_movements` ORDER BY `created_at` DESC')->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     return array_map(static function (array $row): array {
         return [
@@ -412,6 +610,7 @@ function mss_state_fetch_movements(PDO $pdo): array
             'recipientBarangay' => mss_state_text($row['recipient_barangay'] ?? ''),
             'releasedByRole' => mss_state_text($row['released_by_role'] ?? ''),
             'releasedByName' => mss_state_text($row['released_by_name'] ?? ''),
+            'releasedByUserId' => mss_state_text($row['released_by_user_id'] ?? ''),
             'linkedRequestId' => mss_state_text($row['linked_request_id'] ?? ''),
             'linkedRequestItemId' => mss_state_text($row['linked_request_item_id'] ?? ''),
             'linkedRequestGroupId' => mss_state_text($row['linked_request_group_id'] ?? ''),
@@ -423,11 +622,12 @@ function mss_state_fetch_movements(PDO $pdo): array
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_residents(PDO $pdo): array
+function mss_state_fetch_residents(PDO $pdo, ?array $viewer = null): array
 {
     $rows = $pdo->query('SELECT * FROM `mss_resident_accounts` ORDER BY `full_name` ASC')->fetchAll(PDO::FETCH_ASSOC);
+    $hideGlobalDispensingSummary = mss_state_actor_is_staff($viewer);
 
-    return array_map(static function (array $row): array {
+    return array_map(static function (array $row) use ($hideGlobalDispensingSummary): array {
         return [
             'id' => mss_state_text($row['id'] ?? ''),
             'residentId' => mss_state_text($row['resident_id'] ?? ''),
@@ -439,8 +639,8 @@ function mss_state_fetch_residents(PDO $pdo): array
             'province' => mss_state_text($row['province'] ?? ''),
             'address' => mss_state_text($row['address'] ?? ''),
             'source' => mss_state_text($row['source'] ?? ''),
-            'lastDispensedAt' => mss_state_text($row['last_dispensed_at'] ?? ''),
-            'lastDispensedMedicine' => mss_state_text($row['last_dispensed_medicine'] ?? ''),
+            'lastDispensedAt' => $hideGlobalDispensingSummary ? '' : mss_state_text($row['last_dispensed_at'] ?? ''),
+            'lastDispensedMedicine' => $hideGlobalDispensingSummary ? '' : mss_state_text($row['last_dispensed_medicine'] ?? ''),
         ];
     }, $rows);
 }
@@ -920,6 +1120,68 @@ function mss_state_replace_users(PDO $pdo, array $rows): void
     );
 }
 
+function mss_state_update_staff_user(PDO $pdo, array $rows, array $actor): void
+{
+    $actorId = mss_state_actor_id($actor);
+    $incoming = null;
+    foreach ($rows as $row) {
+        if (is_array($row) && mss_state_text($row['id'] ?? '') === $actorId) {
+            $incoming = $row;
+            break;
+        }
+    }
+    if (!is_array($incoming)) {
+        throw new MSSStateValidationException('Your staff account was not found in the submitted profile.');
+    }
+
+    $fullName = mss_state_text($incoming['fullName'] ?? $incoming['full_name'] ?? '');
+    $username = mss_state_text($incoming['username'] ?? '');
+    $contact = mss_state_text($incoming['contact'] ?? '');
+    if ($fullName === '' || $username === '') {
+        throw new MSSStateValidationException('Full name and username are required.');
+    }
+    if (!preg_match('/^\d{11}$/', $contact)) {
+        throw new MSSStateValidationException('Mobile number must contain exactly 11 digits.');
+    }
+
+    $duplicate = $pdo->prepare('SELECT `id` FROM `mss_users` WHERE LOWER(`username`) = LOWER(:username) AND `id` <> :id LIMIT 1');
+    $duplicate->execute([':username' => $username, ':id' => $actorId]);
+    if ($duplicate->fetchColumn() !== false) {
+        throw new MSSStateValidationException('Username already exists. Please use another username.');
+    }
+
+    $password = (string) ($incoming['password'] ?? '');
+    $passwordHash = mss_state_text($actor['password_hash'] ?? '');
+    $credentialsUpdatedAt = mss_state_text($actor['credentials_updated_at'] ?? '');
+    if ($password !== '') {
+        mss_state_assert_password_changed($password, $passwordHash);
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        $credentialsUpdatedAt = mss_auth_now();
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE `mss_users`
+         SET `full_name` = :full_name,
+             `username` = :username,
+             `contact` = :contact,
+             `password_hash` = :password_hash,
+             `credentials_updated_at` = :credentials_updated_at,
+             `updated_at` = :updated_at,
+             `updated_by` = :updated_by
+         WHERE `id` = :id'
+    );
+    $stmt->execute([
+        ':full_name' => $fullName,
+        ':username' => $username,
+        ':contact' => $contact,
+        ':password_hash' => $passwordHash,
+        ':credentials_updated_at' => $credentialsUpdatedAt !== '' ? mss_state_nullable_datetime($credentialsUpdatedAt) : null,
+        ':updated_at' => mss_auth_now(),
+        ':updated_by' => $fullName,
+        ':id' => $actorId,
+    ]);
+}
+
 function mss_state_replace_sessions(PDO $pdo, array $rows): void
 {
     $pdo->exec('DELETE FROM `mss_sessions`');
@@ -967,12 +1229,26 @@ function mss_state_replace_sessions(PDO $pdo, array $rows): void
     }
 }
 
-function mss_state_replace_logs(PDO $pdo, array $rows): void
+function mss_state_replace_logs(PDO $pdo, array $rows, ?array $actor = null): void
 {
     $mergedRows = [];
     $seen = [];
 
-    foreach (array_merge($rows, mss_state_fetch_logs($pdo)) as $row) {
+    if (mss_state_actor_is_staff($actor)) {
+        $actorName = mss_state_text($actor['full_name'] ?? '');
+        $actorUsername = mss_state_text($actor['username'] ?? '');
+        foreach ($rows as &$row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $row['actor'] = $actorName;
+            $row['username'] = $actorUsername;
+            $row['ipAddress'] = mss_api_client_ip();
+        }
+        unset($row);
+    }
+
+    foreach (array_merge(mss_state_fetch_logs($pdo), $rows) as $row) {
         if (!is_array($row)) {
             continue;
         }
@@ -1075,19 +1351,20 @@ function mss_state_replace_inventory(PDO $pdo, array $rows): void
     }
 }
 
-function mss_state_replace_movements(PDO $pdo, array $rows): void
+function mss_state_replace_movements(PDO $pdo, array $rows, array $actor): void
 {
-    $pdo->exec('DELETE FROM `mss_inventory_movements`');
-
     if ($rows === []) {
         return;
     }
 
+    $existingRows = $pdo->query('SELECT `id` FROM `mss_inventory_movements` FOR UPDATE')->fetchAll(PDO::FETCH_COLUMN);
+    $existingIds = array_fill_keys(array_map('strval', $existingRows), true);
+
     $stmt = $pdo->prepare(
         'INSERT INTO `mss_inventory_movements`
-            (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
+            (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `released_by_user_id`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
          VALUES
-            (:id, :medicine_id, :medicine_name, :action_type, :quantity, :disease_category, :illness, :note, :stock_before, :stock_after, :created_at, :user_name, :recipient_id, :recipient_name, :recipient_barangay, :released_by_role, :released_by_name, :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
+            (:id, :medicine_id, :medicine_name, :action_type, :quantity, :disease_category, :illness, :note, :stock_before, :stock_after, :created_at, :user_name, :recipient_id, :recipient_name, :recipient_barangay, :released_by_role, :released_by_name, :released_by_user_id, :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
     );
 
     foreach ($rows as $row) {
@@ -1095,36 +1372,172 @@ function mss_state_replace_movements(PDO $pdo, array $rows): void
             continue;
         }
 
+        $id = mss_state_text($row['id'] ?? '') ?: mss_state_uid('movement');
+        if (isset($existingIds[$id])) {
+            continue;
+        }
+
+        $actionType = strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? 'adjusted') ?: 'adjusted');
+        $isPatientRelease = in_array($actionType, ['dispense', 'issue', 'release', 'released'], true);
+        if (mss_state_actor_is_staff($actor) && !$isPatientRelease) {
+            throw new MSSStateValidationException('Staff accounts may only add dispensing records.');
+        }
+
+        $actorId = mss_state_actor_id($actor);
+        $actorName = mss_state_text($actor['full_name'] ?? '');
+        $actorRole = mss_state_text($actor['role'] ?? $actor['account_type'] ?? '');
+        $releasedByUserId = $isPatientRelease ? $actorId : '';
+        $releasedByName = $isPatientRelease
+            ? $actorName
+            : mss_state_text($row['releasedByName'] ?? $row['released_by_name'] ?? '');
+        $releasedByRole = $isPatientRelease
+            ? $actorRole
+            : mss_state_text($row['releasedByRole'] ?? $row['released_by_role'] ?? '');
+        $userName = $isPatientRelease
+            ? $actorName
+            : mss_state_text($row['user'] ?? $row['user_name'] ?? '');
+        $createdAt = mss_state_actor_is_staff($actor) && $isPatientRelease
+            ? mss_auth_now()
+            : mss_state_datetime($row['createdAt'] ?? $row['created_at'] ?? '', date('Y-m-d H:i:s'));
+
         $stmt->execute([
-            ':id' => mss_state_text($row['id'] ?? '') ?: mss_state_uid('movement'),
+            ':id' => $id,
             ':medicine_id' => mss_state_text($row['medicineId'] ?? $row['medicine_id'] ?? ''),
             ':medicine_name' => mss_state_text($row['medicineName'] ?? $row['medicine_name'] ?? ''),
-            ':action_type' => strtolower(mss_state_text($row['actionType'] ?? $row['action_type'] ?? 'adjusted') ?: 'adjusted'),
+            ':action_type' => $actionType,
             ':quantity' => mss_state_int($row['quantity'] ?? 0),
             ':disease_category' => mss_state_text($row['diseaseCategory'] ?? $row['disease_category'] ?? ''),
             ':illness' => mss_state_text($row['illness'] ?? ''),
             ':note' => mss_state_text($row['note'] ?? ''),
             ':stock_before' => mss_state_int($row['stockBefore'] ?? $row['stock_before'] ?? 0),
             ':stock_after' => mss_state_int($row['stockAfter'] ?? $row['stock_after'] ?? 0),
-            ':created_at' => mss_state_datetime($row['createdAt'] ?? $row['created_at'] ?? '', date('Y-m-d H:i:s')),
-            ':user_name' => mss_state_text($row['user'] ?? $row['user_name'] ?? ''),
+            ':created_at' => $createdAt,
+            ':user_name' => $userName,
             ':recipient_id' => mss_state_text($row['recipientId'] ?? $row['recipient_id'] ?? ''),
             ':recipient_name' => mss_state_text($row['recipientName'] ?? $row['recipient_name'] ?? ''),
             ':recipient_barangay' => mss_state_text($row['recipientBarangay'] ?? $row['recipient_barangay'] ?? ''),
-            ':released_by_role' => mss_state_text($row['releasedByRole'] ?? $row['released_by_role'] ?? ''),
-            ':released_by_name' => mss_state_text($row['releasedByName'] ?? $row['released_by_name'] ?? ''),
+            ':released_by_role' => $releasedByRole,
+            ':released_by_name' => $releasedByName,
+            ':released_by_user_id' => $releasedByUserId,
             ':linked_request_id' => mss_state_text($row['linkedRequestId'] ?? $row['linked_request_id'] ?? ''),
             ':linked_request_item_id' => mss_state_text($row['linkedRequestItemId'] ?? $row['linked_request_item_id'] ?? ''),
             ':linked_request_group_id' => mss_state_text($row['linkedRequestGroupId'] ?? $row['linked_request_group_id'] ?? ''),
             ':linked_request_code' => mss_state_text($row['linkedRequestCode'] ?? $row['linked_request_code'] ?? ''),
         ]);
+        $existingIds[$id] = true;
     }
 }
 
-function mss_state_replace_residents(PDO $pdo, array $rows): void
+function mss_state_refresh_resident_dispensing_summaries(PDO $pdo): void
 {
-    $pdo->exec('DELETE FROM `mss_resident_accounts`');
+    $residents = $pdo->query(
+        'SELECT `id`, `resident_id`, `full_name` FROM `mss_resident_accounts` FOR UPDATE'
+    )->fetchAll(PDO::FETCH_ASSOC);
+    $movements = $pdo->query(
+        "SELECT `recipient_id`, `recipient_name`, `medicine_name`, `created_at`
+         FROM `mss_inventory_movements`
+         WHERE LOWER(`action_type`) IN ('dispense', 'issue', 'release', 'released')
+         ORDER BY `created_at` DESC, `id` DESC"
+    )->fetchAll(PDO::FETCH_ASSOC);
 
+    $latestByRecipientId = [];
+    $latestByRecipientName = [];
+    foreach ($movements as $movement) {
+        $summary = [
+            'createdAt' => mss_state_text($movement['created_at'] ?? ''),
+            'medicineName' => mss_state_text($movement['medicine_name'] ?? ''),
+        ];
+        $recipientId = strtolower(mss_state_text($movement['recipient_id'] ?? ''));
+        $recipientName = strtolower(mss_state_text($movement['recipient_name'] ?? ''));
+        if ($recipientId !== '' && !isset($latestByRecipientId[$recipientId])) {
+            $latestByRecipientId[$recipientId] = $summary;
+        }
+        if ($recipientName !== '' && !isset($latestByRecipientName[$recipientName])) {
+            $latestByRecipientName[$recipientName] = $summary;
+        }
+    }
+
+    $nameCounts = [];
+    foreach ($residents as $resident) {
+        $nameKey = strtolower(mss_state_text($resident['full_name'] ?? ''));
+        if ($nameKey !== '') {
+            $nameCounts[$nameKey] = ($nameCounts[$nameKey] ?? 0) + 1;
+        }
+    }
+
+    $update = $pdo->prepare(
+        'UPDATE `mss_resident_accounts`
+         SET `last_dispensed_at` = :last_dispensed_at,
+             `last_dispensed_medicine` = :last_dispensed_medicine
+         WHERE `id` = :id'
+    );
+    foreach ($residents as $resident) {
+        $summary = null;
+        foreach ([$resident['resident_id'] ?? '', $resident['id'] ?? ''] as $identifier) {
+            $identifier = strtolower(mss_state_text($identifier));
+            if ($identifier !== '' && isset($latestByRecipientId[$identifier])) {
+                $summary = $latestByRecipientId[$identifier];
+                break;
+            }
+        }
+        $nameKey = strtolower(mss_state_text($resident['full_name'] ?? ''));
+        if (!is_array($summary) && $nameKey !== '' && ($nameCounts[$nameKey] ?? 0) === 1) {
+            $summary = $latestByRecipientName[$nameKey] ?? null;
+        }
+
+        $update->execute([
+            ':last_dispensed_at' => is_array($summary) ? mss_state_nullable_datetime($summary['createdAt'] ?? '') : null,
+            ':last_dispensed_medicine' => is_array($summary) ? mss_state_text($summary['medicineName'] ?? '') : '',
+            ':id' => mss_state_text($resident['id'] ?? ''),
+        ]);
+    }
+}
+
+function mss_state_replace_residents(PDO $pdo, array $rows, ?array $actor = null): void
+{
+    if (mss_state_actor_is_staff($actor)) {
+        if ($rows === []) {
+            return;
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO `mss_resident_accounts`
+                (`id`, `resident_id`, `household_id`, `full_name`, `barangay`, `zone`, `city`, `province`, `address`, `source`, `last_dispensed_at`, `last_dispensed_medicine`)
+             VALUES
+                (:id, :resident_id, :household_id, :full_name, :barangay, :zone, :city, :province, :address, :source, NULL, \'\')
+             ON DUPLICATE KEY UPDATE
+                `resident_id` = VALUES(`resident_id`),
+                `household_id` = VALUES(`household_id`),
+                `full_name` = VALUES(`full_name`),
+                `barangay` = VALUES(`barangay`),
+                `zone` = VALUES(`zone`),
+                `city` = VALUES(`city`),
+                `province` = VALUES(`province`),
+                `address` = VALUES(`address`),
+                `source` = VALUES(`source`)'
+        );
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $stmt->execute([
+                ':id' => mss_state_text($row['id'] ?? '') ?: mss_state_uid('resident'),
+                ':resident_id' => mss_state_text($row['residentId'] ?? $row['resident_id'] ?? ''),
+                ':household_id' => mss_state_text($row['householdId'] ?? $row['household_id'] ?? ''),
+                ':full_name' => mss_state_text($row['fullName'] ?? $row['full_name'] ?? ''),
+                ':barangay' => mss_state_text($row['barangay'] ?? 'Cabarian') ?: 'Cabarian',
+                ':zone' => mss_state_text($row['zone'] ?? ''),
+                ':city' => mss_state_text($row['city'] ?? 'Ligao City') ?: 'Ligao City',
+                ':province' => mss_state_text($row['province'] ?? 'Albay') ?: 'Albay',
+                ':address' => mss_state_text($row['address'] ?? ''),
+                ':source' => mss_state_text($row['source'] ?? 'medicine-system') ?: 'medicine-system',
+            ]);
+        }
+        mss_state_refresh_resident_dispensing_summaries($pdo);
+        return;
+    }
+
+    $pdo->exec('DELETE FROM `mss_resident_accounts`');
     if ($rows === []) {
         return;
     }
@@ -1135,12 +1548,10 @@ function mss_state_replace_residents(PDO $pdo, array $rows): void
          VALUES
             (:id, :resident_id, :household_id, :full_name, :barangay, :zone, :city, :province, :address, :source, :last_dispensed_at, :last_dispensed_medicine)'
     );
-
     foreach ($rows as $row) {
         if (!is_array($row)) {
             continue;
         }
-
         $stmt->execute([
             ':id' => mss_state_text($row['id'] ?? '') ?: mss_state_uid('resident'),
             ':resident_id' => mss_state_text($row['residentId'] ?? $row['resident_id'] ?? ''),
@@ -1487,7 +1898,396 @@ function mss_state_merge_notification_resolved_state(PDO $pdo, array $value): vo
     mss_state_replace_client_state_value($pdo, 'notification_resolved_state', $resolvedState);
 }
 
+function mss_state_action_identity_key(mixed $value): string
+{
+    $normalized = preg_replace('/\s+/u', ' ', mss_state_text($value));
+    $normalized = is_string($normalized) ? $normalized : '';
+    return function_exists('mb_strtolower') ? mb_strtolower($normalized, 'UTF-8') : strtolower($normalized);
+}
+
+function mss_state_action_date(mixed $value): string
+{
+    $raw = mss_state_text($value);
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
+    $errors = DateTimeImmutable::getLastErrors();
+    $hasErrors = is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0);
+
+    if (!$date || $hasErrors || $date->format('Y-m-d') !== $raw) {
+        throw new MSSStateActionException('Select a valid delivery date.', 422);
+    }
+
+    return $raw;
+}
+
+function mss_state_movement_matches_request(array $movement, array $request): bool
+{
+    if (strtolower(mss_state_text($movement['action_type'] ?? $movement['actionType'] ?? '')) !== 'restock') {
+        return false;
+    }
+
+    $requestId = mss_state_text($request['id'] ?? '');
+    $requestGroupId = mss_state_text($request['request_group_id'] ?? $request['requestGroupId'] ?? '');
+    $requestCode = mss_state_text($request['request_code'] ?? $request['requestCode'] ?? '');
+    $medicineId = mss_state_text($request['medicine_id'] ?? $request['medicineId'] ?? '');
+    $medicineName = mss_state_action_identity_key($request['medicine_name'] ?? $request['medicineName'] ?? '');
+    $linkedRequestId = mss_state_text($movement['linked_request_id'] ?? $movement['linkedRequestId'] ?? '');
+    $linkedRequestItemId = mss_state_text($movement['linked_request_item_id'] ?? $movement['linkedRequestItemId'] ?? '');
+    $linkedRequestGroupId = mss_state_text($movement['linked_request_group_id'] ?? $movement['linkedRequestGroupId'] ?? '');
+    $linkedRequestCode = mss_state_text($movement['linked_request_code'] ?? $movement['linkedRequestCode'] ?? '');
+    $movementMedicineId = mss_state_text($movement['medicine_id'] ?? $movement['medicineId'] ?? '');
+    $movementMedicineName = mss_state_action_identity_key($movement['medicine_name'] ?? $movement['medicineName'] ?? '');
+
+    if ($requestId !== '' && $linkedRequestItemId === $requestId) {
+        return true;
+    }
+    if ($requestId !== '' && $linkedRequestItemId === '' && $linkedRequestId === $requestId) {
+        return true;
+    }
+
+    $sameRequestGroup = ($requestGroupId !== '' && $linkedRequestGroupId === $requestGroupId)
+        || ($requestCode !== '' && $linkedRequestCode === $requestCode);
+    $sameMedicine = ($medicineId !== '' && $movementMedicineId === $medicineId)
+        || ($medicineId === '' && $medicineName !== '' && $movementMedicineName === $medicineName);
+
+    return $requestId !== ''
+        && $linkedRequestItemId !== $requestId
+        && $sameRequestGroup
+        && $sameMedicine;
+}
+
+/**
+ * @return array{quantity: int, rows: array<int, array<string, mixed>>}
+ */
+function mss_state_lock_request_deliveries(PDO $pdo, array $request): array
+{
+    $requestId = mss_state_text($request['id'] ?? '');
+    $groupId = mss_state_text($request['request_group_id'] ?? '');
+    $requestCode = mss_state_text($request['request_code'] ?? '');
+    $candidates = [];
+    foreach ([
+        'linked_request_item_id' => $requestId,
+        'linked_request_id' => $requestId,
+        'linked_request_group_id' => $groupId,
+        'linked_request_code' => $requestCode,
+    ] as $column => $value) {
+        if ($value === '') {
+            continue;
+        }
+        $stmt = $pdo->prepare(
+            "SELECT *
+             FROM `mss_inventory_movements`
+             WHERE `action_type` = 'restock' AND `{$column}` = :value
+             FOR UPDATE"
+        );
+        $stmt->execute([':value' => $value]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = mss_state_text($row['id'] ?? '');
+            if ($id !== '') {
+                $candidates[$id] = $row;
+            }
+        }
+    }
+    $rows = array_values(array_filter(
+        array_values($candidates),
+        static fn (mixed $row): bool => is_array($row) && mss_state_movement_matches_request($row, $request)
+    ));
+    $quantity = array_reduce(
+        $rows,
+        static fn (int $total, array $row): int => $total + mss_state_int($row['quantity'] ?? 0),
+        0
+    );
+
+    return ['quantity' => $quantity, 'rows' => $rows];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_state_receive_cho_delivery(PDO $pdo, array $input, array $actor): array
+{
+    $operationId = mss_state_text($input['operationId'] ?? '');
+    $requestGroupId = mss_state_text($input['requestGroupId'] ?? '');
+    $requestItemId = mss_state_text($input['requestItemId'] ?? '');
+    $medicineId = mss_state_text($input['medicineId'] ?? '');
+    $quantity = $input['quantity'] ?? null;
+    $actionDate = mss_state_action_date($input['actionDate'] ?? '');
+    $submittedNote = mss_state_text($input['note'] ?? '');
+
+    if (preg_match('/^[A-Za-z0-9_-]{8,64}$/', $operationId) !== 1) {
+        throw new MSSStateActionException('Unable to identify this delivery operation. Please try again.', 422);
+    }
+    if ($requestGroupId === '' || strlen($requestGroupId) > 64 || $requestItemId === '' || strlen($requestItemId) > 64) {
+        throw new MSSStateActionException('Select a valid CHO request.', 422);
+    }
+    if ($medicineId === '' || strlen($medicineId) > 64) {
+        throw new MSSStateActionException('Select a valid medicine record.', 422);
+    }
+    if (!is_int($quantity) || $quantity <= 0) {
+        throw new MSSStateActionException('Enter a whole-number quantity greater than zero.', 422);
+    }
+    if (strlen($submittedNote) > 500) {
+        throw new MSSStateActionException('The delivery note must be 500 characters or fewer.', 422);
+    }
+    if ($actionDate > date('Y-m-d')) {
+        throw new MSSStateActionException('The delivery date cannot be in the future.', 422);
+    }
+
+    $existingStmt = $pdo->prepare(
+        'SELECT * FROM `mss_inventory_movements` WHERE `id` = :operation_id FOR UPDATE'
+    );
+    $existingStmt->execute([':operation_id' => $operationId]);
+    $existingMovement = $existingStmt->fetch(PDO::FETCH_ASSOC);
+    if (is_array($existingMovement)) {
+        $sameOperation = strtolower(mss_state_text($existingMovement['action_type'] ?? '')) === 'restock'
+            && mss_state_text($existingMovement['medicine_id'] ?? '') === $medicineId
+            && mss_state_text($existingMovement['linked_request_id'] ?? '') === $requestItemId
+            && mss_state_text($existingMovement['linked_request_item_id'] ?? '') === $requestItemId
+            && mss_state_text($existingMovement['linked_request_group_id'] ?? '') === $requestGroupId
+            && mss_state_int($existingMovement['quantity'] ?? 0) === $quantity
+            && substr(mss_state_text($existingMovement['created_at'] ?? ''), 0, 10) === $actionDate;
+        if (!$sameOperation) {
+            throw new MSSStateActionException('This delivery operation identifier is already in use.', 409);
+        }
+
+        return [
+            'idempotentReplay' => true,
+            'delivery' => [
+                'movementId' => $operationId,
+                'requestGroupId' => $requestGroupId,
+                'requestItemId' => $requestItemId,
+                'requestCode' => mss_state_text($existingMovement['linked_request_code'] ?? ''),
+                'medicineId' => $medicineId,
+                'medicineName' => mss_state_text($existingMovement['medicine_name'] ?? ''),
+                'unit' => '',
+                'quantityReceived' => $quantity,
+                'actionDate' => $actionDate,
+                'stockBefore' => mss_state_int($existingMovement['stock_before'] ?? 0),
+                'stockAfter' => mss_state_int($existingMovement['stock_after'] ?? 0),
+            ],
+        ];
+    }
+
+    $requestStmt = $pdo->prepare(
+        'SELECT *
+         FROM `mss_cho_requests`
+         WHERE `request_group_id` = :request_group_id
+         ORDER BY `id`
+         FOR UPDATE'
+    );
+    $requestStmt->execute([':request_group_id' => $requestGroupId]);
+    $groupRows = $requestStmt->fetchAll(PDO::FETCH_ASSOC);
+    $request = null;
+    foreach ($groupRows as $row) {
+        if (is_array($row) && mss_state_text($row['id'] ?? '') === $requestItemId) {
+            $request = $row;
+            break;
+        }
+    }
+    if (!is_array($request)) {
+        throw new MSSStateActionException('The selected CHO request item no longer exists.', 404);
+    }
+    if (mss_state_request_record_status($request['record_status'] ?? 'active') !== 'active') {
+        throw new MSSStateActionException('The selected CHO request is archived and cannot receive deliveries.', 409);
+    }
+
+    $requestDate = mss_state_text($request['request_date'] ?? '');
+    if ($requestDate !== '' && $actionDate < $requestDate) {
+        throw new MSSStateActionException('The delivery date cannot be earlier than the request date.', 422);
+    }
+
+    $inventoryStmt = $pdo->prepare(
+        'SELECT * FROM `mss_inventory_records` WHERE `id` = :medicine_id FOR UPDATE'
+    );
+    $inventoryStmt->execute([':medicine_id' => $medicineId]);
+    $medicine = $inventoryStmt->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($medicine)) {
+        throw new MSSStateActionException('The medicine record no longer exists.', 404);
+    }
+    if (mss_state_inventory_record_status($medicine['record_status'] ?? 'active') !== 'active') {
+        throw new MSSStateActionException('Restore this medicine record before receiving the delivery.', 409);
+    }
+
+    $requestMedicineId = mss_state_text($request['medicine_id'] ?? '');
+    if ($requestMedicineId !== '' && $requestMedicineId !== $medicineId) {
+        throw new MSSStateActionException('This CHO request belongs to a different medicine.', 409);
+    }
+    if ($requestMedicineId === '') {
+        $requestMedicineName = mss_state_action_identity_key($request['medicine_name'] ?? '');
+        $medicineNameOnly = mss_state_action_identity_key($medicine['name'] ?? '');
+        $medicineLabel = mss_state_action_identity_key(
+            trim(mss_state_text($medicine['name'] ?? '') . ' ' . mss_state_text($medicine['strength'] ?? ''))
+        );
+        if ($requestMedicineName === '' || !in_array($requestMedicineName, [$medicineNameOnly, $medicineLabel], true)) {
+            throw new MSSStateActionException('This CHO request does not match the selected medicine.', 409);
+        }
+    }
+
+    $requestUnit = mss_state_text($request['unit'] ?? 'units') ?: 'units';
+    $inventoryUnit = mss_state_text($medicine['unit'] ?? 'units') ?: 'units';
+    if (mss_state_action_identity_key($requestUnit) !== mss_state_action_identity_key($inventoryUnit)) {
+        throw new MSSStateActionException(
+            'Unit mismatch: the request uses ' . $requestUnit . ', while inventory uses ' . $inventoryUnit . '.',
+            409
+        );
+    }
+
+    $requestCode = mss_state_text($request['request_code'] ?? '') ?: 'CHO request';
+    $movementNote = 'CHO delivery received and linked to ' . $requestCode . '.';
+    if ($submittedNote !== '') {
+        $movementNote .= ' ' . $submittedNote;
+    }
+    $movementDateTime = $actionDate . ' 08:00:00';
+    $recordedAt = date('Y-m-d H:i:s');
+
+    $deliveryState = mss_state_lock_request_deliveries($pdo, $request);
+    $requestedQuantity = mss_state_int($request['quantity_requested'] ?? 1, 1);
+    $receivedQuantity = $deliveryState['quantity'];
+    $remainingQuantity = max(0, $requestedQuantity - $receivedQuantity);
+    if ($remainingQuantity === 0) {
+        throw new MSSStateActionException('This medicine line has already been fully delivered.', 409, [
+            'receivedQuantity' => $receivedQuantity,
+            'remainingQuantity' => 0,
+        ]);
+    }
+    if ($quantity > $remainingQuantity) {
+        throw new MSSStateActionException(
+            'Only ' . $remainingQuantity . ' ' . $requestUnit . ' remain in ' . $requestCode . '.',
+            409,
+            ['receivedQuantity' => $receivedQuantity, 'remainingQuantity' => $remainingQuantity]
+        );
+    }
+
+    $stockBefore = mss_state_int($medicine['stock_on_hand'] ?? 0);
+    if ($stockBefore > 2147483647 - $quantity) {
+        throw new MSSStateActionException('The resulting stock quantity is too large to save.', 422);
+    }
+    $stockAfter = $stockBefore + $quantity;
+    $actorName = mss_state_text($actor['full_name'] ?? $actor['fullName'] ?? '') ?: 'Nurse-in-Charge';
+    $actorUsername = mss_state_text($actor['username'] ?? '') ?: 'admin';
+    $medicineLabel = trim(mss_state_text($medicine['name'] ?? '') . ' ' . mss_state_text($medicine['strength'] ?? ''));
+
+    $updateInventory = $pdo->prepare(
+        'UPDATE `mss_inventory_records`
+         SET `stock_on_hand` = :stock_after,
+             `updated_by` = :updated_by,
+             `last_updated_at` = :updated_at
+         WHERE `id` = :medicine_id'
+    );
+    $updateInventory->execute([
+        ':stock_after' => $stockAfter,
+        ':updated_by' => $actorName,
+        ':updated_at' => $recordedAt,
+        ':medicine_id' => $medicineId,
+    ]);
+
+    $insertMovement = $pdo->prepare(
+        'INSERT INTO `mss_inventory_movements`
+            (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
+         VALUES
+            (:id, :medicine_id, :medicine_name, \'restock\', :quantity, \'\', \'\', :note, :stock_before, :stock_after, :created_at, :user_name, \'\', \'\', \'\', \'\', \'\', :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
+    );
+    $insertMovement->execute([
+        ':id' => $operationId,
+        ':medicine_id' => $medicineId,
+        ':medicine_name' => $medicineLabel,
+        ':quantity' => $quantity,
+        ':note' => $movementNote,
+        ':stock_before' => $stockBefore,
+        ':stock_after' => $stockAfter,
+        ':created_at' => $movementDateTime,
+        ':user_name' => $actorName,
+        ':linked_request_id' => $requestItemId,
+        ':linked_request_item_id' => $requestItemId,
+        ':linked_request_group_id' => $requestGroupId,
+        ':linked_request_code' => $requestCode,
+    ]);
+
+    $newReceivedQuantity = $receivedQuantity + $quantity;
+    $newRemainingQuantity = max(0, $requestedQuantity - $newReceivedQuantity);
+    $progressText = $newRemainingQuantity === 0
+        ? 'This medicine line is fully delivered.'
+        : $newRemainingQuantity . ' ' . $requestUnit . ' remain for this medicine.';
+    $insertLog = $pdo->prepare(
+        'INSERT INTO `mss_activity_logs`
+            (`id`, `actor`, `username`, `action`, `action_type`, `target`, `details`, `category`, `result_label`, `result_tone`, `ip_address`, `created_at`)
+         VALUES
+            (:id, :actor, :username, \'Received CHO delivery\', \'updated\', :target, :details, \'Inventory\', \'Updated\', \'success\', :ip_address, :created_at)'
+    );
+    $insertLog->execute([
+        ':id' => mss_state_uid('log'),
+        ':actor' => $actorName,
+        ':username' => $actorUsername,
+        ':target' => $medicineLabel,
+        ':details' => $quantity . ' ' . $inventoryUnit . ' received for ' . $medicineLabel
+            . '. Stock updated from ' . $stockBefore . ' to ' . $stockAfter . ' ' . $inventoryUnit
+            . '. Linked to ' . $requestCode . '. ' . $progressText,
+        ':ip_address' => mss_api_client_ip(),
+        ':created_at' => $recordedAt,
+    ]);
+
+    return [
+        'idempotentReplay' => false,
+        'delivery' => [
+            'movementId' => $operationId,
+            'requestGroupId' => $requestGroupId,
+            'requestItemId' => $requestItemId,
+            'requestCode' => $requestCode,
+            'medicineId' => $medicineId,
+            'medicineName' => $medicineLabel,
+            'unit' => $inventoryUnit,
+            'quantityReceived' => $quantity,
+            'actionDate' => $actionDate,
+            'stockBefore' => $stockBefore,
+            'stockAfter' => $stockAfter,
+            'receivedQuantity' => $newReceivedQuantity,
+            'remainingQuantity' => $newRemainingQuantity,
+        ],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_state_receive_response_state(PDO $pdo): array
+{
+    return [
+        'logs' => mss_state_fetch_logs($pdo),
+        'inventory' => mss_state_fetch_inventory($pdo),
+        'movements' => mss_state_fetch_movements($pdo),
+        'requests' => mss_state_fetch_requests($pdo),
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mss_state_client_state(PDO $pdo, array $viewer): array
+{
+    $isStaff = mss_state_actor_is_staff($viewer);
+
+    return [
+        'users' => mss_state_fetch_users($pdo, $viewer),
+        'sessions' => mss_state_fetch_sessions($pdo, $viewer),
+        'logs' => $isStaff ? [] : mss_state_fetch_logs($pdo),
+        'inventory' => mss_state_fetch_inventory($pdo),
+        'movements' => mss_state_fetch_movements($pdo, $viewer),
+        'residentAccounts' => mss_state_fetch_residents($pdo, $viewer),
+        'requests' => mss_state_fetch_requests($pdo),
+        'notifications' => mss_state_fetch_notifications($pdo),
+        'notificationPreferences' => mss_state_fetch_notification_preferences($pdo),
+        'notificationPopupState' => mss_state_fetch_notification_popup_state($pdo),
+        'notificationDismissedState' => mss_state_fetch_notification_dismissed_state($pdo),
+        'notificationReadState' => mss_state_fetch_notification_read_state($pdo),
+        'notificationResolvedState' => mss_state_fetch_notification_resolved_state($pdo),
+        'reportHistory' => $isStaff ? [] : mss_state_fetch_report_history($pdo),
+    ];
+}
+
 $pdo = mss_api_bootstrap(true);
+$currentUser = mss_auth_require_user($pdo);
 $method = mss_api_request_method();
 $scope = strtolower(trim((string) ($_GET['scope'] ?? '')));
 
@@ -1496,8 +2296,8 @@ if ($method === 'GET') {
         mss_api_respond([
             'success' => true,
             'state' => [
-                'users' => mss_state_fetch_users($pdo),
-                'sessions' => mss_state_fetch_sessions($pdo),
+                'users' => mss_state_fetch_users($pdo, $currentUser),
+                'sessions' => mss_state_fetch_sessions($pdo, $currentUser),
             ],
         ]);
     }
@@ -1506,22 +2306,7 @@ if ($method === 'GET') {
 
     mss_api_respond([
         'success' => true,
-        'state' => [
-            'users' => mss_state_fetch_users($pdo),
-            'sessions' => mss_state_fetch_sessions($pdo),
-            'logs' => mss_state_fetch_logs($pdo),
-            'inventory' => mss_state_fetch_inventory($pdo),
-            'movements' => mss_state_fetch_movements($pdo),
-            'residentAccounts' => mss_state_fetch_residents($pdo),
-            'requests' => mss_state_fetch_requests($pdo),
-            'notifications' => mss_state_fetch_notifications($pdo),
-            'notificationPreferences' => mss_state_fetch_notification_preferences($pdo),
-            'notificationPopupState' => mss_state_fetch_notification_popup_state($pdo),
-            'notificationDismissedState' => mss_state_fetch_notification_dismissed_state($pdo),
-            'notificationReadState' => mss_state_fetch_notification_read_state($pdo),
-            'notificationResolvedState' => mss_state_fetch_notification_resolved_state($pdo),
-            'reportHistory' => mss_state_fetch_report_history($pdo),
-        ],
+        'state' => mss_state_client_state($pdo, $currentUser),
     ]);
 }
 
@@ -1530,32 +2315,91 @@ if (!in_array($method, ['POST', 'PUT'], true)) {
 }
 
 $input = mss_api_json_input();
+$action = strtolower(mss_state_text($input['action'] ?? ''));
+
+if ($action === 'receive_cho_delivery') {
+    if ($method !== 'POST') {
+        mss_api_error('Method not allowed.', 405);
+    }
+
+    $actor = $currentUser;
+    if (mss_auth_user_role($actor) !== 'admin') {
+        mss_api_error('Administrator access is required to receive CHO deliveries.', 403);
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $result = mss_state_receive_cho_delivery($pdo, $input, $actor);
+        $responseState = mss_state_receive_response_state($pdo);
+        $pdo->commit();
+
+        mss_api_respond([
+            'success' => true,
+            'message' => 'CHO delivery received successfully.',
+            'idempotentReplay' => (bool) ($result['idempotentReplay'] ?? false),
+            'delivery' => is_array($result['delivery'] ?? null) ? $result['delivery'] : [],
+            'state' => $responseState,
+        ]);
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($exception instanceof MSSStateActionException) {
+            mss_api_error($exception->getMessage(), $exception->statusCode(), $exception->context());
+        }
+        mss_api_error('Unable to receive the CHO delivery right now.', 500);
+    }
+}
+
 $payload = isset($input['state']) && is_array($input['state']) ? $input['state'] : $input;
+$currentUserRole = mss_auth_user_role($currentUser);
+if (
+    $currentUserRole !== 'admin'
+    && mss_state_has_collection($payload, 'requests', ['choRequests'])
+) {
+    mss_api_error('Administrator access is required to update CHO requests.', 403);
+}
 
 try {
     $pdo->beginTransaction();
 
     if (mss_state_has_collection($payload, 'users')) {
-        mss_state_replace_users($pdo, mss_state_collection($payload, 'users'));
+        if ($currentUserRole === 'staff') {
+            mss_state_update_staff_user($pdo, mss_state_collection($payload, 'users'), $currentUser);
+        } else {
+            mss_state_replace_users($pdo, mss_state_collection($payload, 'users'));
+        }
     }
     // Auth sessions are server-managed so we do not replace `mss_sessions` from client snapshots.
     if (mss_state_has_collection($payload, 'logs', ['activityLogs'])) {
-        mss_state_replace_logs($pdo, mss_state_collection($payload, 'logs', ['activityLogs']));
+        mss_state_replace_logs($pdo, mss_state_collection($payload, 'logs', ['activityLogs']), $currentUser);
     }
     if (mss_state_has_collection($payload, 'inventory')) {
+        if (!mss_state_has_collection($payload, 'inventoryExpectedVersions', ['inventory_expected_versions'])) {
+            throw new MSSStateValidationException('Refresh the inventory page before saving stock changes.');
+        }
+        mss_state_assert_inventory_versions(
+            $pdo,
+            mss_state_collection($payload, 'inventoryExpectedVersions', ['inventory_expected_versions'])
+        );
         mss_state_replace_inventory($pdo, mss_state_collection($payload, 'inventory'));
     }
     if (mss_state_has_collection($payload, 'movements')) {
-        mss_state_replace_movements($pdo, mss_state_collection($payload, 'movements'));
+        if ($currentUserRole === 'admin') {
+            mss_state_assert_linked_deliveries_unchanged($pdo, mss_state_collection($payload, 'movements'));
+        }
+        mss_state_replace_movements($pdo, mss_state_collection($payload, 'movements'), $currentUser);
     }
     if (mss_state_has_collection($payload, 'residentAccounts', ['residents'])) {
-        mss_state_replace_residents($pdo, mss_state_collection($payload, 'residentAccounts', ['residents']));
+        mss_state_replace_residents($pdo, mss_state_collection($payload, 'residentAccounts', ['residents']), $currentUser);
     }
     if (mss_state_has_collection($payload, 'requests', ['choRequests'])) {
         mss_state_replace_requests($pdo, mss_state_collection($payload, 'requests', ['choRequests']));
     }
     if (mss_state_has_collection($payload, 'notifications')) {
-        mss_state_replace_notifications($pdo, mss_state_collection($payload, 'notifications'));
+        if ($currentUserRole === 'admin') {
+            mss_state_replace_notifications($pdo, mss_state_collection($payload, 'notifications'));
+        }
     }
     if (mss_state_has_collection($payload, 'notificationPreferences', ['notification_preferences'])) {
         mss_state_replace_notification_preferences($pdo, mss_state_collection($payload, 'notificationPreferences', ['notification_preferences']));
@@ -1573,7 +2417,9 @@ try {
         mss_state_merge_notification_resolved_state($pdo, mss_state_collection($payload, 'notificationResolvedState', ['notification_resolved_state']));
     }
     if (mss_state_has_collection($payload, 'reportHistory', ['report_history'])) {
-        mss_state_replace_report_history($pdo, mss_state_collection($payload, 'reportHistory', ['report_history']));
+        if ($currentUserRole === 'admin') {
+            mss_state_replace_report_history($pdo, mss_state_collection($payload, 'reportHistory', ['report_history']));
+        }
     }
 
     mss_state_purge_expired_resolved_notifications($pdo);
@@ -1583,22 +2429,7 @@ try {
     mss_api_respond([
         'success' => true,
         'message' => 'State saved successfully.',
-        'state' => [
-            'users' => mss_state_fetch_users($pdo),
-            'sessions' => mss_state_fetch_sessions($pdo),
-            'logs' => mss_state_fetch_logs($pdo),
-            'inventory' => mss_state_fetch_inventory($pdo),
-            'movements' => mss_state_fetch_movements($pdo),
-            'residentAccounts' => mss_state_fetch_residents($pdo),
-            'requests' => mss_state_fetch_requests($pdo),
-            'notifications' => mss_state_fetch_notifications($pdo),
-            'notificationPreferences' => mss_state_fetch_notification_preferences($pdo),
-            'notificationPopupState' => mss_state_fetch_notification_popup_state($pdo),
-            'notificationDismissedState' => mss_state_fetch_notification_dismissed_state($pdo),
-            'notificationReadState' => mss_state_fetch_notification_read_state($pdo),
-            'notificationResolvedState' => mss_state_fetch_notification_resolved_state($pdo),
-            'reportHistory' => mss_state_fetch_report_history($pdo),
-        ],
+        'state' => mss_state_client_state($pdo, $currentUser),
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {

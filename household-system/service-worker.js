@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-08-17-v27";
+const CACHE_VERSION = "2026-08-23-v36";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
@@ -11,6 +11,10 @@ const APP_SCOPE_PATH = APP_SCOPE_URL.pathname.endsWith("/")
 const buildScopedUrl = (path = "") => new URL(path, APP_SCOPE_URL).toString();
 const OFFLINE_FALLBACK_URL = buildScopedUrl("offline-registration.html");
 const LOGGED_OUT_STATE_URL = buildScopedUrl(".registration-logged-out");
+const REQUIRED_OFFLINE_PAGE_URLS = [
+  "registration.php",
+  "member.php"
+].map((path) => buildScopedUrl(path));
 const PRECACHE_URLS = [
   "offline-registration.html",
   "manifest.webmanifest",
@@ -20,6 +24,7 @@ const PRECACHE_URLS = [
   "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2",
   "assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff",
   "assets/css/registration-style.css",
+  "assets/css/password-toggle.css",
   "assets/css/site-style.css",
   "assets/css/household-view.css",
   "assets/js/indexeddb-storage-scripts.js",
@@ -27,10 +32,14 @@ const PRECACHE_URLS = [
   "assets/js/registration-photo-storage.js",
   "assets/js/photo-capture.js",
   "assets/js/registration-scripts.js",
+  "assets/js/password-toggle.js",
   "assets/js/member-scripts.js",
   "assets/js/households-scripts.js",
   "assets/js/household-view.js",
   "assets/js/responsive-table-scripts.js",
+  "assets/img/registration-app-icon-192.png",
+  "assets/img/registration-app-icon-512.png",
+  "assets/img/registration-app-icon-maskable-512.png",
   "assets/img/barangay-cabarian-logo.png"
 ].map((path) => buildScopedUrl(path));
 const REGISTRATION_PAGE_NAMES = new Set([
@@ -103,25 +112,25 @@ const isMarkedLoggedOut = async () => {
 
 const cachePageResponse = async (request, response) => {
   const responseUrl = response && response.url ? response.url : request.url;
-  if (!response || !response.ok || !REGISTRATION_PAGE_NAMES.has(getPageName(responseUrl))) {
-    return;
+  const requestedPageName = getPageName(request);
+  const responsePageName = getPageName(responseUrl);
+  if (
+    !response
+    || !response.ok
+    || !REGISTRATION_PAGE_NAMES.has(responsePageName)
+    || requestedPageName !== responsePageName
+  ) {
+    return false;
   }
 
-  if (getPageName(responseUrl) !== "offline-registration.html") {
+  if (responsePageName !== "offline-registration.html") {
     await clearLoggedOutState();
   }
 
-  const requestUrl = getUrl(request);
   const pageCache = await caches.open(PAGE_CACHE_NAME);
   await pageCache.put(request, response.clone());
 
-  if (requestUrl.search === "") {
-    const canonicalUrl = new URL(requestUrl.toString());
-    canonicalUrl.hash = "";
-    if (canonicalUrl.toString() !== request.url) {
-      await pageCache.put(canonicalUrl.toString(), response.clone());
-    }
-  }
+  return true;
 };
 
 const getRegistrationPageCandidates = (request) => {
@@ -212,25 +221,69 @@ const handleAssetRequest = async (request) => {
   }
 };
 
-const cacheCurrentRoute = async (urlString) => {
-  const routeUrl = getUrl(urlString);
-  if (routeUrl.origin !== APP_SCOPE_URL.origin) {
-    return;
-  }
-
-  if (!routeUrl.pathname.startsWith(APP_SCOPE_PATH) || !REGISTRATION_PAGE_NAMES.has(getPageName(routeUrl))) {
-    return;
-  }
-
+const cacheCurrentRoute = async (urlString, { preferCached = false } = {}) => {
+  let routeUrl = null;
   try {
+    routeUrl = getUrl(urlString);
+    if (routeUrl.origin !== APP_SCOPE_URL.origin) {
+      return { url: routeUrl.toString(), success: false, reason: "cross-origin" };
+    }
+
+    if (!routeUrl.pathname.startsWith(APP_SCOPE_PATH) || !REGISTRATION_PAGE_NAMES.has(getPageName(routeUrl))) {
+      return { url: routeUrl.toString(), success: false, reason: "unsupported-route" };
+    }
+
     const request = new Request(routeUrl.toString(), {
       cache: "reload",
       credentials: "same-origin"
     });
+    if (preferCached) {
+      const existingCachedPage = await findCachedRegistrationPage(request);
+      if (existingCachedPage) {
+        return {
+          url: routeUrl.toString(),
+          success: true,
+          reason: "already-cached"
+        };
+      }
+    }
     const response = await fetch(request);
-    await cachePageResponse(request, response.clone());
+    const cached = await cachePageResponse(request, response.clone());
+    const existingCachedPage = cached === true
+      ? null
+      : await findCachedRegistrationPage(request);
+    const routeReady = cached === true || Boolean(existingCachedPage);
+    return {
+      url: routeUrl.toString(),
+      success: routeReady,
+      reason: cached === true
+        ? "cached"
+        : routeReady
+          ? "already-cached"
+          : "response-route-mismatch",
+      responseUrl: String(response.url || "")
+    };
   } catch (error) {
-    // Ignore best-effort route warmup failures.
+    if (routeUrl) {
+      try {
+        const request = new Request(routeUrl.toString(), { credentials: "same-origin" });
+        const existingCachedPage = await findCachedRegistrationPage(request);
+        if (existingCachedPage) {
+          return {
+            url: routeUrl.toString(),
+            success: true,
+            reason: "already-cached"
+          };
+        }
+      } catch {
+        // Continue with the failed result below.
+      }
+    }
+    return {
+      url: String(urlString || ""),
+      success: false,
+      reason: "fetch-failed"
+    };
   }
 };
 
@@ -239,6 +292,9 @@ self.addEventListener("install", (event) => {
     const staticCache = await caches.open(STATIC_CACHE_NAME);
     await Promise.allSettled(
       PRECACHE_URLS.map((url) => staticCache.add(new Request(url, { cache: "reload" })))
+    );
+    await Promise.allSettled(
+      REQUIRED_OFFLINE_PAGE_URLS.map((url) => cacheCurrentRoute(url))
     );
     await self.skipWaiting();
   })());
@@ -286,6 +342,24 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("message", (event) => {
   const data = event.data && typeof event.data === "object" ? event.data : {};
+  if (data.type === "WARM_REGISTRATION_ROUTES") {
+    event.waitUntil((async () => {
+      const routeUrls = Array.isArray(data.urls)
+        ? Array.from(new Set(data.urls.map((url) => String(url || "").trim()).filter(Boolean)))
+        : [];
+      const results = await Promise.all(routeUrls.map((url) => cacheCurrentRoute(url, {
+        preferCached: data.preferCached === true
+      })));
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({
+          success: results.length > 0 && results.every((result) => result.success === true),
+          results
+        });
+      }
+    })());
+    return;
+  }
+
   if (data.type === "CACHE_CURRENT_ROUTE") {
     event.waitUntil(cacheCurrentRoute(String(data.url || "")));
     return;

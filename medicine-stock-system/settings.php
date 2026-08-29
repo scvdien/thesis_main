@@ -5,8 +5,10 @@ $authUser = mss_page_require_auth(['admin']);
 $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $settingsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/settings.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
+$passwordToggleCssVersion = (string) @filemtime(__DIR__ . '/assets/css/password-toggle.css');
 $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
 $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
+$passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-toggle.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -32,6 +34,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <link rel="stylesheet" href="assets/css/admin-dashboard.css?v=<?= urlencode($adminDashboardCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/settings.css?v=<?= urlencode($settingsCssVersion) ?>">
   <link rel="stylesheet" href="assets/css/system-notifications.css?v=<?= urlencode($systemNotificationsCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= urlencode($passwordToggleCssVersion) ?>">
 </head>
 <body class="admin-dashboard-page">
   <div id="wrapper">
@@ -435,7 +438,8 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
+  <script src="assets/js/password-toggle.js?v=<?= urlencode($passwordToggleJsVersion) ?>"></script>
   <script src="assets/js/settings.js?v=<?= urlencode($settingsJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>

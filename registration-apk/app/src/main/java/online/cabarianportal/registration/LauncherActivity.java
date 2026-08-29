@@ -1,9 +1,12 @@
 package online.cabarianportal.registration;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -12,11 +15,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -27,8 +32,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -58,6 +63,9 @@ public class LauncherActivity extends Activity {
     private static final long PAGE_LOAD_TIMEOUT_MS = 30_000L;
     private static final long CAMERA_CACHE_CLEANUP_DELAY_MS = 2 * 60_000L;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1201;
+    private static final int WEB_CAMERA_PERMISSION_REQUEST_CODE = 1202;
+    private static final String PERMISSION_PREFERENCES = "cabarian_permissions";
+    private static final String CAMERA_PERMISSION_REQUESTED_KEY = "camera_permission_requested";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ArrayList<File> cameraTempFiles = new ArrayList<>();
@@ -69,9 +77,14 @@ public class LauncherActivity extends Activity {
     private View errorView;
     private TextView errorMessageView;
     private ValueCallback<Uri[]> fileChooserCallback;
+    private PermissionRequest webCameraPermissionRequest;
+    private AlertDialog cameraPermissionDialog;
     private Uri pendingCameraUri;
     private File pendingCameraFile;
+    private boolean launchNativeCameraAfterPermission;
+    private boolean cameraPermissionRequestInFlight;
     private boolean pageLoading;
+    private boolean hasVisiblePage;
     private boolean mainFrameFailed;
     private String lastRequestedUrl = START_URL;
 
@@ -156,7 +169,7 @@ public class LauncherActivity extends Activity {
         }
 
         setContentView(rootView);
-        loadingView.setVisibility(View.VISIBLE);
+        loadingView.setVisibility(hasVisiblePage ? View.GONE : View.VISIBLE);
         errorView.setVisibility(View.GONE);
         startWebApp();
     }
@@ -190,17 +203,11 @@ public class LauncherActivity extends Activity {
     private View createLoadingView() {
         LinearLayout container = createCenteredContainer();
 
-        ProgressBar progressBar = new ProgressBar(this);
-        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        progressParams.bottomMargin = dp(18);
-        container.addView(progressBar, progressParams);
-
-        TextView message = new TextView(this);
-        message.setText(R.string.webview_loading);
-        message.setTextColor(Color.rgb(55, 65, 81));
-        message.setTextSize(16f);
-        message.setGravity(Gravity.CENTER);
-        container.addView(message, wrapContentLayoutParams());
+        ImageView appIcon = new ImageView(this);
+        appIcon.setImageResource(R.mipmap.ic_launcher);
+        appIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        appIcon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        container.addView(appIcon, new LinearLayout.LayoutParams(dp(112), dp(112)));
 
         return container;
     }
@@ -308,8 +315,8 @@ public class LauncherActivity extends Activity {
                     () -> finalSettings.setJavaScriptCanOpenWindowsAutomatically(false)
             );
             applyWebViewSetting(
-                    "require a media playback gesture",
-                    () -> finalSettings.setMediaPlaybackRequiresUserGesture(true)
+                    "allow inline camera preview playback",
+                    () -> finalSettings.setMediaPlaybackRequiresUserGesture(false)
             );
             applyWebViewSetting(
                     "disable built-in zoom controls",
@@ -322,7 +329,7 @@ public class LauncherActivity extends Activity {
             applyWebViewSetting(
                     "set the app user agent",
                     () -> finalSettings.setUserAgentString(
-                            finalSettings.getUserAgentString() + " CabarianRegistrationApp/5"
+                            finalSettings.getUserAgentString() + " CabarianRegistrationApp/7"
                     )
             );
             applyWebViewSetting(
@@ -369,7 +376,7 @@ public class LauncherActivity extends Activity {
         lastRequestedUrl = uri.toString();
         mainFrameFailed = false;
         errorView.setVisibility(View.GONE);
-        loadingView.setVisibility(View.VISIBLE);
+        loadingView.setVisibility(hasVisiblePage ? View.GONE : View.VISIBLE);
         webView.loadUrl(lastRequestedUrl);
     }
 
@@ -389,6 +396,17 @@ public class LauncherActivity extends Activity {
         return (port == -1 || port == 443)
                 && path != null
                 && path.startsWith(APP_PATH_PREFIX);
+    }
+
+    private boolean isTrustedWebOrigin(Uri origin) {
+        if (origin == null
+                || !"https".equalsIgnoreCase(origin.getScheme())
+                || !APP_HOST.equalsIgnoreCase(origin.getHost())) {
+            return false;
+        }
+
+        int port = origin.getPort();
+        return port == -1 || port == 443;
     }
 
     private boolean handleNavigation(Uri uri) {
@@ -459,8 +477,22 @@ public class LauncherActivity extends Activity {
             mainFrameFailed = false;
             pageLoading = true;
             errorView.setVisibility(View.GONE);
-            loadingView.setVisibility(View.VISIBLE);
+            loadingView.setVisibility(hasVisiblePage ? View.GONE : View.VISIBLE);
             schedulePageLoadTimeout();
+        }
+
+        @Override
+        public void onPageCommitVisible(WebView view, String url) {
+            super.onPageCommitVisible(view, url);
+            if (mainFrameFailed) {
+                return;
+            }
+
+            hasVisiblePage = true;
+            pageLoading = false;
+            cancelPageLoadTimeout();
+            loadingView.setVisibility(View.GONE);
+            errorView.setVisibility(View.GONE);
         }
 
         @Override
@@ -469,6 +501,7 @@ public class LauncherActivity extends Activity {
             pageLoading = false;
             cancelPageLoadTimeout();
             if (!mainFrameFailed) {
+                hasVisiblePage = true;
                 loadingView.setVisibility(View.GONE);
                 errorView.setVisibility(View.GONE);
             }
@@ -561,6 +594,215 @@ public class LauncherActivity extends Activity {
         }
     }
 
+    private boolean requestsVideoCapture(PermissionRequest request) {
+        if (request == null || request.getResources() == null) {
+            return false;
+        }
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void grantWebCameraPermission(PermissionRequest request) {
+        try {
+            request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+        } catch (RuntimeException exception) {
+            Log.w(LOG_TAG, "Unable to grant WebView camera permission.", exception);
+            denyWebCameraPermission(request);
+        }
+    }
+
+    private void denyWebCameraPermission(PermissionRequest request) {
+        if (request == null) {
+            return;
+        }
+        try {
+            request.deny();
+        } catch (RuntimeException exception) {
+            Log.w(LOG_TAG, "Unable to deny WebView camera permission cleanly.", exception);
+        }
+    }
+
+    private boolean hasCameraPermission() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean wasCameraPermissionRequested() {
+        return getSharedPreferences(PERMISSION_PREFERENCES, MODE_PRIVATE)
+                .getBoolean(CAMERA_PERMISSION_REQUESTED_KEY, false);
+    }
+
+    private boolean hasPendingCameraPermissionAction() {
+        return webCameraPermissionRequest != null || launchNativeCameraAfterPermission;
+    }
+
+    private void requestCameraPermissionForPendingAction() {
+        if (!hasPendingCameraPermissionAction()) {
+            return;
+        }
+
+        if (hasCameraPermission()) {
+            finishPendingCameraPermissionAction(true);
+            return;
+        }
+
+        if (cameraPermissionRequestInFlight) {
+            return;
+        }
+
+        if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+            showCameraPermissionRationale();
+            return;
+        }
+
+        if (wasCameraPermissionRequested()) {
+            finishPendingCameraPermissionAction(false);
+            showCameraSettingsDialog();
+            return;
+        }
+
+        launchSystemCameraPermissionRequest();
+    }
+
+    private void launchSystemCameraPermissionRequest() {
+        if (!hasPendingCameraPermissionAction() || cameraPermissionRequestInFlight) {
+            return;
+        }
+
+        dismissCameraPermissionDialog();
+        getSharedPreferences(PERMISSION_PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putBoolean(CAMERA_PERMISSION_REQUESTED_KEY, true)
+                .apply();
+        cameraPermissionRequestInFlight = true;
+        try {
+            requestPermissions(
+                    new String[]{Manifest.permission.CAMERA},
+                    WEB_CAMERA_PERMISSION_REQUEST_CODE
+            );
+        } catch (RuntimeException exception) {
+            cameraPermissionRequestInFlight = false;
+            Log.e(LOG_TAG, "Unable to request Android camera permission.", exception);
+            finishPendingCameraPermissionAction(false);
+            showCameraSettingsDialog();
+        }
+    }
+
+    private void showCameraPermissionRationale() {
+        if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                && isDestroyed())) {
+            finishPendingCameraPermissionAction(false);
+            return;
+        }
+
+        dismissCameraPermissionDialog();
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Allow Camera")
+                .setMessage(
+                        "Camera access is required to frame and capture the resident's photo."
+                )
+                .setNegativeButton("Cancel", (ignoredDialog, ignoredButton) ->
+                        finishPendingCameraPermissionAction(false))
+                .setPositiveButton("Continue", (ignoredDialog, ignoredButton) ->
+                        launchSystemCameraPermissionRequest())
+                .create();
+        dialog.setOnCancelListener(ignored -> finishPendingCameraPermissionAction(false));
+        dialog.setOnDismissListener(ignored -> {
+            if (cameraPermissionDialog == dialog) {
+                cameraPermissionDialog = null;
+            }
+        });
+        cameraPermissionDialog = dialog;
+        try {
+            dialog.show();
+        } catch (RuntimeException exception) {
+            cameraPermissionDialog = null;
+            Log.w(LOG_TAG, "Unable to show the camera permission explanation.", exception);
+            finishPendingCameraPermissionAction(false);
+        }
+    }
+
+    private void showCameraSettingsDialog() {
+        if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                && isDestroyed())) {
+            return;
+        }
+
+        dismissCameraPermissionDialog();
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Camera Permission Required")
+                .setMessage(
+                        "Camera access is turned off for this app. Open App Settings, choose "
+                                + "Permissions, and allow Camera. Then return and tap Allow Camera again."
+                )
+                .setNegativeButton("Not Now", null)
+                .setPositiveButton("Open App Settings", (ignoredDialog, ignoredButton) ->
+                        openAppSettings())
+                .create();
+        dialog.setOnDismissListener(ignored -> {
+            if (cameraPermissionDialog == dialog) {
+                cameraPermissionDialog = null;
+            }
+        });
+        cameraPermissionDialog = dialog;
+        try {
+            dialog.show();
+        } catch (RuntimeException exception) {
+            cameraPermissionDialog = null;
+            Log.w(LOG_TAG, "Unable to show the camera settings prompt.", exception);
+        }
+    }
+
+    private void openAppSettings() {
+        Intent settingsIntent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName())
+        );
+        try {
+            startActivity(settingsIntent);
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(
+                    this,
+                    "Open this app's settings and allow Camera permission.",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    private void dismissCameraPermissionDialog() {
+        AlertDialog dialog = cameraPermissionDialog;
+        cameraPermissionDialog = null;
+        if (dialog != null && dialog.isShowing()) {
+            dialog.dismiss();
+        }
+    }
+
+    private void finishPendingCameraPermissionAction(boolean granted) {
+        PermissionRequest webRequest = webCameraPermissionRequest;
+        boolean shouldLaunchNativeCamera = launchNativeCameraAfterPermission;
+        webCameraPermissionRequest = null;
+        launchNativeCameraAfterPermission = false;
+
+        if (granted) {
+            if (webRequest != null) {
+                grantWebCameraPermission(webRequest);
+            }
+            if (shouldLaunchNativeCamera && fileChooserCallback != null) {
+                launchCameraCapture();
+            }
+            return;
+        }
+
+        denyWebCameraPermission(webRequest);
+        if (shouldLaunchNativeCamera) {
+            completeFileChooser(null);
+        }
+    }
+
     private void clearPendingCameraCapture(boolean deleteOutput) {
         Uri captureUri = pendingCameraUri;
         File captureFile = pendingCameraFile;
@@ -635,14 +877,65 @@ public class LauncherActivity extends Activity {
             completeFileChooser(null);
             Toast.makeText(
                     this,
-                    "Hindi mabuksan ang camera sa phone na ito.",
+                    "The phone camera could not be opened.",
                     Toast.LENGTH_SHORT
             ).show();
         }
         return true;
     }
 
+    private boolean requestOrLaunchCameraCapture() {
+        if (hasCameraPermission()) {
+            return launchCameraCapture();
+        }
+
+        if (hasPendingCameraPermissionAction() || cameraPermissionRequestInFlight) {
+            completeFileChooser(null);
+            Toast.makeText(
+                    this,
+                    "Finish the current camera permission request, then try again.",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return true;
+        }
+
+        launchNativeCameraAfterPermission = true;
+        requestCameraPermissionForPendingAction();
+        return true;
+    }
+
     private final class RegistrationWebChromeClient extends WebChromeClient {
+        @Override
+        public void onPermissionRequest(PermissionRequest request) {
+            if (!requestsVideoCapture(request) || !isTrustedWebOrigin(request.getOrigin())) {
+                denyWebCameraPermission(request);
+                return;
+            }
+
+            if (hasCameraPermission()) {
+                grantWebCameraPermission(request);
+                return;
+            }
+
+            if (hasPendingCameraPermissionAction() || cameraPermissionRequestInFlight) {
+                denyWebCameraPermission(request);
+                return;
+            }
+
+            webCameraPermissionRequest = request;
+            requestCameraPermissionForPendingAction();
+        }
+
+        @Override
+        public void onPermissionRequestCanceled(PermissionRequest request) {
+            if (request == webCameraPermissionRequest) {
+                webCameraPermissionRequest = null;
+                if (!launchNativeCameraAfterPermission && !cameraPermissionRequestInFlight) {
+                    dismissCameraPermissionDialog();
+                }
+            }
+        }
+
         @Override
         public boolean onShowFileChooser(
                 WebView view,
@@ -654,7 +947,7 @@ public class LauncherActivity extends Activity {
             fileChooserCallback = callback;
 
             if (isImageCaptureRequest(fileChooserParams)) {
-                return launchCameraCapture();
+                return requestOrLaunchCameraCapture();
             }
 
             Intent chooserIntent;
@@ -671,6 +964,38 @@ public class LauncherActivity extends Activity {
                 ).show();
                 return true;
             }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            String[] permissions,
+            int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != WEB_CAMERA_PERMISSION_REQUEST_CODE) {
+            return;
+        }
+
+        cameraPermissionRequestInFlight = false;
+        boolean granted = grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        boolean hadPendingAction = hasPendingCameraPermissionAction();
+        finishPendingCameraPermissionAction(granted);
+
+        if (granted || !hadPendingAction) {
+            return;
+        }
+
+        if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+            Toast.makeText(
+                    this,
+                    "Camera permission was denied. Tap Allow Camera to try again.",
+                    Toast.LENGTH_LONG
+            ).show();
+        } else {
+            showCameraSettingsDialog();
         }
     }
 
@@ -739,6 +1064,8 @@ public class LauncherActivity extends Activity {
     protected void onDestroy() {
         cancelPageLoadTimeout();
         mainHandler.removeCallbacks(cameraCacheCleanup);
+        dismissCameraPermissionDialog();
+        finishPendingCameraPermissionAction(false);
         completeFileChooser(null);
         clearPendingCameraCapture(true);
         deleteCompletedCameraFiles();

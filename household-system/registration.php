@@ -69,7 +69,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
   <meta name="theme-color" content="#0d6efd">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Household Registration</title>
-  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+  <link rel="icon" type="image/png" href="assets/img/registration-app-icon-192.png">
 
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
@@ -116,8 +116,8 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 
     <div class="sidebar-footer">
       <div class="sidebar-quick">
-        <div class="quick-card d-none" id="syncCenterCard">
-          <div class="quick-title">Sync Center</div>
+        <div class="quick-card" id="syncCenterCard">
+          <div class="quick-title">Connection &amp; Sync</div>
           <div class="sync-status sync-status-sidebar" id="syncStatusWrap" aria-live="polite">
             <div class="sync-status-main">
               <span class="sync-badge sync-badge-neutral" id="syncStatusBadge">Checking</span>

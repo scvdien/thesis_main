@@ -201,14 +201,14 @@ $insert = $pdo->prepare(
         (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`,
          `disease_category`, `illness`, `note`, `stock_before`, `stock_after`,
          `created_at`, `user_name`, `recipient_id`, `recipient_name`,
-         `recipient_barangay`, `released_by_role`, `released_by_name`,
+         `recipient_barangay`, `released_by_role`, `released_by_name`, `released_by_user_id`,
          `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`,
          `linked_request_code`)
      VALUES
         (:id, :medicine_id, :medicine_name, "dispense", :quantity,
          :disease_category, :illness, :note, :stock_before, :stock_after,
          :created_at, :user_name, :recipient_id, :recipient_name,
-         :recipient_barangay, "BHW", :released_by_name,
+         :recipient_barangay, "BHW", :released_by_name, :released_by_user_id,
          "", "", "", "")'
 );
 $updateResident = $pdo->prepare(
@@ -246,6 +246,7 @@ try {
             'recipient_name' => $resident['full_name'],
             'recipient_barangay' => $resident['barangay'],
             'released_by_name' => $bhw['full_name'],
+            'released_by_user_id' => $bhw['id'],
         ]);
 
         $updateResident->execute([

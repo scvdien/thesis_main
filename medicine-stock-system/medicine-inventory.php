@@ -192,7 +192,9 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
                 <option value="Tablet">Tablet</option>
                 <option value="Capsule">Capsule</option>
                 <option value="Syrup">Syrup</option>
+                <option value="Inhaler">Inhaler</option>
                 <option value="Injection">Injection</option>
+                <option value="Cream">Cream</option>
                 <option value="Sachet">Sachet</option>
                 <option value="Others">Others</option>
               </select>
@@ -240,60 +242,130 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
     </div>
   </div>
 
-  <div class="modal fade" id="stockActionModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+  <div class="modal fade" id="stockActionModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered stock-action-dialog">
       <div class="modal-content modern-modal">
         <div class="modal-header border-0 pb-0">
           <div>
-            <h5 class="modal-title mb-1">Adjust Stock</h5>
+            <h5 class="modal-title mb-1" id="stockActionModalTitle">Receive or Adjust Stock</h5>
             <p class="inventory-modal-subtitle mb-0" id="stockActionMedicineLabel">Select a medicine to update stock movement.</p>
           </div>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <button type="button" class="btn-close" id="stockActionCloseBtn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <form id="stockActionForm" class="inventory-form-grid inventory-form-grid--single">
             <input type="hidden" id="stockMedicineId">
 
-            <div class="inventory-action-note">
-              <span>Current Stock</span>
-              <strong id="stockCurrentStock">0 units</strong>
+            <div class="stock-action-overview">
+              <div class="stock-action-overview__field">
+                <span class="form-label d-block">Current stock</span>
+                <div class="inventory-action-note stock-action-current">
+                  <span class="stock-action-current__icon" aria-hidden="true"><i class="bi bi-box-seam"></i></span>
+                  <strong id="stockCurrentStock">0 units</strong>
+                </div>
+              </div>
+
+              <div class="stock-action-overview__field">
+                <label for="stockActionType" class="form-label">Action type</label>
+                <div class="stock-action-type-control">
+                  <i id="stockActionTypeIcon" class="bi bi-box-arrow-in-down stock-action-type-icon" aria-hidden="true"></i>
+                  <select id="stockActionType" class="form-select" required>
+                    <option value="restock">Restock</option>
+                    <option value="dispose">Dispose / Write-off</option>
+                  </select>
+                  <i class="bi bi-chevron-down stock-action-type-chevron" aria-hidden="true"></i>
+                </div>
+              </div>
+            </div>
+
+            <section id="stockRestockFlow" class="stock-restock-flow">
+              <div id="stockRestockSourceGroup">
+                <span class="form-label d-block">Restock source</span>
+                <div class="stock-source-toggle" role="radiogroup" aria-label="Restock source">
+                  <input type="radio" class="btn-check" name="stockRestockSource" id="stockRestockSourceCho" value="cho" autocomplete="off">
+                  <label for="stockRestockSourceCho">
+                    <i class="bi bi-truck" aria-hidden="true"></i>
+                    <span>CHO Request</span>
+                  </label>
+
+                  <input type="radio" class="btn-check" name="stockRestockSource" id="stockRestockSourceManual" value="manual" autocomplete="off" checked>
+                  <label for="stockRestockSourceManual">
+                    <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                    <span>Manual Restock</span>
+                  </label>
+                </div>
+                <small class="inventory-field-hint" id="stockRestockSourceHint">Choose where this stock came from.</small>
+              </div>
+
+              <div id="stockLinkedRequestGroup" class="d-none">
+                <label for="stockLinkedRequestId" class="form-label">CHO request</label>
+                <select id="stockLinkedRequestId" class="form-select">
+                  <option value="">Select an open CHO request</option>
+                </select>
+                <small class="inventory-field-hint" id="stockLinkedRequestHint">Only open requests for this medicine are shown.</small>
+
+                <article id="stockLinkedRequestCard" class="stock-linked-request-card d-none" aria-live="polite">
+                  <div class="stock-linked-request-card__head">
+                    <div>
+                      <span>Selected request</span>
+                      <strong id="stockLinkedRequestCode">-</strong>
+                    </div>
+                    <span class="stock-request-status" id="stockLinkedRequestStatus">Pending</span>
+                  </div>
+                  <div class="stock-linked-request-metrics">
+                    <div>
+                      <span>Requested</span>
+                      <strong id="stockLinkedRequestedQuantity">0</strong>
+                    </div>
+                    <div>
+                      <span>Received</span>
+                      <strong id="stockLinkedReceivedQuantity">0</strong>
+                    </div>
+                    <div class="stock-linked-request-metrics__remaining">
+                      <span>Remaining</span>
+                      <strong id="stockLinkedRemainingQuantity">0</strong>
+                    </div>
+                  </div>
+                  <div class="stock-linked-request-card__footer">
+                    <i class="bi bi-calendar-event" aria-hidden="true"></i>
+                    Expected delivery: <strong id="stockLinkedExpectedDate">-</strong>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <div>
+              <label for="stockActionQuantity" class="form-label" id="stockActionQuantityLabel">Restock quantity</label>
+              <div class="stock-action-quantity-field">
+                <input type="number" id="stockActionQuantity" class="form-control" min="1" step="1" inputmode="numeric" placeholder="Enter quantity" required>
+                <span id="stockActionQuantityUnit">units</span>
+              </div>
+            </div>
+
+            <div id="stockActionPreview" class="stock-action-preview d-none" aria-live="polite">
+              <span class="stock-action-preview__icon"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></span>
+              <div>
+                <strong id="stockActionPreviewTitle">Stock after restock: 0 units</strong>
+                <span id="stockActionPreviewText">Enter a quantity to preview this action.</span>
+              </div>
             </div>
 
             <div>
-              <label for="stockActionType" class="form-label">Action Type</label>
-              <select id="stockActionType" class="form-select" required>
-                <option value="restock">Restock</option>
-                <option value="dispose">Dispose / Write-off</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="stockActionQuantity" class="form-label">Quantity</label>
-              <input type="number" id="stockActionQuantity" class="form-control" min="1" step="1" required>
-            </div>
-
-            <div>
-              <label for="stockActionDate" class="form-label">Action Date</label>
+              <label for="stockActionDate" class="form-label" id="stockActionDateLabel">Restock date</label>
               <input type="date" id="stockActionDate" class="form-control" required>
             </div>
 
-            <div class="col-span-2" id="stockLinkedRequestGroup">
-              <label for="stockLinkedRequestId" class="form-label">Linked to Request</label>
-              <select id="stockLinkedRequestId" class="form-select">
-                <option value="">Not linked to a CHO request</option>
-              </select>
-              <small class="inventory-field-hint" id="stockLinkedRequestHint">Choose an open CHO request for this medicine when receiving a delivery.</small>
+            <div class="d-none" id="stockActionNoteGroup">
+              <label for="stockActionNote" class="form-label" id="stockActionNoteLabel">Source / notes (optional)</label>
+              <textarea id="stockActionNote" class="form-control" rows="2" placeholder="Supplier, delivery reference, or optional note"></textarea>
             </div>
 
-            <div class="col-span-2 d-none" id="stockActionNoteGroup">
-              <label for="stockActionNote" class="form-label" id="stockActionNoteLabel">Notes (Optional)</label>
-              <textarea id="stockActionNote" class="form-control" rows="3" placeholder="Source or optional note"></textarea>
-            </div>
+            <div id="stockActionFeedback" class="stock-action-feedback d-none" role="alert"></div>
 
-            <div class="col-span-2 inventory-form-actions">
-              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary">
-                <i class="bi bi-check2-circle"></i>Apply Action
+            <div class="inventory-form-actions stock-action-form-actions">
+              <button type="button" class="btn btn-light" id="stockActionCancelBtn" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="stockActionSubmitBtn">
+                <i class="bi bi-check2-circle"></i><span id="stockActionSubmitLabel">Add Stock</span>
               </button>
             </div>
           </form>
@@ -342,7 +414,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
   <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/medicine-inventory.js?v=<?= urlencode($medicineInventoryJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>

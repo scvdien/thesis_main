@@ -29,7 +29,6 @@ string orientation
 string providerAuthority
 string webManifestUrl
 string webview_error_title
-string webview_loading
 string webview_retry
 string webview_startup_error_message
 string webview_startup_error_title

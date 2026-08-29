@@ -93,6 +93,20 @@
     async flush() {
       // no-op in fallback mode
     },
+    async verifyPersisted(key, expectedValue) {
+      try {
+        return window.localStorage.getItem(String(key || "")) === String(expectedValue ?? "");
+      } catch {
+        return false;
+      }
+    },
+    async getPersistedValue(key) {
+      try {
+        return window.localStorage.getItem(String(key || ""));
+      } catch {
+        return null;
+      }
+    },
     async ready() {
       // no-op in fallback mode
     }
@@ -202,6 +216,33 @@
       },
       async flush() {
         await Promise.allSettled(Array.from(pendingOps));
+      },
+      async verifyPersisted(key, expectedValue) {
+        await Promise.allSettled(Array.from(pendingOps));
+        const normalizedKey = String(key || "");
+        const normalizedExpectedValue = String(expectedValue ?? "");
+        try {
+          const db = await dbPromise;
+          if (db) {
+            return (await idbGet(db, normalizedKey)) === normalizedExpectedValue;
+          }
+          return window.localStorage.getItem(normalizedKey) === normalizedExpectedValue;
+        } catch {
+          return false;
+        }
+      },
+      async getPersistedValue(key) {
+        await Promise.allSettled(Array.from(pendingOps));
+        const normalizedKey = String(key || "");
+        try {
+          const db = await dbPromise;
+          if (db) {
+            return await idbGet(db, normalizedKey);
+          }
+          return window.localStorage.getItem(normalizedKey);
+        } catch {
+          return null;
+        }
       },
       async ready() {
         await hydratePromise;

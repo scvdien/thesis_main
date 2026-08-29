@@ -52,7 +52,7 @@ $householdsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/households
 <head>
 <meta charset="utf-8">
 <title>Households | Barangay Captain Dashboard</title>
-<link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+<link rel="icon" type="image/png" href="assets/img/registration-app-icon-192.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0d6efd">
 <link rel="manifest" href="manifest.webmanifest">

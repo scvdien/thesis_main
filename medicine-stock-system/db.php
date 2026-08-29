@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS `mss_inventory_movements` (
   `recipient_barangay` VARCHAR(120) NOT NULL DEFAULT '',
   `released_by_role` VARCHAR(40) NOT NULL DEFAULT '',
   `released_by_name` VARCHAR(150) NOT NULL DEFAULT '',
+  `released_by_user_id` VARCHAR(64) NOT NULL DEFAULT '',
   `linked_request_id` VARCHAR(64) NOT NULL DEFAULT '',
   `linked_request_item_id` VARCHAR(64) NOT NULL DEFAULT '',
   `linked_request_group_id` VARCHAR(64) NOT NULL DEFAULT '',
@@ -265,7 +266,12 @@ CREATE TABLE IF NOT EXISTS `mss_inventory_movements` (
   KEY `idx_mss_movements_created_at` (`created_at`),
   KEY `idx_mss_movements_medicine_id` (`medicine_id`),
   KEY `idx_mss_movements_action_type` (`action_type`),
-  KEY `idx_mss_movements_request_group` (`linked_request_group_id`)
+  KEY `idx_mss_movements_release_owner` (`action_type`, `released_by_user_id`, `created_at`),
+  KEY `idx_mss_movements_request_group` (`linked_request_group_id`),
+  KEY `idx_mss_movements_action_request_item` (`action_type`, `linked_request_item_id`),
+  KEY `idx_mss_movements_action_request_id` (`action_type`, `linked_request_id`),
+  KEY `idx_mss_movements_action_request_group` (`action_type`, `linked_request_group_id`),
+  KEY `idx_mss_movements_action_request_code` (`action_type`, `linked_request_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
         <<<'SQL'
@@ -400,6 +406,42 @@ SQL,
         'illness',
         "ALTER TABLE `mss_inventory_movements` ADD COLUMN `illness` VARCHAR(160) NOT NULL DEFAULT '' AFTER `disease_category`"
     );
+    $movementOwnerColumnAdded = mss_ensure_table_column(
+        $pdo,
+        'mss_inventory_movements',
+        'released_by_user_id',
+        "ALTER TABLE `mss_inventory_movements` ADD COLUMN `released_by_user_id` VARCHAR(64) NOT NULL DEFAULT '' AFTER `released_by_name`"
+    );
+    mss_ensure_table_index(
+        $pdo,
+        'mss_inventory_movements',
+        'idx_mss_movements_release_owner',
+        "ALTER TABLE `mss_inventory_movements` ADD KEY `idx_mss_movements_release_owner` (`action_type`, `released_by_user_id`, `created_at`)"
+    );
+    mss_ensure_table_index(
+        $pdo,
+        'mss_inventory_movements',
+        'idx_mss_movements_action_request_item',
+        "ALTER TABLE `mss_inventory_movements` ADD KEY `idx_mss_movements_action_request_item` (`action_type`, `linked_request_item_id`)"
+    );
+    mss_ensure_table_index(
+        $pdo,
+        'mss_inventory_movements',
+        'idx_mss_movements_action_request_id',
+        "ALTER TABLE `mss_inventory_movements` ADD KEY `idx_mss_movements_action_request_id` (`action_type`, `linked_request_id`)"
+    );
+    mss_ensure_table_index(
+        $pdo,
+        'mss_inventory_movements',
+        'idx_mss_movements_action_request_group',
+        "ALTER TABLE `mss_inventory_movements` ADD KEY `idx_mss_movements_action_request_group` (`action_type`, `linked_request_group_id`)"
+    );
+    mss_ensure_table_index(
+        $pdo,
+        'mss_inventory_movements',
+        'idx_mss_movements_action_request_code',
+        "ALTER TABLE `mss_inventory_movements` ADD KEY `idx_mss_movements_action_request_code` (`action_type`, `linked_request_code`)"
+    );
     mss_ensure_table_column(
         $pdo,
         'mss_cho_requests',
@@ -407,18 +449,36 @@ SQL,
         "ALTER TABLE `mss_cho_requests` ADD COLUMN `record_status` VARCHAR(20) NOT NULL DEFAULT 'active' AFTER `notes`"
     );
 
+    if ($movementOwnerColumnAdded) {
+        $pdo->exec(
+            "UPDATE `mss_inventory_movements` AS `movement`
+             INNER JOIN (
+                 SELECT MIN(`id`) AS `user_id`, `full_name`
+                 FROM `mss_users`
+                 WHERE `full_name` <> ''
+                 GROUP BY `full_name`
+                 HAVING COUNT(*) = 1
+             ) AS `owner`
+                 ON `owner`.`full_name` = COALESCE(NULLIF(`movement`.`released_by_name`, ''), NULLIF(`movement`.`user_name`, ''))
+             SET `movement`.`released_by_user_id` = `owner`.`user_id`
+             WHERE LOWER(`movement`.`action_type`) IN ('dispense', 'issue', 'release', 'released')
+               AND `movement`.`released_by_user_id` = ''"
+        );
+    }
+
     $schemaReady = true;
 }
 
-function mss_ensure_table_column(PDO $pdo, string $table, string $column, string $statement): void
+function mss_ensure_table_column(PDO $pdo, string $table, string $column, string $statement): bool
 {
     $quotedColumn = $pdo->quote($column);
     $query = $pdo->query("SHOW COLUMNS FROM `{$table}` LIKE {$quotedColumn}");
     if ($query && $query->fetch()) {
-        return;
+        return false;
     }
 
     $pdo->exec($statement);
+    return true;
 }
 
 function mss_ensure_table_index(PDO $pdo, string $table, string $index, string $statement): void

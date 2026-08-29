@@ -21,7 +21,7 @@ plugins {
 }
 
 def twaManifest = [
-    applicationId: 'online.cabarianportal.registration',
+    applicationId: 'online.cabarianportal.registration.v5',
     hostName: 'cabarianportal.online', // The domain being opened in the TWA.
     launchUrl: '/household-system/registration.php', // The start path for the TWA. Must be relative to the domain.
     name: 'Cabarian Registration', // The application name.
@@ -54,11 +54,11 @@ android {
     compileSdkVersion 36
     namespace "online.cabarianportal.registration"
     defaultConfig {
-        applicationId "online.cabarianportal.registration"
+        applicationId "online.cabarianportal.registration.v5"
         minSdkVersion 21
-        targetSdkVersion 36
-        versionCode 5
-        versionName "5"
+        targetSdkVersion 35
+        versionCode 7
+        versionName "7"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

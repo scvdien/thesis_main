@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-66:12
-INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-66:12
-INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-66:12
-INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-66:12
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-68:12
+INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-68:12
+INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-68:12
+INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:17:1-68:12
 MERGED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:17:1-30:12
 MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] C:\Users\judea\.gradle\caches\8.11.1\transforms\80cbc4dba6c47357d96551e666b341e2\transformed\versionedparcelable-1.1.1\AndroidManifest.xml:17:1-27:12
 MERGED from [androidx.interpolator:interpolator:1.0.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\0cc7dfd2c0fcae0982c28937b18f49ab\transformed\interpolator-1.0.0\AndroidManifest.xml:17:1-22:12
@@ -25,9 +25,13 @@ uses-permission#android.permission.INTERNET
 ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:19:5-67
 	android:name
 		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:19:22-64
+uses-permission#android.permission.CAMERA
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:20:5-65
+	android:name
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:20:22-62
 application
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:21:5-65:19
-INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:21:5-65:19
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:22:5-67:19
+INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:22:5-67:19
 MERGED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:28:5-89
 MERGED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:28:5-89
 MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] C:\Users\judea\.gradle\caches\8.11.1\transforms\80cbc4dba6c47357d96551e666b341e2\transformed\versionedparcelable-1.1.1\AndroidManifest.xml:24:5-25:19
@@ -41,83 +45,85 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] C:\Users\judea\.gradle\cach
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:26:9-35
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:28:9-35
 	android:label
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:25:9-40
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:27:9-40
+	android:roundIcon
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:26:9-48
 	android:icon
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:24:9-43
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:25:9-43
 	android:allowBackup
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:23:9-35
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:24:9-35
 	android:theme
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:27:9-72
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:29:9-72
 	android:usesCleartextTraffic
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:28:9-45
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:30:9-45
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:22:9-35
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:23:9-35
 provider#online.cabarianportal.registration.CameraFileProvider
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:30:9-38:20
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:32:9-40:20
 	android:grantUriPermissions
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:34:13-47
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:36:13-47
 	android:authorities
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:32:13-60
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:34:13-60
 	android:exported
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:33:13-37
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:35:13-37
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:31:13-47
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:33:13-47
 meta-data#android.support.FILE_PROVIDER_PATHS
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:35:13-37:53
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:37:13-39:53
 	android:resource
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:37:17-50
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:39:17-50
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:36:17-67
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:38:17-67
 activity#online.cabarianportal.registration.RegistrationActivity
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:40:9-64:20
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:9-66:20
 	android:screenOrientation
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:43:13-49
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:45:13-49
 	android:label
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:41:13-44
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:43:13-44
 	android:windowSoftInputMode
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:45:13-55
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:47:13-55
 	android:exported
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:13-36
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:44:13-36
 	android:taskAffinity
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:44:13-78
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:46:13-78
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:40:19-55
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:19-55
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:47:13-50:29
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:13-52:29
 action#android.intent.action.MAIN
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:48:17-69
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:50:17-69
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:48:25-66
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:50:25-66
 category#android.intent.category.LAUNCHER
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:17-77
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:51:17-77
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:27-74
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:51:27-74
 intent-filter#action:name:android.intent.action.VIEW+category:name:android.intent.category.BROWSABLE+category:name:android.intent.category.DEFAULT+data:host:@string/hostName+data:pathPrefix:/household-system/+data:scheme:https
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:52:13-62:29
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:13-64:29
 	android:autoVerify
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:52:28-53
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:28-53
 action#android.intent.action.VIEW
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:53:17-68
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:17-68
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:53:25-66
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:25-66
 category#android.intent.category.DEFAULT
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:17-76
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:17-76
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:27-73
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:27-73
 category#android.intent.category.BROWSABLE
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:17-77
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:17-77
 	android:name
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:27-75
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:27-75
 data
-ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:17-61:19
+ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:58:17-63:19
 	android:host
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:21-52
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:59:21-52
 	android:scheme
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:23-45
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:58:23-45
 	android:pathPrefix
-		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:59:21-60
+		ADDED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:61:21-60
 uses-sdk
 INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml
@@ -150,7 +156,7 @@ ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\tran
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:24:9-44
 	android:name
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:23:9-81
-permission#online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+permission#online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:22:5-24:47
 	android:protectionLevel
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:24:9-44
@@ -160,7 +166,7 @@ uses-permission#${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:22-94
-uses-permission#online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+uses-permission#online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:22-94

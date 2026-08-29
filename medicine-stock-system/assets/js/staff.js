@@ -35,6 +35,10 @@
     dispenseSuccessModal: byId("dispenseSuccessModal"),
     dispenseSuccessTitle: byId("dispenseSuccessTitle"),
     dispenseSuccessBody: byId("dispenseSuccessBody"),
+    removeDispenseMedicineModal: byId("removeDispenseMedicineModal"),
+    removeDispenseMedicineModalMessage: byId("removeDispenseMedicineModalMessage"),
+    cancelRemoveDispenseMedicineBtn: byId("cancelRemoveDispenseMedicineBtn"),
+    confirmRemoveDispenseMedicineBtn: byId("confirmRemoveDispenseMedicineBtn"),
     dashboardLowCount: byId("dashboardLowCount"),
     dashboardExpiringCount: byId("dashboardExpiringCount"),
     dashboardReleasedToday: byId("dashboardReleasedToday"),
@@ -151,6 +155,9 @@
   const dispenseSuccessModal = refs.dispenseSuccessModal && window.bootstrap
     ? new window.bootstrap.Modal(refs.dispenseSuccessModal, { backdrop: false, keyboard: false })
     : null;
+  const removeDispenseMedicineModal = refs.removeDispenseMedicineModal && window.bootstrap
+    ? new window.bootstrap.Modal(refs.removeDispenseMedicineModal)
+    : null;
   const staffNotificationMessageModal = byId("staffNotificationMessageModal") && window.bootstrap ? new window.bootstrap.Modal(byId("staffNotificationMessageModal")) : null;
   const staffNotificationRemoveModalElement = byId("staffNotificationRemoveModal");
   const staffNotificationRemoveModal = staffNotificationRemoveModalElement && window.bootstrap
@@ -195,12 +202,15 @@
   let alertTimer = 0;
   let dispenseSuccessTimer = 0;
   let staffStateHydrationPromise = null;
+  let inventoryExpectedVersions = {};
   let staffPersistQueue = Promise.resolve();
   let lastQueuedStaffPersistId = 0;
   let staffNotificationHiddenState = {};
   let staffNotificationHiddenStorageKey = "";
   let pendingStaffNotificationRemoveId = "";
   let pendingStaffReadNotificationId = "";
+  let pendingDispenseMedicineRemoveId = "";
+  let pendingDispenseMedicineRemoveTrigger = null;
   const NOTIFICATION_OCCURRENCE_SEPARATOR = "::";
   const DEFAULT_NOTIFICATION_MESSAGE = "Review the medicine notification.";
 
@@ -561,6 +571,7 @@
 
   const createStaffPersistSnapshot = () => ({
     inventory: cloneEntries(state.inventory),
+    inventoryExpectedVersions: { ...inventoryExpectedVersions },
     movements: cloneEntries(state.movements),
     residentAccounts: cloneEntries(state.residentAccounts),
     users: cloneEntries(state.users),
@@ -1131,26 +1142,28 @@
     const authUser = currentAuthUser && keyOf(currentAuthUser.normalizedRole || currentAuthUser.role) === "staff"
       ? normalizeModuleUser(currentAuthUser)
       : null;
-    const selected = users.find((user) => text(user.id) === text(state.currentUserId) && text(user.role) !== USER_ROLE_ADMIN);
-    if (selected) return selected;
 
-    const authMatch = authUser
-      ? users.find((user) =>
+    if (authUser) {
+      const authMatch = users.find((user) =>
         text(user.id) === text(authUser.id)
         || keyOf(user.username) === keyOf(authUser.username)
-      )
-      : null;
+      );
+      const resolvedUser = authMatch || authUser;
+      state.currentUserId = resolvedUser.id || "";
+      return resolvedUser;
+    }
+
+    const selected = users.find((user) => text(user.id) === text(state.currentUserId) && text(user.role) !== USER_ROLE_ADMIN);
+    if (selected) return selected;
 
     const sessions = getStoredSessions();
     const fromSession = sessions
       .map((session) => users.find((user) => text(user.id) === text(session.userId)))
       .find((user) => user && text(user.role) !== USER_ROLE_ADMIN && text(user.status) === "Active");
 
-    const fallback = authMatch
-      || fromSession
+    const fallback = fromSession
       || users.find((user) => text(user.role) !== USER_ROLE_ADMIN && text(user.status) === "Active")
       || users.find((user) => text(user.role) !== USER_ROLE_ADMIN)
-      || authUser
       || null;
 
     state.currentUserId = fallback?.id || "";
@@ -1452,6 +1465,7 @@
     recipientBarangay: text(entry.recipientBarangay || entry.recipient_barangay),
     releasedByRole: text(entry.releasedByRole || entry.released_by_role),
     releasedByName: text(entry.releasedByName || entry.released_by_name),
+    releasedByUserId: text(entry.releasedByUserId || entry.released_by_user_id),
     linkedRequestId: text(entry.linkedRequestId || entry.linked_request_id),
     linkedRequestItemId: text(entry.linkedRequestItemId || entry.linked_request_item_id),
     linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.linked_request_group_id),
@@ -1486,6 +1500,9 @@
 
   const syncStateFromServer = (serverState = {}) => {
     if (Array.isArray(serverState.inventory)) {
+      inventoryExpectedVersions = Object.fromEntries(serverState.inventory
+        .map((entry) => [text(entry.id), text(entry.lastUpdatedAt || entry.last_updated_at)])
+        .filter(([id, version]) => id && version));
       state.inventory = serverState.inventory.map(normalizeMedicine);
     }
     if (Array.isArray(serverState.movements)) {
@@ -1691,8 +1708,8 @@
       totalReleases: history.length,
       totalUnits: history.reduce((total, movement) => total + Math.max(0, numeric(movement.quantity)), 0),
       lastMovement,
-      lastMedicine: text(lastMovement?.medicineName) || text(resident?.lastDispensedMedicine) || "-",
-      lastReleaseAt: text(lastMovement?.createdAt) || text(resident?.lastDispensedAt),
+      lastMedicine: text(lastMovement?.medicineName) || "-",
+      lastReleaseAt: text(lastMovement?.createdAt),
       status: getResidentStatusMeta({ totalReleases: history.length, lastMovement })
     };
   };
@@ -2205,7 +2222,6 @@
 
   const clearResidentForm = () => {
     refs.residentForm?.reset();
-    if (refs.quickResidentCity) refs.quickResidentCity.value = "Ligao City";
   };
 
   const getResidentFormFocusTarget = () => {
@@ -2222,10 +2238,12 @@
 
     if (refs.residentModeCabarianBtn) {
       refs.residentModeCabarianBtn.classList.toggle("is-active", isCabarian);
+      refs.residentModeCabarianBtn.setAttribute("aria-selected", String(isCabarian));
       refs.residentModeCabarianBtn.setAttribute("aria-pressed", String(isCabarian));
     }
     if (refs.residentModeManualBtn) {
       refs.residentModeManualBtn.classList.toggle("is-active", !isCabarian);
+      refs.residentModeManualBtn.setAttribute("aria-selected", String(!isCabarian));
       refs.residentModeManualBtn.setAttribute("aria-pressed", String(!isCabarian));
     }
   };
@@ -2748,6 +2766,42 @@
     syncDispenseSubmitState();
   };
 
+  const removeDispenseItem = (medicineId) => {
+    const normalizedMedicineId = text(medicineId);
+    if (!state.dispenseItems.some((item) => item.medicineId === normalizedMedicineId)) return false;
+
+    state.dispenseItems = state.dispenseItems.filter((item) => item.medicineId !== normalizedMedicineId);
+    renderDispenseItems();
+    renderMedicineSearchResults();
+    return true;
+  };
+
+  const openRemoveDispenseMedicineModal = (medicineId, trigger = null) => {
+    const normalizedMedicineId = text(medicineId);
+    const item = state.dispenseItems.find((entry) => entry.medicineId === normalizedMedicineId);
+    const medicine = item ? findMedicine(normalizedMedicineId) : null;
+    if (!item || !medicine) return;
+
+    const message = `Remove ${medicineLabel(medicine)} from this dispensing list? Inventory stock will not be changed.`;
+    if (!removeDispenseMedicineModal) {
+      if (window.confirm(message)) removeDispenseItem(normalizedMedicineId);
+      return;
+    }
+
+    pendingDispenseMedicineRemoveId = normalizedMedicineId;
+    pendingDispenseMedicineRemoveTrigger = trigger instanceof HTMLElement ? trigger : null;
+    if (refs.removeDispenseMedicineModalMessage) {
+      refs.removeDispenseMedicineModalMessage.textContent = message;
+    }
+    removeDispenseMedicineModal.show();
+  };
+
+  const confirmRemoveDispenseMedicine = () => {
+    if (!pendingDispenseMedicineRemoveId) return;
+    removeDispenseItem(pendingDispenseMedicineRemoveId);
+    removeDispenseMedicineModal?.hide();
+  };
+
   const updateDispenseMedicineSelection = (medicineId, { syncInput = true } = {}) => {
     if (!refs.dispenseMedicine) return;
     const nextMedicine = findMedicine(text(medicineId));
@@ -3024,8 +3078,8 @@
     const zone = text(refs.quickResidentZone?.value);
     const city = text(refs.quickResidentCity?.value) || "Ligao City";
 
-    if (!fullName || !barangay) {
-      showNotice("Complete the resident name and barangay to save the account.", "danger");
+    if (!fullName || !barangay || !zone) {
+      showNotice("Complete the resident name, barangay, and zone to save the account.", "danger");
       return null;
     }
 
@@ -3178,7 +3232,8 @@
       recipientName: resident.fullName,
       recipientBarangay: resident.barangay,
       releasedByRole,
-      releasedByName
+      releasedByName,
+      releasedByUserId: dispenseActor.user.id
       }));
     });
 
@@ -3584,6 +3639,25 @@
     window.clearTimeout(dispenseSuccessTimer);
   });
 
+  refs.confirmRemoveDispenseMedicineBtn?.addEventListener("click", confirmRemoveDispenseMedicine);
+
+  refs.removeDispenseMedicineModal?.addEventListener("shown.bs.modal", () => {
+    refs.cancelRemoveDispenseMedicineBtn?.focus();
+  });
+
+  refs.removeDispenseMedicineModal?.addEventListener("hidden.bs.modal", () => {
+    const focusTarget = pendingDispenseMedicineRemoveTrigger?.isConnected
+      ? pendingDispenseMedicineRemoveTrigger
+      : (state.dispenseItems.length ? refs.continueDispenseBtn : refs.dispenseMedicineSearch);
+
+    pendingDispenseMedicineRemoveId = "";
+    pendingDispenseMedicineRemoveTrigger = null;
+    if (refs.removeDispenseMedicineModalMessage) {
+      refs.removeDispenseMedicineModalMessage.textContent = "Remove this medicine from the dispensing list? Inventory stock will not be changed.";
+    }
+    window.setTimeout(() => focusTarget?.focus(), 0);
+  });
+
   refs.confirmStaffNotificationRemoveBtn?.addEventListener("click", confirmStaffNotificationRemove);
 
   byId("staffNotificationMessageModal")?.addEventListener("shown.bs.modal", () => {
@@ -3726,7 +3800,6 @@
   refs.dispenseResidentPreview?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-change-dispense-resident]");
     if (!button) return;
-
     resetDispenseResidentSelection();
     clearNotice();
     window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
@@ -3801,9 +3874,9 @@
   refs.dispenseSelectedItems?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-dispense-item]");
     if (!button) return;
+    event.preventDefault();
     const medicineId = text(button.getAttribute("data-remove-dispense-item"));
-    state.dispenseItems = state.dispenseItems.filter((item) => item.medicineId !== medicineId);
-    renderDispenseItems();
+    openRemoveDispenseMedicineModal(medicineId, button);
   });
 
   refs.selectedResidentUseBtn?.addEventListener("click", () => {

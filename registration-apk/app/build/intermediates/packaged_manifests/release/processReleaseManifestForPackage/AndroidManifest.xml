@@ -15,21 +15,22 @@
      limitations under the License.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="online.cabarianportal.registration"
-    android:versionCode="5"
-    android:versionName="5" >
+    package="online.cabarianportal.registration.v5"
+    android:versionCode="7"
+    android:versionName="7" >
 
     <uses-sdk
         android:minSdkVersion="21"
-        android:targetSdkVersion="36" />
+        android:targetSdkVersion="35" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <permission
-        android:name="online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:name="online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
 
-    <uses-permission android:name="online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <uses-permission android:name="online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
 
     <application
         android:name="online.cabarianportal.registration.Application"
@@ -38,6 +39,7 @@
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/appName"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false" >
@@ -78,7 +80,7 @@
 
         <provider
             android:name="androidx.startup.InitializationProvider"
-            android:authorities="online.cabarianportal.registration.androidx-startup"
+            android:authorities="online.cabarianportal.registration.v5.androidx-startup"
             android:exported="false" >
             <meta-data
                 android:name="androidx.profileinstaller.ProfileInstallerInitializer"

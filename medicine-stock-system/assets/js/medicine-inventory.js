@@ -11,6 +11,7 @@
   };
 
   const HOUSEHOLD_RESIDENT_API = "../household-system/registration-sync.php";
+  const STOCK_PENDING_DELIVERY_KEY = "mss_pending_cho_delivery_v1";
 
   const byId = (id) => document.getElementById(id);
   const refs = {
@@ -57,17 +58,41 @@
     recordStatusModalConfirmBtn: byId("recordStatusModalConfirmBtn"),
     stockActionForm: byId("stockActionForm"),
     stockMedicineId: byId("stockMedicineId"),
+    stockActionModalTitle: byId("stockActionModalTitle"),
     stockActionMedicineLabel: byId("stockActionMedicineLabel"),
     stockCurrentStock: byId("stockCurrentStock"),
     stockActionType: byId("stockActionType"),
+    stockActionTypeIcon: byId("stockActionTypeIcon"),
     stockActionQuantity: byId("stockActionQuantity"),
+    stockActionQuantityLabel: byId("stockActionQuantityLabel"),
+    stockActionQuantityUnit: byId("stockActionQuantityUnit"),
     stockActionDate: byId("stockActionDate"),
+    stockActionDateLabel: byId("stockActionDateLabel"),
+    stockRestockFlow: byId("stockRestockFlow"),
+    stockRestockSourceCho: byId("stockRestockSourceCho"),
+    stockRestockSourceManual: byId("stockRestockSourceManual"),
+    stockRestockSourceHint: byId("stockRestockSourceHint"),
     stockLinkedRequestGroup: byId("stockLinkedRequestGroup"),
     stockLinkedRequestId: byId("stockLinkedRequestId"),
     stockLinkedRequestHint: byId("stockLinkedRequestHint"),
+    stockLinkedRequestCard: byId("stockLinkedRequestCard"),
+    stockLinkedRequestCode: byId("stockLinkedRequestCode"),
+    stockLinkedRequestStatus: byId("stockLinkedRequestStatus"),
+    stockLinkedRequestedQuantity: byId("stockLinkedRequestedQuantity"),
+    stockLinkedReceivedQuantity: byId("stockLinkedReceivedQuantity"),
+    stockLinkedRemainingQuantity: byId("stockLinkedRemainingQuantity"),
+    stockLinkedExpectedDate: byId("stockLinkedExpectedDate"),
+    stockActionPreview: byId("stockActionPreview"),
+    stockActionPreviewTitle: byId("stockActionPreviewTitle"),
+    stockActionPreviewText: byId("stockActionPreviewText"),
     stockActionNoteGroup: byId("stockActionNoteGroup"),
     stockActionNoteLabel: byId("stockActionNoteLabel"),
     stockActionNote: byId("stockActionNote"),
+    stockActionFeedback: byId("stockActionFeedback"),
+    stockActionSubmitBtn: byId("stockActionSubmitBtn"),
+    stockActionSubmitLabel: byId("stockActionSubmitLabel"),
+    stockActionCloseBtn: byId("stockActionCloseBtn"),
+    stockActionCancelBtn: byId("stockActionCancelBtn"),
     dispenseResidentSection: byId("dispenseResidentSection"),
     selectedResidentId: byId("selectedResidentId"),
     residentLookupInput: byId("residentLookupInput"),
@@ -116,6 +141,9 @@
 
   let alertTimer = 0;
   let inventoryHydrationPromise = null;
+  let inventoryExpectedVersions = {};
+  let stockActionOperationId = "";
+  let stockActionSaving = false;
 
   const nowIso = () => new Date().toISOString();
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -133,7 +161,9 @@
     Tablet: "tablets",
     Capsule: "capsules",
     Syrup: "bottles",
+    Inhaler: "inhalers",
     Injection: "vials",
+    Cream: "tubes",
     Sachet: "sachets"
   };
   const normalizeMedicineCategory = (value) => {
@@ -149,8 +179,13 @@
   const normalizeDosageForm = (value) => {
     const normalized = keyOf(value);
     if (!normalized) return "Tablet";
-    if (["tablet", "capsule", "syrup", "sachet"].includes(normalized)) return titleCase(normalized);
+    if (["tablet", "tablets"].includes(normalized)) return "Tablet";
+    if (["capsule", "capsules"].includes(normalized)) return "Capsule";
+    if (["syrup", "syrups"].includes(normalized)) return "Syrup";
+    if (["inhaler", "inhalers"].includes(normalized)) return "Inhaler";
     if (["injection", "injections"].includes(normalized)) return "Injection";
+    if (["cream", "creams", "ointment", "ointments"].includes(normalized)) return "Cream";
+    if (["sachet", "sachets"].includes(normalized)) return "Sachet";
     if (["other", "others"].includes(normalized)) return "Others";
     return text(value);
   };
@@ -188,6 +223,21 @@
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+  const medicineFormIconMarkup = (value) => {
+    const form = normalizeDosageForm(value);
+    const iconPaths = {
+      Tablet: '<circle cx="12" cy="12" r="7.5"/><path d="M7 12h10"/>',
+      Capsule: '<path d="m10.4 4.6-5.8 5.8a5 5 0 0 0 7.1 7.1l5.8-5.8a5 5 0 0 0-7.1-7.1Z"/><path d="m8 8 8 8"/>',
+      Syrup: '<path d="M9 3h6v4l2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9l2-2V3Z"/><path d="M9 11h8M10 3h4"/>',
+      Inhaler: '<path d="M9 3h6v10H9Z"/><path d="M8 13h8v3h3v5h-9a2 2 0 0 1-2-2Z"/><path d="M11 6h2"/>',
+      Injection: '<path d="m15 4 5 5M17.5 1.5l5 5M18 6l2.5-2.5M4 20l5-5"/><path d="m6 13 5 5 7-7-5-5Z"/><path d="m8 11 5 5"/>',
+      Cream: '<path d="M8 3h8l1 12-5 6-5-6L8 3Z"/><path d="M8.5 7h7M10 18h4"/>',
+      Sachet: '<path d="M7 3h10l1 18H6L7 3Z"/><path d="M8 7h8M9 16h6"/>',
+      Others: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'
+    };
+    const icon = iconPaths[form] || iconPaths.Others;
+    return `<svg class="inventory-medicine-icon__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
+  };
   const isMobile = () => window.matchMedia("(max-width: 992px)").matches;
   const todayInputValue = () => {
     const current = new Date();
@@ -220,7 +270,10 @@
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
       const message = String(payload.message || "Unable to sync medicine inventory right now.");
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
     }
     return payload;
   };
@@ -561,6 +614,7 @@
     recipientBarangay: text(entry.recipientBarangay),
     releasedByRole: text(entry.releasedByRole),
     releasedByName: text(entry.releasedByName),
+    releasedByUserId: text(entry.releasedByUserId),
     linkedRequestId: text(entry.linkedRequestId || entry.requestId || entry.linkedRequestItemId),
     linkedRequestItemId: text(entry.linkedRequestItemId || entry.linkedRequestId || entry.requestId),
     linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.requestGroupId),
@@ -685,9 +739,12 @@
     state.activityLogs = Array.isArray(serverState.logs)
       ? serverState.logs.map(normalizeActivityLog).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()).slice(0, 60)
       : state.activityLogs;
-    state.inventory = Array.isArray(serverState.inventory)
-      ? serverState.inventory.map(normalizeMedicine)
-      : state.inventory;
+    if (Array.isArray(serverState.inventory)) {
+      inventoryExpectedVersions = Object.fromEntries(serverState.inventory
+        .map((entry) => [text(entry.id), text(entry.lastUpdatedAt || entry.last_updated_at)])
+        .filter(([id, version]) => id && version));
+      state.inventory = serverState.inventory.map(normalizeMedicine);
+    }
     state.movements = Array.isArray(serverState.movements)
       ? serverState.movements.map(normalizeMovement)
       : state.movements;
@@ -731,6 +788,7 @@
         body: JSON.stringify({
           state: {
             inventory: state.inventory,
+            inventoryExpectedVersions: { ...inventoryExpectedVersions },
             movements: state.movements,
             residentAccounts: state.residentAccounts,
             logs: state.activityLogs
@@ -929,8 +987,6 @@
     text(resident.id) === text(id) || text(resident.residentId) === text(id)
   ) || null;
 
-  const findChoRequest = (id) => state.choRequests.find((request) => text(request.id) === text(id)) || null;
-
   const linkedRequestRowsForMedicine = (medicine) => {
     if (!medicine || !supplyMonitoring) return [];
     return supplyMonitoring.getLinkableRequestsForMedicine({
@@ -938,32 +994,158 @@
       medicineName: medicineLabel(medicine),
       requests: state.choRequests,
       movements: state.movements
+    }).sort((left, right) => {
+      const expectedDifference = new Date(left.expectedDate).getTime() - new Date(right.expectedDate).getTime();
+      return expectedDifference || new Date(left.requestDate).getTime() - new Date(right.requestDate).getTime();
     });
   };
 
-  const updateLinkedRequestHint = (medicine) => {
-    if (!refs.stockLinkedRequestHint || !refs.stockLinkedRequestId || !supplyMonitoring) return;
-    const selectedRequestId = text(refs.stockLinkedRequestId.value);
-    const selectedRow = selectedRequestId
-      ? linkedRequestRowsForMedicine(medicine).find((row) => text(row.id) === selectedRequestId)
-      : null;
+  const stockRestockSource = () => refs.stockRestockSourceCho?.checked ? "cho" : "manual";
 
-    if (selectedRow) {
-      refs.stockLinkedRequestHint.textContent = `${selectedRow.requestCode} has ${formatNumber(selectedRow.remainingQuantity)} ${selectedRow.unit} remaining and is due on ${formatDate(selectedRow.expectedDate)}.`;
-      return;
-    }
+  const stockUnitsMatch = (medicine, requestRow) => (
+    keyOf(medicine?.unit) !== ""
+    && keyOf(medicine?.unit) === keyOf(requestRow?.unit)
+  );
 
-    const availableRows = linkedRequestRowsForMedicine(medicine);
-    refs.stockLinkedRequestHint.textContent = availableRows.length
-      ? "Choose an open CHO request for this medicine to track lead time and delivery status automatically."
-      : "No open CHO request is currently logged for this medicine.";
+  const selectedLinkedRequestForMedicine = (medicine) => {
+    const selectedRequestId = text(refs.stockLinkedRequestId?.value);
+    if (!selectedRequestId) return null;
+    return linkedRequestRowsForMedicine(medicine).find((row) => text(row.id) === selectedRequestId) || null;
   };
 
-  const populateLinkedRequestOptions = (medicine) => {
-    if (!refs.stockLinkedRequestId) return;
+  const setStockActionFeedback = (message = "", tone = "danger") => {
+    if (!refs.stockActionFeedback) return;
+    refs.stockActionFeedback.textContent = message;
+    refs.stockActionFeedback.className = `stock-action-feedback${message ? ` stock-action-feedback--${tone}` : " d-none"}`;
+  };
+
+  const readPendingStockDelivery = () => {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(STOCK_PENDING_DELIVERY_KEY) || "null");
+      if (!value || typeof value !== "object" || !text(value.operationId)) return null;
+      const createdAt = Number(value.createdAt || 0);
+      if (createdAt && Date.now() - createdAt > 86400000) {
+        sessionStorage.removeItem(STOCK_PENDING_DELIVERY_KEY);
+        return null;
+      }
+      return value;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const writePendingStockDelivery = (payload) => {
+    try {
+      sessionStorage.setItem(STOCK_PENDING_DELIVERY_KEY, JSON.stringify({
+        ...payload,
+        createdAt: Date.now()
+      }));
+    } catch (error) {
+      // The server-side idempotency key still protects the current page session.
+    }
+  };
+
+  const clearPendingStockDelivery = (operationId = "") => {
+    try {
+      const pending = readPendingStockDelivery();
+      if (!operationId || !pending || text(pending.operationId) === text(operationId)) {
+        sessionStorage.removeItem(STOCK_PENDING_DELIVERY_KEY);
+      }
+    } catch (error) {
+      // Ignore unavailable session storage.
+    }
+  };
+
+  const samePendingStockDelivery = (pending, payload) => Boolean(pending)
+    && text(pending.requestGroupId) === text(payload.requestGroupId)
+    && text(pending.requestItemId) === text(payload.requestItemId)
+    && text(pending.medicineId) === text(payload.medicineId)
+    && Number(pending.quantity) === Number(payload.quantity)
+    && text(pending.actionDate) === text(payload.actionDate);
+
+  const resetStockActionOperationId = () => {
+    if (!stockActionSaving) stockActionOperationId = "";
+  };
+
+  const setStockActionSavingState = (saving) => {
+    stockActionSaving = saving;
+    [
+      refs.stockActionType,
+      refs.stockActionQuantity,
+      refs.stockActionDate,
+      refs.stockActionNote,
+      refs.stockRestockSourceCho,
+      refs.stockRestockSourceManual,
+      refs.stockLinkedRequestId
+    ].forEach((field) => {
+      if (field) field.disabled = saving;
+    });
+    if (refs.stockActionCloseBtn) refs.stockActionCloseBtn.disabled = saving;
+    if (refs.stockActionCancelBtn) refs.stockActionCancelBtn.disabled = saving;
+    refs.stockActionForm?.setAttribute("aria-busy", saving ? "true" : "false");
+    if (saving) {
+      if (refs.stockActionSubmitBtn) refs.stockActionSubmitBtn.disabled = true;
+    } else {
+      updateStockActionInterface();
+    }
+  };
+
+  const renderLinkedRequestDetails = (medicine, { autofillQuantity = false } = {}) => {
+    if (!refs.stockLinkedRequestCard || !refs.stockLinkedRequestHint) return null;
+    const availableRows = linkedRequestRowsForMedicine(medicine);
+    const selectedRow = selectedLinkedRequestForMedicine(medicine);
+
+    refs.stockLinkedRequestCard.classList.toggle("d-none", !selectedRow);
+    if (!selectedRow) {
+      refs.stockActionQuantity?.removeAttribute("max");
+      refs.stockActionDate?.removeAttribute("min");
+      if (refs.stockActionQuantityUnit) refs.stockActionQuantityUnit.textContent = text(medicine?.unit) || "units";
+      refs.stockLinkedRequestHint.textContent = availableRows.length
+        ? "Select the CHO request that this delivery belongs to."
+        : "No open CHO request is currently logged for this medicine.";
+      return null;
+    }
+
+    const statusLabel = text(selectedRow.statusLabel) || (selectedRow.hasDelivery ? "Partially Delivered" : "Pending Request");
+    const statusTone = selectedRow.tone === "danger" ? "danger" : selectedRow.hasDelivery ? "warning" : "pending";
+    const unit = text(selectedRow.unit) || text(medicine?.unit) || "units";
+    const matchingUnits = stockUnitsMatch(medicine, selectedRow);
+
+    if (refs.stockLinkedRequestCode) refs.stockLinkedRequestCode.textContent = text(selectedRow.requestCode) || "CHO Request";
+    if (refs.stockLinkedRequestStatus) {
+      refs.stockLinkedRequestStatus.textContent = statusLabel;
+      refs.stockLinkedRequestStatus.className = `stock-request-status stock-request-status--${statusTone}`;
+    }
+    if (refs.stockLinkedRequestedQuantity) {
+      refs.stockLinkedRequestedQuantity.textContent = `${formatNumber(selectedRow.quantityRequested)} ${unit}`;
+    }
+    if (refs.stockLinkedReceivedQuantity) {
+      refs.stockLinkedReceivedQuantity.textContent = `${formatNumber(selectedRow.receivedQuantity)} ${unit}`;
+    }
+    if (refs.stockLinkedRemainingQuantity) {
+      refs.stockLinkedRemainingQuantity.textContent = `${formatNumber(selectedRow.remainingQuantity)} ${unit}`;
+    }
+    if (refs.stockLinkedExpectedDate) refs.stockLinkedExpectedDate.textContent = formatDate(selectedRow.expectedDate);
+
+    refs.stockLinkedRequestHint.textContent = matchingUnits
+      ? `Enter up to ${formatNumber(selectedRow.remainingQuantity)} ${unit} for this delivery.`
+      : `Unit mismatch: this request uses ${unit}, but the inventory record uses ${text(medicine?.unit) || "units"}. Update the record before receiving.`;
+    if (refs.stockActionQuantityUnit) refs.stockActionQuantityUnit.textContent = unit;
+    if (refs.stockActionDate) refs.stockActionDate.min = text(selectedRow.requestDate);
+    if (refs.stockActionQuantity) {
+      refs.stockActionQuantity.max = String(Math.max(1, Math.round(numeric(selectedRow.remainingQuantity))));
+      if (autofillQuantity && matchingUnits) refs.stockActionQuantity.value = String(Math.round(numeric(selectedRow.remainingQuantity)));
+    }
+
+    return selectedRow;
+  };
+
+  const populateLinkedRequestOptions = (medicine, { autoSelect = false } = {}) => {
+    if (!refs.stockLinkedRequestId) return [];
     const requestRows = linkedRequestRowsForMedicine(medicine);
+    const previousRequestId = text(refs.stockLinkedRequestId.value);
     refs.stockLinkedRequestId.innerHTML = [
-      '<option value="">Not linked to a CHO request</option>',
+      '<option value="">Select an open CHO request</option>',
       ...requestRows.map((row) => `
         <option value="${esc(row.id)}">
           ${esc(row.requestCode)} - ${esc(formatNumber(row.remainingQuantity))} ${esc(row.unit)} remaining
@@ -971,7 +1153,115 @@
       `)
     ].join("");
     refs.stockLinkedRequestId.disabled = !requestRows.length;
-    updateLinkedRequestHint(medicine);
+    const preservedRequest = requestRows.find((row) => text(row.id) === previousRequestId);
+    const shouldAutoSelect = autoSelect && requestRows.length === 1;
+    refs.stockLinkedRequestId.value = preservedRequest
+      ? previousRequestId
+      : shouldAutoSelect
+        ? text(requestRows[0].id)
+        : "";
+    renderLinkedRequestDetails(medicine, { autofillQuantity: shouldAutoSelect });
+    return requestRows;
+  };
+
+  const projectedChoRequestText = (requestRow, quantity, unit) => {
+    const itemBalance = Math.max(0, numeric(requestRow.remainingQuantity) - quantity);
+    if (itemBalance > 0) {
+      return `${requestRow.requestCode} will remain Partially Delivered with ${formatNumber(itemBalance)} ${unit} remaining for this medicine.`;
+    }
+
+    const groupId = text(requestRow.requestGroupId);
+    const requestCode = text(requestRow.requestCode);
+    const otherOpenItems = supplyMonitoring
+      ? supplyMonitoring.hydrateRequests(state.choRequests, state.movements)
+        .filter((row) => text(row.id) !== text(requestRow.id))
+        .filter((row) => (
+          (groupId && text(row.requestGroupId) === groupId)
+          || (!groupId && requestCode && text(row.requestCode) === requestCode)
+        ))
+        .filter((row) => !row.isComplete)
+      : [];
+
+    return otherOpenItems.length === 0
+      ? `All medicine lines in ${requestRow.requestCode} will be fully delivered.`
+      : `This medicine line will be completed. ${otherOpenItems.length} other ${otherOpenItems.length === 1 ? "medicine is" : "medicines are"} still open in ${requestRow.requestCode}.`;
+  };
+
+  const stockActionDateError = (linkedRequest = null) => {
+    const actionDate = text(refs.stockActionDate?.value);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(actionDate)) return "Select a valid action date.";
+    if (actionDate > todayInputValue()) return "The action date cannot be in the future.";
+    if (linkedRequest && actionDate < text(linkedRequest.requestDate)) {
+      return `The delivery date cannot be earlier than the ${formatDate(linkedRequest.requestDate)} request date.`;
+    }
+    return "";
+  };
+
+  const updateStockActionPreview = () => {
+    if (!refs.stockActionPreview || !refs.stockActionSubmitBtn) return;
+    const medicine = findMedicine(text(refs.stockMedicineId?.value));
+    const actionType = text(refs.stockActionType?.value) || "restock";
+    const source = stockRestockSource();
+    const quantity = Number(text(refs.stockActionQuantity?.value));
+    const validQuantity = Number.isInteger(quantity) && quantity > 0;
+    const unit = text(medicine?.unit) || "units";
+    const currentStock = Math.max(0, Math.round(numeric(medicine?.stockOnHand)));
+
+    refs.stockActionPreview.className = `stock-action-preview${validQuantity ? "" : " d-none"}`;
+    refs.stockActionSubmitBtn.disabled = !validQuantity;
+    if (!medicine || !validQuantity) return;
+
+    const isRestock = actionType === "restock";
+    const stockAfter = isRestock ? currentStock + quantity : currentStock - quantity;
+    const linkedRequest = isRestock && source === "cho" ? selectedLinkedRequestForMedicine(medicine) : null;
+    const dateError = stockActionDateError(linkedRequest);
+    let tone = "success";
+    let previewText = isRestock
+      ? "Manual restock; no CHO request status will change."
+      : `${formatNumber(Math.max(0, stockAfter))} ${unit} will remain in inventory.`;
+    let invalid = false;
+
+    if (dateError) {
+      tone = "danger";
+      invalid = true;
+      previewText = dateError;
+    } else if (!isRestock && quantity > currentStock) {
+      tone = "danger";
+      invalid = true;
+      previewText = `Only ${formatNumber(currentStock)} ${unit} are available to dispose.`;
+    } else if (!isRestock && !text(refs.stockActionNote?.value)) {
+      tone = "warning";
+      invalid = true;
+      previewText = "Enter the disposal reason before continuing.";
+    } else if (isRestock && source === "cho") {
+      if (!linkedRequest) {
+        tone = "warning";
+        invalid = true;
+        previewText = "Select an open CHO request for this delivery.";
+      } else if (!stockUnitsMatch(medicine, linkedRequest)) {
+        tone = "danger";
+        invalid = true;
+        previewText = `Unit mismatch: the request uses ${linkedRequest.unit}, while inventory uses ${unit}.`;
+      } else if (quantity > numeric(linkedRequest.remainingQuantity)) {
+        tone = "danger";
+        invalid = true;
+        previewText = `Quantity exceeds the ${formatNumber(linkedRequest.remainingQuantity)} ${unit} remaining in ${linkedRequest.requestCode}.`;
+      } else {
+        previewText = projectedChoRequestText(linkedRequest, quantity, unit);
+      }
+    }
+
+    refs.stockActionPreview.classList.add(`stock-action-preview--${tone}`);
+    if (refs.stockActionPreviewTitle) {
+      const previewTitle = !isRestock
+        ? "Stock after disposal"
+        : source === "cho"
+          ? "Stock after CHO delivery"
+          : "Stock after restock";
+      refs.stockActionPreviewTitle.textContent = `${previewTitle}: ${formatNumber(Math.max(0, stockAfter))} ${unit}`;
+    }
+    if (refs.stockActionPreviewText) refs.stockActionPreviewText.textContent = previewText;
+    refs.stockActionSubmitBtn.disabled = invalid;
   };
 
   const clearQuickResidentFields = () => {
@@ -1067,50 +1357,104 @@
     if (!dispenseState.quickResidentOpen) clearQuickResidentFields();
   };
 
-  const updateDispenseSectionVisibility = () => {
+  const updateStockActionInterface = ({ autofillRequest = false } = {}) => {
     const actionType = text(refs.stockActionType?.value).toLowerCase();
-    const isDispense = actionType === "dispense";
     const isDispose = actionType === "dispose";
     const isRestock = actionType === "restock";
     const medicine = findMedicine(text(refs.stockMedicineId?.value));
-    refs.dispenseResidentSection?.classList.toggle("d-none", !isDispense);
-    refs.stockLinkedRequestGroup?.classList.toggle("d-none", !isRestock);
-    refs.stockActionNoteGroup?.classList.toggle("d-none", !isDispose);
+    const requestRows = medicine ? linkedRequestRowsForMedicine(medicine) : [];
+
+    if (refs.stockActionTypeIcon) {
+      refs.stockActionTypeIcon.className = `bi ${isDispose ? "bi-trash3" : "bi-box-arrow-in-down"} stock-action-type-icon${isDispose ? " stock-action-type-icon--dispose" : ""}`;
+    }
+
+    if (refs.stockRestockSourceCho) {
+      refs.stockRestockSourceCho.disabled = requestRows.length === 0;
+      if (refs.stockRestockSourceCho.checked && requestRows.length === 0 && refs.stockRestockSourceManual) {
+        refs.stockRestockSourceManual.checked = true;
+      }
+    }
+
+    const source = stockRestockSource();
+    const isChoDelivery = isRestock && source === "cho";
+    const isManualRestock = isRestock && source === "manual";
+
+    refs.stockRestockFlow?.classList.toggle("d-none", !isRestock);
+    refs.stockLinkedRequestGroup?.classList.toggle("d-none", !isChoDelivery);
+    refs.stockActionNoteGroup?.classList.toggle("d-none", !(isDispose || isManualRestock));
+    refs.stockLinkedRequestCard?.classList.toggle("d-none", !isChoDelivery || !text(refs.stockLinkedRequestId?.value));
+
+    if (refs.stockRestockSourceHint) {
+      refs.stockRestockSourceHint.textContent = requestRows.length === 0
+        ? "No open CHO request is available for this medicine. Use Manual Restock."
+        : isChoDelivery
+          ? "Receiving stock here automatically updates the linked CHO request."
+          : "Use Manual Restock for stock that is not tied to a CHO request.";
+    }
+
+    if (refs.stockLinkedRequestId) {
+      refs.stockLinkedRequestId.disabled = !isChoDelivery || requestRows.length === 0;
+      refs.stockLinkedRequestId.required = isChoDelivery;
+    }
 
     if (refs.stockActionNoteLabel) {
-      refs.stockActionNoteLabel.textContent = isDispose ? "Disposal Reason" : "Notes";
+      refs.stockActionNoteLabel.textContent = isDispose ? "Disposal reason" : "Source / notes (optional)";
     }
 
     if (refs.stockActionNote) {
       refs.stockActionNote.required = isDispose;
-      refs.stockActionNote.placeholder = isDispense
-        ? "Dispensing note or instruction"
-        : (isDispose ? "Reason for disposal or write-off" : "");
+      refs.stockActionNote.placeholder = isDispose
+        ? "Reason for disposal or write-off"
+        : "Supplier, delivery reference, or optional note";
     }
 
-    if (!isRestock && refs.stockLinkedRequestId) {
-      refs.stockLinkedRequestId.value = "";
-      refs.stockLinkedRequestId.disabled = true;
+    if (refs.stockActionModalTitle) {
+      refs.stockActionModalTitle.textContent = isDispose
+        ? "Dispose Stock"
+        : isChoDelivery
+          ? "Receive CHO Delivery"
+          : "Restock Medicine";
+    }
+    if (refs.stockActionQuantityLabel) {
+      refs.stockActionQuantityLabel.textContent = isDispose
+        ? "Quantity to dispose"
+        : isChoDelivery
+          ? "Quantity received"
+          : "Restock quantity";
+    }
+    if (refs.stockActionDateLabel) {
+      refs.stockActionDateLabel.textContent = isDispose
+        ? "Disposal date"
+        : isChoDelivery
+          ? "Delivery date"
+          : "Restock date";
+    }
+    if (refs.stockActionSubmitLabel) {
+      refs.stockActionSubmitLabel.textContent = isDispose
+        ? "Dispose Stock"
+        : isChoDelivery
+          ? "Receive Stock"
+          : "Add Stock";
+    }
+    if (refs.stockActionQuantityUnit) refs.stockActionQuantityUnit.textContent = text(medicine?.unit) || "units";
+    if (refs.stockActionDate) {
+      refs.stockActionDate.max = todayInputValue();
+      if (!isChoDelivery) refs.stockActionDate.removeAttribute("min");
     }
 
-    if (isRestock && medicine) {
-      populateLinkedRequestOptions(medicine);
-    } else if (refs.stockLinkedRequestHint) {
-      refs.stockLinkedRequestHint.textContent = "Choose an open CHO request for this medicine when receiving a delivery.";
+    if (refs.stockActionQuantity) {
+      if (isDispose) {
+        refs.stockActionQuantity.max = String(Math.max(1, Math.round(numeric(medicine?.stockOnHand))));
+      } else if (!isChoDelivery) {
+        refs.stockActionQuantity.removeAttribute("max");
+      }
     }
 
-    if (!isDispense) {
-      dispenseState.residentSearch = "";
-      dispenseState.selectedResidentId = "";
-      if (refs.residentLookupInput) refs.residentLookupInput.value = "";
-      renderSelectedResident();
-      toggleQuickResidentFields(false);
-      if (refs.residentLookupResults) refs.residentLookupResults.innerHTML = "";
-      return;
+    if (isChoDelivery) {
+      renderLinkedRequestDetails(medicine, { autofillQuantity: autofillRequest });
     }
 
-    renderSelectedResident();
-    renderResidentSearchResults();
+    updateStockActionPreview();
   };
 
   const createQuickResidentAccount = () => {
@@ -1257,7 +1601,7 @@
         <tr>
           <td>
             <div class="inventory-medicine-cell">
-              <div class="inventory-medicine-icon">${esc((medicine.name || "M").slice(0, 2))}</div>
+              <div class="inventory-medicine-icon" title="${esc(normalizeDosageForm(medicine.form))}">${medicineFormIconMarkup(medicine.form)}</div>
               <div class="inventory-medicine-copy">
                 <strong>${esc(medicineLabel(medicine))}</strong>
                 <span>${esc(medicine.genericName || "No generic name")}</span>
@@ -1523,19 +1867,30 @@ ${actionItems}
 
   const openStockActionModal = (medicine) => {
     if (!medicine || !refs.stockActionForm) return;
+    if (stockActionSaving) return;
     if (isArchivedMedicine(medicine)) {
       showNotice("Restore this medicine record first before updating stock.", "warning");
       return;
     }
 
     refs.stockActionForm.reset();
+    resetStockActionOperationId();
     refs.stockMedicineId.value = medicine.id;
     refs.stockActionMedicineLabel.textContent = medicineLabel(medicine);
     refs.stockCurrentStock.textContent = `${formatNumber(medicine.stockOnHand)} ${medicine.unit}`;
     refs.stockActionType.value = "restock";
     refs.stockActionDate.value = todayInputValue();
-    populateLinkedRequestOptions(medicine);
-    updateDispenseSectionVisibility();
+    setStockActionFeedback();
+
+    const requestRows = linkedRequestRowsForMedicine(medicine);
+    if (requestRows.length && refs.stockRestockSourceCho) {
+      refs.stockRestockSourceCho.checked = true;
+    } else if (refs.stockRestockSourceManual) {
+      refs.stockRestockSourceManual.checked = true;
+    }
+
+    populateLinkedRequestOptions(medicine, { autoSelect: true });
+    updateStockActionInterface({ autofillRequest: requestRows.length === 1 });
     stockActionModal?.show();
   };
 
@@ -1707,37 +2062,131 @@ ${actionItems}
 
   const handleStockActionSubmit = async (event) => {
     event.preventDefault();
+    if (stockActionSaving) return;
+    setStockActionFeedback();
     const medicine = findMedicine(text(refs.stockMedicineId.value));
     if (!medicine) {
-      showNotice("Unable to locate the selected medicine record.", "danger");
+      setStockActionFeedback("Unable to locate the selected medicine record.");
       return;
     }
 
     if (isArchivedMedicine(medicine)) {
-      showNotice("Restore this medicine record first before updating stock.", "warning");
+      setStockActionFeedback("Restore this medicine record first before updating stock.", "warning");
       return;
     }
 
     const actionType = text(refs.stockActionType.value) || "restock";
-    const quantity = Math.max(0, Math.round(numeric(refs.stockActionQuantity.value)));
-    const note = actionType === "dispose" ? text(refs.stockActionNote.value) : "";
+    const source = actionType === "restock" ? stockRestockSource() : "";
+    const quantity = Number(text(refs.stockActionQuantity.value));
+    const note = text(refs.stockActionNote.value);
     const actionDate = text(refs.stockActionDate.value) || todayInputValue();
-    const linkedRequestId = actionType === "restock" ? text(refs.stockLinkedRequestId?.value) : "";
-    const linkedRequest = linkedRequestId ? findChoRequest(linkedRequestId) : null;
+    const linkedRequest = actionType === "restock" && source === "cho"
+      ? selectedLinkedRequestForMedicine(medicine)
+      : null;
 
-    if (quantity <= 0) {
-      showNotice("Enter a valid stock quantity for this action.", "danger");
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setStockActionFeedback("Enter a whole-number quantity greater than zero.");
+      refs.stockActionQuantity?.focus();
       return;
     }
 
     if (actionType === "dispose" && !note) {
-      showNotice("Please enter the disposal reason before applying this action.", "danger");
+      setStockActionFeedback("Enter the disposal reason before continuing.");
       refs.stockActionNote?.focus();
       return;
     }
 
-    if (linkedRequestId && !linkedRequest) {
-      showNotice("Unable to locate the linked CHO request.", "danger");
+    if (actionType === "restock" && source === "cho" && !linkedRequest) {
+      setStockActionFeedback("Select an open CHO request for this medicine.");
+      refs.stockLinkedRequestId?.focus();
+      return;
+    }
+
+    const dateError = stockActionDateError(linkedRequest);
+    if (dateError) {
+      setStockActionFeedback(dateError);
+      refs.stockActionDate?.focus();
+      return;
+    }
+
+    if (linkedRequest && !stockUnitsMatch(medicine, linkedRequest)) {
+      setStockActionFeedback(`Cannot receive this delivery because the request uses ${linkedRequest.unit}, while inventory uses ${medicine.unit}.`);
+      refs.stockLinkedRequestId?.focus();
+      return;
+    }
+
+    if (linkedRequest && quantity > numeric(linkedRequest.remainingQuantity)) {
+      setStockActionFeedback(`Quantity cannot exceed the ${formatNumber(linkedRequest.remainingQuantity)} ${linkedRequest.unit} remaining in ${linkedRequest.requestCode}.`);
+      refs.stockActionQuantity?.focus();
+      return;
+    }
+
+    if (linkedRequest) {
+      const deliveryDraft = {
+        requestGroupId: linkedRequest.requestGroupId,
+        requestItemId: linkedRequest.id,
+        medicineId: medicine.id,
+        quantity,
+        actionDate
+      };
+      let pendingDelivery = readPendingStockDelivery();
+      if (pendingDelivery && state.movements.some((movement) => movement.id === text(pendingDelivery.operationId))) {
+        clearPendingStockDelivery(pendingDelivery.operationId);
+        pendingDelivery = null;
+      }
+      if (pendingDelivery && !samePendingStockDelivery(pendingDelivery, deliveryDraft)) {
+        setStockActionFeedback("A previous CHO receipt is still being confirmed. Refresh the page before entering a different delivery.", "warning");
+        return;
+      }
+
+      const operationId = text(pendingDelivery?.operationId) || stockActionOperationId || `delivery_${uid()}`;
+      const deliveryPayload = {
+        action: "receive_cho_delivery",
+        operationId,
+        ...deliveryDraft,
+        note: ""
+      };
+      stockActionOperationId = operationId;
+      writePendingStockDelivery(deliveryPayload);
+      setStockActionSavingState(true);
+      if (refs.stockActionSubmitLabel) refs.stockActionSubmitLabel.textContent = "Receiving...";
+
+      try {
+        const payload = await requestJson(STATE_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(deliveryPayload)
+        });
+        syncStateFromServer(payload.state || {});
+      } catch (error) {
+        await hydrateInventoryState();
+        const savedDespiteResponseError = state.movements.some((movement) => movement.id === operationId);
+        if (!savedDespiteResponseError) {
+          if (Number(error.status) >= 400 && Number(error.status) < 500) {
+            clearPendingStockDelivery(operationId);
+            if (stockActionOperationId === operationId) stockActionOperationId = "";
+          }
+          const refreshedMedicine = findMedicine(medicine.id);
+          if (refreshedMedicine && refs.stockCurrentStock) {
+            refs.stockCurrentStock.textContent = `${formatNumber(refreshedMedicine.stockOnHand)} ${refreshedMedicine.unit}`;
+            if (refs.stockActionQuantity) refs.stockActionQuantity.value = "";
+            populateLinkedRequestOptions(refreshedMedicine, { autoSelect: false });
+          }
+          setStockActionSavingState(false);
+          setStockActionFeedback(error.message || "Unable to receive the CHO delivery right now.");
+          return;
+        }
+      }
+
+      clearPendingStockDelivery(operationId);
+      if (stockActionOperationId === operationId) stockActionOperationId = "";
+      setStockActionSavingState(false);
+      renderAll();
+      emitInventoryNotificationRefresh();
+      stockActionModal?.hide();
+      showNotice(`${formatNumber(quantity)} ${medicine.unit} received from ${linkedRequest.requestCode}.`);
       return;
     }
 
@@ -1749,21 +2198,28 @@ ${actionItems}
       stockAfter += quantity;
     } else {
       if (quantity > stockBefore) {
-        showNotice("The adjustment quantity cannot be greater than available stock.", "danger");
+        setStockActionFeedback(`Only ${formatNumber(stockBefore)} ${medicine.unit} are available to dispose.`);
+        refs.stockActionQuantity?.focus();
         return;
       }
       stockAfter -= quantity;
     }
 
+    const movementCreatedAt = `${actionDate}T08:00:00`;
+    const recordedAt = nowIso();
     medicine.stockOnHand = stockAfter;
-    medicine.lastUpdatedAt = `${actionDate}T08:00:00`;
+    medicine.lastUpdatedAt = recordedAt;
     medicine.updatedBy = actorName();
 
+    const projectedRequestResult = linkedRequest
+      ? projectedChoRequestText(linkedRequest, quantity, text(linkedRequest.unit) || text(medicine.unit) || "units")
+      : "";
     const defaultNote = actionType === "restock"
       ? (linkedRequest
-        ? `Delivery received and linked to ${linkedRequest.requestCode}.`
-        : "Stock replenished.")
+        ? `CHO delivery received and linked to ${linkedRequest.requestCode}.`
+        : "Manual stock replenishment recorded.")
       : "Damaged or expired stock written off.";
+    const movementNote = linkedRequest ? defaultNote : (note || defaultNote);
 
     logMovement({
       medicine,
@@ -1771,22 +2227,28 @@ ${actionItems}
       quantity,
       stockBefore,
       stockAfter,
-      note: note || defaultNote,
-      createdAt: medicine.lastUpdatedAt,
+      note: movementNote,
+      createdAt: movementCreatedAt,
       linkedRequestId: linkedRequest?.id || "",
       linkedRequestItemId: linkedRequest?.id || "",
       linkedRequestGroupId: linkedRequest?.requestGroupId || "",
       linkedRequestCode: linkedRequest?.requestCode || ""
     });
 
-    const actionLabel = actionType === "restock" ? "Restocked medicine" : "Disposed medicine";
+    const actionLabel = actionType === "restock"
+      ? (linkedRequest ? "Received CHO delivery" : "Restocked medicine")
+      : "Disposed medicine";
     const detailParts = [
-      `${formatNumber(quantity)} ${medicine.unit} processed for ${medicineLabel(medicine)}.`,
+      `${formatNumber(quantity)} ${medicine.unit} ${linkedRequest ? "received" : "processed"} for ${medicineLabel(medicine)}.`,
       `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
     ];
 
     if (linkedRequest) {
-      detailParts.push(`Linked to ${linkedRequest.requestCode}.`);
+      detailParts.push(`Linked to ${linkedRequest.requestCode}. ${projectedRequestResult}`);
+    }
+
+    if (actionType === "restock" && !linkedRequest && note) {
+      detailParts.push(`Note: ${note}`);
     }
 
     if (actionType === "dispose") {
@@ -1803,22 +2265,45 @@ ${actionItems}
       category: "Inventory",
       resultLabel: actionType === "restock" ? "Updated" : "Disposed",
       resultTone: actionType === "restock" ? "success" : "neutral",
-      createdAt: medicine.lastUpdatedAt,
+      createdAt: recordedAt,
       ipAddress: currentActorIp()
     });
+
+    setStockActionSavingState(true);
+    if (refs.stockActionSubmitLabel) {
+      refs.stockActionSubmitLabel.textContent = actionType === "dispose"
+        ? "Saving..."
+        : linkedRequest
+          ? "Receiving..."
+          : "Adding...";
+    }
 
     try {
       await persistInventoryState();
     } catch (error) {
       restoreStateSnapshot(snapshot);
+      await hydrateInventoryState();
+      const refreshedMedicine = findMedicine(medicine.id);
+      if (refreshedMedicine && refs.stockCurrentStock) {
+        refs.stockCurrentStock.textContent = `${formatNumber(refreshedMedicine.stockOnHand)} ${refreshedMedicine.unit}`;
+        if (refs.stockActionQuantity) refs.stockActionQuantity.value = "";
+        populateLinkedRequestOptions(refreshedMedicine, { autoSelect: false });
+      }
       renderAll();
-      showNotice(error.message || "Unable to save the stock action right now.", "danger");
+      setStockActionSavingState(false);
+      setStockActionFeedback(error.message || "Unable to save the stock action right now.");
       return;
     }
 
+    setStockActionSavingState(false);
     renderAll();
     emitInventoryNotificationRefresh();
     stockActionModal?.hide();
+    showNotice(linkedRequest
+      ? `${formatNumber(quantity)} ${medicine.unit} received from ${linkedRequest.requestCode}.`
+      : actionType === "restock"
+        ? `${formatNumber(quantity)} ${medicine.unit} added to stock.`
+        : `${formatNumber(quantity)} ${medicine.unit} disposed from stock.`);
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -1846,10 +2331,51 @@ ${actionItems}
   refs.stockActionForm?.addEventListener("submit", (event) => {
     void handleStockActionSubmit(event);
   });
-  refs.stockActionType?.addEventListener("change", updateDispenseSectionVisibility);
-  refs.stockLinkedRequestId?.addEventListener("change", () => {
-    updateLinkedRequestHint(findMedicine(text(refs.stockMedicineId?.value)));
+  refs.stockActionType?.addEventListener("change", () => {
+    resetStockActionOperationId();
+    const medicine = findMedicine(text(refs.stockMedicineId?.value));
+    if (refs.stockActionQuantity) refs.stockActionQuantity.value = "";
+    setStockActionFeedback();
+    if (text(refs.stockActionType?.value) === "restock" && medicine) {
+      populateLinkedRequestOptions(medicine, { autoSelect: stockRestockSource() === "cho" });
+    }
+    updateStockActionInterface({ autofillRequest: stockRestockSource() === "cho" });
   });
+  [refs.stockRestockSourceCho, refs.stockRestockSourceManual].forEach((field) => {
+    field?.addEventListener("change", () => {
+      resetStockActionOperationId();
+      const medicine = findMedicine(text(refs.stockMedicineId?.value));
+      if (refs.stockActionQuantity) refs.stockActionQuantity.value = "";
+      setStockActionFeedback();
+      if (stockRestockSource() === "cho" && medicine) {
+        populateLinkedRequestOptions(medicine, { autoSelect: true });
+      }
+      updateStockActionInterface({ autofillRequest: stockRestockSource() === "cho" });
+    });
+  });
+  refs.stockLinkedRequestId?.addEventListener("change", () => {
+    resetStockActionOperationId();
+    const medicine = findMedicine(text(refs.stockMedicineId?.value));
+    setStockActionFeedback();
+    renderLinkedRequestDetails(medicine, { autofillQuantity: true });
+    updateStockActionPreview();
+  });
+  refs.stockActionQuantity?.addEventListener("input", () => {
+    resetStockActionOperationId();
+    setStockActionFeedback();
+    updateStockActionPreview();
+  });
+  refs.stockActionDate?.addEventListener("change", () => {
+    resetStockActionOperationId();
+    setStockActionFeedback();
+    updateStockActionPreview();
+  });
+  refs.stockActionNote?.addEventListener("input", () => {
+    resetStockActionOperationId();
+    setStockActionFeedback();
+    updateStockActionPreview();
+  });
+  byId("stockActionModal")?.addEventListener("hidden.bs.modal", () => setStockActionFeedback());
 
   refs.residentLookupInput?.addEventListener("input", (event) => {
     dispenseState.residentSearch = text(event.target.value);
@@ -1918,8 +2444,21 @@ ${actionItems}
   window.addEventListener("mss:supply-state-updated", (event) => {
     if (!supplyMonitoring) return;
     const changedKeys = Array.isArray(event.detail?.keys) ? event.detail.keys : [];
-    if (!changedKeys.includes(supplyMonitoring.STORAGE.requests)) return;
-    state.choRequests = supplyMonitoring.readRequests();
+    const sharedState = event.detail?.state || supplyMonitoring.getState();
+    let shouldRender = false;
+    if (changedKeys.includes(supplyMonitoring.STORAGE.inventory) && Array.isArray(sharedState.inventory)) {
+      state.inventory = sharedState.inventory.map(normalizeMedicine);
+      shouldRender = true;
+    }
+    if (changedKeys.includes(supplyMonitoring.STORAGE.movements) && Array.isArray(sharedState.movements)) {
+      state.movements = sharedState.movements.map(normalizeMovement);
+      shouldRender = true;
+    }
+    if (changedKeys.includes(supplyMonitoring.STORAGE.requests)) {
+      state.choRequests = supplyMonitoring.readRequests();
+      shouldRender = true;
+    }
+    if (shouldRender) renderAll();
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -1929,6 +2468,10 @@ ${actionItems}
 
   const initializeInventory = async () => {
     await hydrateInventoryState();
+    const pendingDelivery = readPendingStockDelivery();
+    if (pendingDelivery && state.movements.some((movement) => movement.id === text(pendingDelivery.operationId))) {
+      clearPendingStockDelivery(pendingDelivery.operationId);
+    }
     renderAll();
     void syncHouseholdResidents();
   };

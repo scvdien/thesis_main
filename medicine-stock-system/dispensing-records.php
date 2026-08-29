@@ -166,7 +166,7 @@ if ($requestedRole !== $dispensingRole) {
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
   <script src="assets/js/resident-medication-records.js?v=<?= urlencode($dispensingRecordsJsVersion) ?>"></script>
 </body>
 </html>

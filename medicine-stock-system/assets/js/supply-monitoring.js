@@ -112,8 +112,10 @@
   const toDateKey = (value) => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return "";
-    parsed.setHours(0, 0, 0, 0);
-    return parsed.toISOString().slice(0, 10);
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
   const toDateTimestamp = (value) => {
@@ -326,15 +328,15 @@
 
     if (onTime) {
       statusKey = "on-time";
-      statusLabel = "On Time Delivery";
+      statusLabel = "Completed - On Time";
       tone = "success";
     } else if (delayed) {
       statusKey = "delayed";
-      statusLabel = "Delayed Delivery";
+      statusLabel = "Completed - Delayed";
       tone = "danger";
     } else if (incomplete) {
       statusKey = "partial";
-      statusLabel = "Incomplete Delivery";
+      statusLabel = "Partially Delivered";
       tone = isOverdue ? "danger" : "warning";
     }
 
@@ -435,15 +437,15 @@
 
       if (onTime) {
         statusKey = "on-time";
-        statusLabel = "On Time Delivery";
+        statusLabel = "Completed - On Time";
         tone = "success";
       } else if (delayed) {
         statusKey = "delayed";
-        statusLabel = "Delayed Delivery";
+        statusLabel = "Completed - Delayed";
         tone = "danger";
       } else if (incomplete) {
         statusKey = "incomplete";
-        statusLabel = "Incomplete Delivery";
+        statusLabel = "Partially Delivered";
         tone = isOverdue ? "danger" : "warning";
       }
 

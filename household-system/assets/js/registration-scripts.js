@@ -55,10 +55,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const REGISTRATION_RECORDS_KEY = "household_registration_records";
   const SYNC_QUEUE_KEY = "household_registration_sync_queue";
   const DUPLICATE_INDEX_CACHE_KEY = "household_registration_duplicate_index";
+  const HOUSEHOLD_YEARS_CACHE_KEY = "household_registration_years_cache";
   const LAST_SYNC_KEY = "household_registration_last_sync_at";
   const LAST_SYNC_ERROR_KEY = "household_registration_last_sync_error";
   const PRESENCE_ENDPOINT = "auth-presence.php";
   const CONNECTIVITY_PROBE_TTL_MS = 15000;
+  const CONNECTIVITY_PROBE_TIMEOUT_MS = 5000;
   const LOCALHOST_NAMES = new Set(["localhost", "127.0.0.1", "::1"]);
   const isLocalhostOrigin = LOCALHOST_NAMES.has(window.location.hostname);
   const CONNECTIVITY_REFRESH_INTERVAL_MS = isLocalhostOrigin ? 3000 : 8000;
@@ -73,6 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         REGISTRATION_RECORDS_KEY,
         SYNC_QUEUE_KEY,
         DUPLICATE_INDEX_CACHE_KEY,
+        HOUSEHOLD_YEARS_CACHE_KEY,
         LAST_SYNC_KEY,
         LAST_SYNC_ERROR_KEY
       ])
@@ -80,6 +83,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const SYNC_ENDPOINT = "registration-sync.php";
   const DUPLICATE_INDEX_PAGE_SIZE = 250;
   const DUPLICATE_INDEX_CACHE_TTL_MS = 5 * 60 * 1000;
+  const HOUSEHOLD_OFFLINE_PAGE_SIZE = 100;
+  const HOUSEHOLD_OFFLINE_CACHE_TTL_MS = 5 * 60 * 1000;
   const USERS_API_ENDPOINT = "users-api.php";
   const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
   const CREDENTIAL_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
@@ -765,28 +770,50 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  let serverReachable = window.navigator.onLine ? true : null;
+  let serverReachable = window.navigator.onLine === false ? false : null;
   let connectivityProbePromise = null;
+  let connectivityProbeController = null;
+  let connectivityProbeSequence = 0;
   let lastConnectivityProbeAt = 0;
+  let householdOfflineWarmActiveCount = 0;
 
   const isAppOnline = () => {
+    if (window.navigator.onLine === false) return false;
     if (isLocalhostOrigin) {
-      return window.navigator.onLine !== false;
+      return true;
     }
-    if (window.navigator.onLine === true) return true;
-    if (serverReachable === true) return true;
     if (serverReachable === false) return false;
-    return window.navigator.onLine !== false;
+    return true;
+  };
+
+  const cancelConnectivityProbe = () => {
+    connectivityProbeSequence += 1;
+    if (connectivityProbeController) {
+      try {
+        connectivityProbeController.abort();
+      } catch {
+        // The connectivity probe may already be complete.
+      }
+    }
+    connectivityProbeController = null;
+    connectivityProbePromise = null;
   };
 
   const syncConnectivityState = async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (window.navigator.onLine === false) {
+      cancelConnectivityProbe();
+      serverReachable = false;
+      lastConnectivityProbeAt = now;
+      return false;
+    }
+
     if (isLocalhostOrigin) {
       serverReachable = null;
-      lastConnectivityProbeAt = Date.now();
+      lastConnectivityProbeAt = now;
       return isAppOnline();
     }
 
-    const now = Date.now();
     if (!force && lastConnectivityProbeAt > 0 && (now - lastConnectivityProbeAt) < CONNECTIVITY_PROBE_TTL_MS) {
       return isAppOnline();
     }
@@ -794,12 +821,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       return connectivityProbePromise;
     }
 
-    connectivityProbePromise = (async () => {
+    const probeSequence = ++connectivityProbeSequence;
+    const probeController = typeof AbortController === "function" ? new AbortController() : null;
+    connectivityProbeController = probeController;
+    const timeoutId = probeController
+      ? window.setTimeout(() => probeController.abort(), CONNECTIVITY_PROBE_TIMEOUT_MS)
+      : 0;
+    const probePromise = (async () => {
+      let reachable = false;
       try {
         const response = await fetch(`${PRESENCE_ENDPOINT}?_=${now}`, {
           method: "GET",
           credentials: "same-origin",
           cache: "no-store",
+          ...(probeController ? { signal: probeController.signal } : {}),
           headers: {
             "X-Requested-With": "XMLHttpRequest"
           }
@@ -810,22 +845,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch {
           payload = null;
         }
-        serverReachable = Boolean(
+        reachable = Boolean(
           response.ok
           && payload
           && payload.success === true
           && String(payload.status || "").trim().toLowerCase() === "online"
         );
       } catch {
-        serverReachable = false;
+        reachable = false;
       } finally {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      }
+
+      if (probeSequence === connectivityProbeSequence) {
+        serverReachable = reachable;
         lastConnectivityProbeAt = Date.now();
+        connectivityProbeController = null;
         connectivityProbePromise = null;
       }
       return isAppOnline();
     })();
 
-    return connectivityProbePromise;
+    connectivityProbePromise = probePromise;
+    return probePromise;
   };
 
   const updateLoadExistingButtonVisibility = () => {
@@ -900,6 +942,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateLoadExistingButtonVisibility();
       if (isAppOnline()) {
         warmDuplicateIndexForYear(targetRecordYear);
+        void warmHouseholdOfflineCache().catch(() => {});
         flushSyncQueue({ showSuccessState: true });
       }
     });
@@ -1154,6 +1197,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     delete cleaned._sync_error_status;
     delete cleaned._sync_error_at;
     delete cleaned._sync_duplicate;
+    delete cleaned.offline_snapshot;
     delete cleaned[LOCAL_OWNER_FIELD];
     return cleaned;
   };
@@ -1321,9 +1365,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const writeArrayToStorage = (key, value) => {
     try {
-      localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+      const serializedValue = JSON.stringify(Array.isArray(value) ? value : []);
+      localStorage.setItem(key, serializedValue);
+      return serializedValue;
     } catch {
       // ignore storage errors
+      return "";
     }
   };
 
@@ -1353,7 +1400,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const readCurrentUserArray = (key) => readArrayFromStorage(key).filter(isCurrentUserLocalRecord);
 
   const writeCurrentUserArray = (key, records) => {
-    if (!currentDraftOwner) return;
+    if (!currentDraftOwner) return "";
     const preservedRecords = readArrayFromStorage(key).filter((record) => !isCurrentUserLocalRecord(record));
     const ownedRecords = (Array.isArray(records) ? records : [])
       .filter((record) => record && typeof record === "object")
@@ -1361,13 +1408,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         ...record,
         [LOCAL_OWNER_FIELD]: currentDraftOwner
       }));
-    writeArrayToStorage(key, [...preservedRecords, ...ownedRecords]);
+    return writeArrayToStorage(key, [...preservedRecords, ...ownedRecords]);
   };
 
   const getRegistrationRecords = () => readCurrentUserArray(REGISTRATION_RECORDS_KEY);
   const setRegistrationRecords = (records) => writeCurrentUserArray(REGISTRATION_RECORDS_KEY, records);
   const getSyncQueue = () => readCurrentUserArray(SYNC_QUEUE_KEY);
   const setSyncQueue = (queue) => writeCurrentUserArray(SYNC_QUEUE_KEY, queue);
+  const getCachedHouseholdYears = () => Array.from(new Set(
+    readCurrentUserArray(HOUSEHOLD_YEARS_CACHE_KEY)
+      .map((item) => Number.parseInt(String(item?.year || ""), 10))
+      .filter((year) => isValidRecordYear(year))
+  )).sort((left, right) => right - left);
+  const setCachedHouseholdYears = (years = []) => {
+    const normalizedYears = Array.from(new Set(
+      (Array.isArray(years) ? years : [])
+        .map((year) => Number.parseInt(String(year || ""), 10))
+        .filter((year) => isValidRecordYear(year))
+    )).sort((left, right) => right - left);
+    writeCurrentUserArray(
+      HOUSEHOLD_YEARS_CACHE_KEY,
+      normalizedYears.map((year) => ({ year }))
+    );
+  };
   const getQuarantinedLegacyQueueCount = () => readArrayFromStorage(SYNC_QUEUE_KEY).filter(
     (record) => !String(record?.[LOCAL_OWNER_FIELD] || "").trim()
   ).length;
@@ -2066,10 +2129,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const targetId = String(normalizedRecord?.household_id || "");
     const index = records.findIndex((item) => String(item?.household_id || "") === targetId);
     if (index >= 0) {
-      records[index] = {
+      const mergedRecord = {
         ...records[index],
         ...normalizedRecord
       };
+      delete mergedRecord.offline_snapshot;
+      records[index] = mergedRecord;
     } else {
       records.unshift(normalizedRecord);
     }
@@ -2317,6 +2382,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const updateSyncStatus = () => {
     const pendingCount = getSyncQueue().length;
     const isOffline = !isAppOnline();
+    const isCheckingConnection = !isOffline
+      && !isLocalhostOrigin
+      && serverReachable === null;
     const lastSyncedAt = getLastSyncedAt();
     const lastSyncError = getLastSyncError();
     const suffix = pendingCount === 1 ? "" : "s";
@@ -2326,13 +2394,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       && Boolean(syncSuccessMessage)
       && Date.now() < syncSuccessExpiresAt;
     const pendingClickable = pendingCount > 0 && Boolean(pendingSyncModal);
-    const shouldShowSyncCenter = isOffline || pendingCount > 0 || successActive;
 
-    let badgeText = "Synced";
-    let badgeTone = "synced";
-    let description = "All household records are synced.";
+    let badgeText = "Online";
+    let badgeTone = "online";
+    let description = "Connected. All household records are synced.";
 
-    if (successActive) {
+    if (isOffline) {
+      badgeText = "Offline";
+      badgeTone = "offline";
+      description = pendingCount > 0
+        ? `${pendingCount} household${suffix} queued. Auto-sync starts when internet returns.`
+        : "Offline mode. New saves stay local until internet returns.";
+    } else if (isCheckingConnection) {
+      badgeText = "Checking";
+      badgeTone = "neutral";
+      description = "Checking internet connection...";
+    } else if (successActive) {
       badgeText = "Synced";
       badgeTone = "synced";
       description = syncSuccessMessage;
@@ -2342,12 +2419,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       description = pendingCount > 0
         ? `Syncing data (${pendingCount} household${suffix})...`
         : "Syncing data...";
-    } else if (isOffline) {
-      badgeText = "Offline";
-      badgeTone = "offline";
-      description = pendingCount > 0
-        ? `${pendingCount} household${suffix} queued. Auto-sync starts when internet returns.`
-        : "Offline mode. New saves stay local until internet returns.";
+    } else if (householdOfflineWarmActiveCount > 0) {
+      badgeText = "Caching";
+      badgeTone = "pending";
+      description = "Preparing household records for offline use...";
     } else if (pendingCount > 0) {
       badgeText = "Pending";
       badgeTone = "pending";
@@ -2397,13 +2472,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       syncStatusText.textContent = description;
     }
     if (syncCenterCard) {
-      syncCenterCard.classList.toggle("d-none", !shouldShowSyncCenter);
+      syncCenterCard.classList.remove("d-none");
     }
     if (offlinePendingCount) {
       offlinePendingCount.textContent = String(pendingCount);
     }
     if (offlinePendingLine) {
-      offlinePendingLine.classList.toggle("d-none", !isOffline);
+      offlinePendingLine.classList.toggle("d-none", !isOffline || pendingCount === 0);
     }
     updateLoadExistingButtonVisibility();
     if (pendingSyncModalEl && pendingSyncModalEl.classList.contains("show")) {
@@ -3290,7 +3365,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const fetchLoadHouseholdYears = async () => {
-    const cachedYears = getOfflineLookupYears();
+    const cachedYears = Array.from(new Set([
+      ...getCachedHouseholdYears(),
+      ...getOfflineLookupYears()
+    ])).sort((left, right) => right - left);
     if (!isAppOnline()) return cachedYears;
 
     let response = null;
@@ -3323,9 +3401,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       throw error;
     }
 
-    return Array.isArray(payload?.data?.years)
+    const serverYears = Array.isArray(payload?.data?.years)
       ? payload.data.years
+        .map((year) => Number.parseInt(String(year || ""), 10))
+        .filter((year) => isValidRecordYear(year))
       : [];
+    setCachedHouseholdYears(serverYears);
+    if (typeof localStorage.flush === "function") {
+      await localStorage.flush();
+    }
+    return serverYears;
   };
 
   const syncLoadHouseholdYearOptions = async (selectedYear = targetRecordYear) => {
@@ -3639,6 +3724,326 @@ document.addEventListener("DOMContentLoaded", async () => {
   const buildCachedHouseholdRecordFromPayload = (payload) => {
     const data = payload?.data;
     return buildCachedHouseholdRecord(data, data?.record);
+  };
+
+  const householdOfflineWarmPromises = new Map();
+  const householdOfflineWarmTimestamps = new Map();
+  let householdOfflineWarmAllPromise = null;
+  let householdOfflineWarmAllAt = 0;
+
+  const buildOfflineCacheSafeHouseholdRecord = (payloadItem) => {
+    const record = buildCachedHouseholdRecord(payloadItem, payloadItem?.record);
+    if (!record) return null;
+
+    const cacheSafeRecord = { ...record };
+    [
+      "photo",
+      "photo_url",
+      "photo_data",
+      "household_photo",
+      "household_photo_url",
+      "household_photo_data"
+    ].forEach((field) => delete cacheSafeRecord[field]);
+
+    const head = record.head && typeof record.head === "object" ? { ...record.head } : {};
+    [
+      "photo",
+      "photo_url",
+      "photo_data",
+      "profile_photo",
+      "profile_photo_url",
+      "profile_photo_data"
+    ].forEach((field) => delete head[field]);
+
+    const members = Array.isArray(record.members)
+      ? record.members.map((sourceMember) => {
+        const member = sourceMember && typeof sourceMember === "object" ? { ...sourceMember } : {};
+        [
+          "photo",
+          "photo_url",
+          "photo_data",
+          "profile_photo",
+          "profile_photo_url",
+          "profile_photo_data"
+        ].forEach((field) => delete member[field]);
+        return member;
+      })
+      : [];
+
+    const normalizedRecord = normalizeLookupHouseholdRecord({
+      ...cacheSafeRecord,
+      head,
+      members
+    });
+    return normalizedRecord ? { ...normalizedRecord, offline_snapshot: true } : null;
+  };
+
+  const mergeHouseholdOfflineRecords = (payloadItems = [], protectedIds = new Set()) => {
+    const pendingIds = new Set([
+      ...protectedIds,
+      ...getSyncQueue().map((item) => String(item?.household_id || "").trim()).filter(Boolean)
+    ]);
+    const recordsById = new Map();
+    getRegistrationRecords().forEach((item) => {
+      const householdId = String(item?.household_id || "").trim();
+      if (householdId) recordsById.set(householdId, item);
+    });
+
+    let mergedCount = 0;
+    const requiredRecords = [];
+    (Array.isArray(payloadItems) ? payloadItems : []).forEach((item) => {
+      const record = buildOfflineCacheSafeHouseholdRecord(item);
+      if (!record || pendingIds.has(record.household_id)) return;
+      const existingRecord = recordsById.get(record.household_id);
+      const incomingVersion = Number(record.row_version || record.base_version || 0);
+      const existingVersion = Number(existingRecord?.row_version || existingRecord?.base_version || 0);
+      if (existingRecord && incomingVersion > 0 && existingVersion > incomingVersion) return;
+      if (
+        existingRecord
+        && incomingVersion === existingVersion
+        && getRecordTimestamp(existingRecord) > getRecordTimestamp(record)
+      ) return;
+      recordsById.set(record.household_id, record);
+      requiredRecords.push(record);
+      mergedCount += 1;
+    });
+
+    if (mergedCount > 0) {
+      setRegistrationRecords(sortHouseholdLookupRecords(Array.from(recordsById.values())));
+      updateLoadExistingButtonVisibility();
+    }
+    return { mergedCount, requiredRecords };
+  };
+
+  const reconcileHouseholdOfflineYear = (year, serverIds = new Set(), protectedIds = new Set()) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear)) return { removedCount: 0, removedSnapshotIds: [] };
+    const pendingIds = new Set([
+      ...protectedIds,
+      ...getSyncQueue().map((item) => String(item?.household_id || "").trim()).filter(Boolean)
+    ]);
+    const records = getRegistrationRecords();
+    const removedSnapshotIds = [];
+    const nextRecords = records.filter((record) => {
+      const householdId = String(record?.household_id || "").trim();
+      const recordYear = Number(record?.record_year || getHouseholdYearFromId(householdId));
+      if (recordYear !== safeYear || record?.offline_snapshot !== true) return true;
+      const shouldKeep = serverIds.has(householdId) || pendingIds.has(householdId);
+      if (!shouldKeep && householdId) removedSnapshotIds.push(householdId);
+      return shouldKeep;
+    });
+    const removedCount = records.length - nextRecords.length;
+    if (removedCount > 0) {
+      setRegistrationRecords(nextRecords);
+    }
+    return { removedCount, removedSnapshotIds };
+  };
+
+  const ensureOfflineRegistrationRecordsPersisted = async ({
+    requiredRecords = [],
+    removedSnapshotIds = []
+  } = {}) => {
+    if (typeof localStorage.flush === "function") {
+      await localStorage.flush();
+    }
+    if (typeof localStorage.getPersistedValue !== "function") return;
+    const persistedValue = await localStorage.getPersistedValue(REGISTRATION_RECORDS_KEY);
+    if (persistedValue === null) {
+      throw new Error("Offline household storage is unavailable.");
+    }
+    let persistedRecords = [];
+    try {
+      const parsed = JSON.parse(persistedValue);
+      persistedRecords = Array.isArray(parsed) ? parsed.filter(isCurrentUserLocalRecord) : [];
+    } catch {
+      throw new Error("Household records could not be saved for offline use.");
+    }
+    const persistedById = new Map(
+      persistedRecords.map((record) => [String(record?.household_id || "").trim(), record])
+    );
+    const requiredRecordsPersisted = requiredRecords.every((requiredRecord) => {
+      const householdId = String(requiredRecord?.household_id || "").trim();
+      const persistedRecord = persistedById.get(householdId);
+      if (!householdId || !persistedRecord) return false;
+      const requiredVersion = Number(requiredRecord?.row_version || requiredRecord?.base_version || 0);
+      const persistedVersion = Number(persistedRecord?.row_version || persistedRecord?.base_version || 0);
+      if (requiredVersion > 0 && persistedVersion < requiredVersion) return false;
+      if (persistedVersion === requiredVersion) {
+        return getRecordTimestamp(persistedRecord) >= getRecordTimestamp(requiredRecord);
+      }
+      return true;
+    });
+    const removedSnapshotsPersisted = removedSnapshotIds.every((householdId) => {
+      const persistedRecord = persistedById.get(String(householdId || "").trim());
+      return !persistedRecord || persistedRecord.offline_snapshot !== true;
+    });
+    if (!requiredRecordsPersisted || !removedSnapshotsPersisted) {
+      throw new Error("Household records could not be saved for offline use.");
+    }
+  };
+
+  const fetchHouseholdOfflinePage = async ({ year, afterId = 0 } = {}) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear)) {
+      return { items: [], count: 0, limit: HOUSEHOLD_OFFLINE_PAGE_SIZE, after_id: afterId, next_after_id: afterId, has_more: false };
+    }
+
+    const params = new URLSearchParams({
+      action: "list_household_offline_records",
+      year: String(safeYear),
+      limit: String(HOUSEHOLD_OFFLINE_PAGE_SIZE),
+      after_id: String(Math.max(0, Number.parseInt(String(afterId || 0), 10) || 0))
+    });
+    const response = await fetch(`${SYNC_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok || !payload || payload.success !== true) {
+      const message = payload && payload.error
+        ? String(payload.error)
+        : `Unable to prepare offline household records (${response.status}).`;
+      const error = new Error(message);
+      error.status = Number(response.status || 0);
+      throw error;
+    }
+    return payload.data && typeof payload.data === "object"
+      ? payload.data
+      : { items: [], count: 0, limit: HOUSEHOLD_OFFLINE_PAGE_SIZE, after_id: afterId, next_after_id: afterId, has_more: false };
+  };
+
+  const refreshHouseholdOfflineYear = (year, { force = false, protectedIds = new Set() } = {}) => {
+    const safeYear = Number.parseInt(String(year || ""), 10);
+    if (!isValidRecordYear(safeYear) || !isAppOnline()) {
+      return Promise.resolve(0);
+    }
+
+    const cacheKey = String(safeYear);
+    const lastWarmAt = Number(householdOfflineWarmTimestamps.get(cacheKey) || 0);
+    if (!force && lastWarmAt > 0 && (Date.now() - lastWarmAt) < HOUSEHOLD_OFFLINE_CACHE_TTL_MS) {
+      return Promise.resolve(0);
+    }
+    if (householdOfflineWarmPromises.has(cacheKey)) {
+      return householdOfflineWarmPromises.get(cacheKey);
+    }
+
+    const refreshPromise = (async () => {
+      let afterId = 0;
+      let cachedCount = 0;
+      let keepLoading = true;
+      const serverIds = new Set();
+
+      while (keepLoading && isAppOnline()) {
+        const data = await fetchHouseholdOfflinePage({ year: safeYear, afterId });
+        const items = Array.isArray(data?.items) ? data.items : [];
+        items.forEach((item) => {
+          const householdId = String(item?.household_id || item?.record?.household_id || "").trim();
+          if (householdId) serverIds.add(householdId);
+        });
+        const mergeResult = mergeHouseholdOfflineRecords(items, protectedIds);
+        cachedCount += mergeResult.mergedCount;
+        if (mergeResult.mergedCount > 0) {
+          await ensureOfflineRegistrationRecordsPersisted({
+            requiredRecords: mergeResult.requiredRecords
+          });
+        }
+
+        const count = Number.parseInt(String(data?.count ?? items.length), 10) || 0;
+        keepLoading = Boolean(data?.has_more) && count > 0;
+        const nextAfterId = Math.max(0, Number.parseInt(String(data?.next_after_id || 0), 10) || 0);
+        if (keepLoading && nextAfterId <= afterId) {
+          throw new Error("Offline household pagination did not advance.");
+        }
+        afterId = nextAfterId;
+      }
+
+      if (!keepLoading) {
+        const reconcileResult = reconcileHouseholdOfflineYear(safeYear, serverIds, protectedIds);
+        if (reconcileResult.removedCount > 0) {
+          await ensureOfflineRegistrationRecordsPersisted({
+            removedSnapshotIds: reconcileResult.removedSnapshotIds
+          });
+        }
+        householdOfflineWarmTimestamps.set(cacheKey, Date.now());
+      }
+      return cachedCount;
+    })().finally(() => {
+      householdOfflineWarmPromises.delete(cacheKey);
+    });
+
+    householdOfflineWarmPromises.set(cacheKey, refreshPromise);
+    return refreshPromise;
+  };
+
+  const warmHouseholdOfflineCache = ({ force = false, years = null } = {}) => {
+    if (!isAppOnline()) return Promise.resolve(0);
+    const protectedIds = new Set(
+      getSyncQueue().map((item) => String(item?.household_id || "").trim()).filter(Boolean)
+    );
+    const isAllYearsWarm = !Array.isArray(years);
+    const previouslyCachedYears = isAllYearsWarm
+      ? Array.from(new Set([...getCachedHouseholdYears(), ...getOfflineLookupYears()]))
+      : [];
+    if (
+      isAllYearsWarm
+      && !force
+      && householdOfflineWarmAllAt > 0
+      && (Date.now() - householdOfflineWarmAllAt) < HOUSEHOLD_OFFLINE_CACHE_TTL_MS
+    ) {
+      return Promise.resolve(0);
+    }
+    if (isAllYearsWarm && householdOfflineWarmAllPromise) {
+      return householdOfflineWarmAllPromise;
+    }
+
+    householdOfflineWarmActiveCount += 1;
+    updateSyncStatus();
+    const warmPromise = (async () => {
+      const serverYears = isAllYearsWarm ? await fetchLoadHouseholdYears() : [];
+      const availableYears = isAllYearsWarm
+        ? [...previouslyCachedYears, ...serverYears]
+        : years;
+      const normalizedYears = Array.from(new Set(
+        (Array.isArray(availableYears) ? availableYears : [])
+          .map((year) => Number.parseInt(String(year || ""), 10))
+          .filter((year) => isValidRecordYear(year))
+      ));
+      normalizedYears.sort((left, right) => {
+        if (left === targetRecordYear) return -1;
+        if (right === targetRecordYear) return 1;
+        return right - left;
+      });
+
+      let cachedCount = 0;
+      let completed = true;
+      for (const year of normalizedYears) {
+        if (!isAppOnline()) {
+          completed = false;
+          break;
+        }
+        cachedCount += await refreshHouseholdOfflineYear(year, { force, protectedIds });
+      }
+      if (isAllYearsWarm && completed) {
+        householdOfflineWarmAllAt = Date.now();
+      }
+      return cachedCount;
+    })().finally(() => {
+      householdOfflineWarmActiveCount = Math.max(0, householdOfflineWarmActiveCount - 1);
+      updateSyncStatus();
+    });
+
+    if (!isAllYearsWarm) return warmPromise;
+    householdOfflineWarmAllPromise = warmPromise.finally(() => {
+      householdOfflineWarmAllPromise = null;
+    });
+    return householdOfflineWarmAllPromise;
   };
 
   const hydrateDraftFromHouseholdRecord = async (sourceRecord, { cacheRecord = false } = {}) => {
@@ -4161,19 +4566,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   window.addEventListener("online", async () => {
     clearSyncSuccessState();
-    serverReachable = true;
+    serverReachable = null;
+    lastConnectivityProbeAt = 0;
     updateSyncStatus();
     updateLoadExistingButtonVisibility();
     await syncConnectivityState({ force: true });
     updateSyncStatus();
-    warmDuplicateIndexForYear(targetRecordYear, { force: true });
-    flushSyncQueue({ showSuccessState: true });
+    if (isAppOnline()) {
+      warmDuplicateIndexForYear(targetRecordYear, { force: true });
+      void warmHouseholdOfflineCache({ force: true }).catch(() => {});
+      flushSyncQueue({ showSuccessState: true });
+    }
   });
 
-  window.addEventListener("offline", async () => {
+  window.addEventListener("offline", () => {
     clearSyncSuccessState();
-    await syncConnectivityState({ force: true });
+    cancelConnectivityProbe();
+    serverReachable = false;
+    lastConnectivityProbeAt = Date.now();
     updateSyncStatus();
+    updateLoadExistingButtonVisibility();
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -4182,6 +4594,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateSyncStatus();
       if (isAppOnline()) {
         warmDuplicateIndexForYear(targetRecordYear);
+        void warmHouseholdOfflineCache().catch(() => {});
       }
     });
   });
@@ -4191,6 +4604,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateSyncStatus();
       if (isAppOnline()) {
         warmDuplicateIndexForYear(targetRecordYear);
+        void warmHouseholdOfflineCache().catch(() => {});
       }
     });
   });
@@ -4310,6 +4724,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (loadHouseholdYear) {
     loadHouseholdYear.addEventListener("change", () => {
       setLoadHouseholdPrompt();
+      const selectedYear = Number.parseInt(String(loadHouseholdYear.value || ""), 10);
+      if (isAppOnline() && isValidRecordYear(selectedYear)) {
+        void warmHouseholdOfflineCache({ years: [selectedYear] }).catch(() => {});
+      }
     });
   }
 
@@ -4391,6 +4809,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   if (isAppOnline()) {
     warmDuplicateIndexForYear(targetRecordYear, { force: true });
+    void warmHouseholdOfflineCache({ force: true }).catch(() => {});
     flushSyncQueue({ showSuccessState: true });
   }
 

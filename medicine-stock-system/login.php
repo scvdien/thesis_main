@@ -4,6 +4,8 @@ require_once __DIR__ . '/auth.php';
 mss_page_redirect_if_authenticated();
 $loginCssVersion = (string) @filemtime(__DIR__ . '/assets/css/login-style.css');
 $loginJsVersion = (string) @filemtime(__DIR__ . '/assets/js/login-scripts.js');
+$passwordToggleCssVersion = (string) @filemtime(__DIR__ . '/assets/css/password-toggle.css');
+$passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-toggle.js');
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -18,6 +20,7 @@ $loginJsVersion = (string) @filemtime(__DIR__ . '/assets/js/login-scripts.js');
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="assets/css/login-style.css?v=<?= urlencode($loginCssVersion) ?>">
+  <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= urlencode($passwordToggleCssVersion) ?>">
 </head>
 <body>
   <div class="page">
@@ -110,6 +113,7 @@ $loginJsVersion = (string) @filemtime(__DIR__ . '/assets/js/login-scripts.js');
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/js/password-toggle.js?v=<?= urlencode($passwordToggleJsVersion) ?>"></script>
   <script src="assets/js/login-scripts.js?v=<?= urlencode($loginJsVersion) ?>"></script>
 </body>
 </html>

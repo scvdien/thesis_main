@@ -249,12 +249,14 @@ body::after{
 .input-wrap{
   position:relative;
 }
-.input-wrap i{
+.input-wrap > i{
   position:absolute;
   left:12px;
   top:50%;
+  z-index:4;
   transform:translateY(-50%);
   color:#7e8d65;
+  pointer-events:none;
 }
 
 .form-control{
@@ -557,7 +559,7 @@ body::after{
     padding:10px 12px 10px 36px;
   }
 
-  .input-wrap i{
+  .input-wrap > i{
     left:10px;
   }
 

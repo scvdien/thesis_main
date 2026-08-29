@@ -45,7 +45,7 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
   <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Household Details | Admin</title>
-  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+  <link rel="icon" type="image/png" href="assets/img/registration-app-icon-192.png">
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/site-style.css?v=<?= htmlspecialchars($siteStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
@@ -150,43 +150,55 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
         <div class="hv-card hv-card-primary" id="hv-card-head">
           <div class="hv-head"><i class="bi bi-person-vcard"></i> Primary Information</div>
           <div class="hv-primary-grid">
-            <div class="hv-primary-main">
+            <aside class="hv-profile-rail" aria-label="Household head summary">
               <div class="hv-head-photo-frame">
                 <img id="hvHeadPhoto" class="hv-photo-image" alt="Household head" hidden>
                 <span id="hvHeadPhotoFallback" class="hv-photo-fallback" role="img" aria-label="No profile photo">
                   <i class="bi bi-person-fill" aria-hidden="true"></i>
                 </span>
               </div>
-              <div class="hv-primary-copy">
+              <div class="hv-primary-copy hv-profile-copy">
                 <p class="hv-primary-label mb-1">Household Head</p>
                 <h5 class="mb-1" id="hvHeadName">-</h5>
-                <p class="hv-primary-note mb-0">
-                  <span class="hv-primary-note-wide">Primary household representative</span>
-                  <span class="hv-primary-note-mobile">Primary representative</span>
-                </p>
+                <p class="hv-primary-note mb-0">Primary household representative</p>
               </div>
-              <div class="hv-chip-row">
-                <div class="hv-chip"><span class="k">Age</span><span class="v" id="hvHeadAge">-</span></div>
-                <div class="hv-chip"><span class="k">Sex</span><span class="v" id="hvHeadSex">-</span></div>
-                <div class="hv-chip"><span class="k">Civil Status</span><span class="v" id="hvHeadCivil">-</span></div>
+              <div class="hv-profile-stats">
+                <div class="hv-profile-stat">
+                  <span class="k"><i class="bi bi-calendar3" aria-hidden="true"></i> Age</span>
+                  <span class="v" id="hvHeadAge">-</span>
+                </div>
+                <div class="hv-profile-stat">
+                  <span class="k"><i class="bi bi-person" aria-hidden="true"></i> Sex</span>
+                  <span class="v" id="hvHeadSex">-</span>
+                </div>
+                <div class="hv-profile-stat">
+                  <span class="k"><i class="bi bi-heart" aria-hidden="true"></i> Civil Status</span>
+                  <span class="v" id="hvHeadCivil">-</span>
+                </div>
               </div>
-            </div>
-            <div class="hv-primary-group">
-              <p class="hv-primary-group-title">Contact &amp; Location</p>
-              <div class="kv-grid hv-quick-kv">
-                <div class="kv"><span class="k">Contact</span><span class="v" id="hvHeadContact">-</span></div>
-                <div class="kv"><span class="k">Zone / Purok</span><span class="v" id="hvHeadZone">-</span></div>
-                <div class="kv wide"><span class="k">Full Address</span><span class="v" id="hvHeadAddress">-</span></div>
-              </div>
-            </div>
-            <div class="hv-primary-group hv-primary-group-snapshot">
-              <p class="hv-primary-group-title">Household Snapshot</p>
-              <div class="kv-grid hv-quick-kv">
-                <div class="kv"><span class="k">Occupation</span><span class="v" id="hvPrimaryOccupation">-</span></div>
-                <div class="kv"><span class="k">Children</span><span class="v" id="hvPrimaryChildren">-</span></div>
-                <div class="kv"><span class="k">Ownership</span><span class="v" id="hvPrimaryOwnership">-</span></div>
-                <div class="kv"><span class="k">House Type</span><span class="v" id="hvPrimaryHouseType">-</span></div>
-              </div>
+            </aside>
+
+            <div class="hv-primary-content">
+              <section class="hv-primary-identity" aria-label="Contact and location">
+                <div class="hv-contact-block">
+                  <p class="hv-primary-group-title"><i class="bi bi-geo-alt" aria-hidden="true"></i> Contact &amp; Location</p>
+                  <div class="kv-grid hv-contact-grid">
+                    <div class="kv"><span class="k">Contact</span><span class="v" id="hvHeadContact">-</span></div>
+                    <div class="kv"><span class="k">Zone / Purok</span><span class="v" id="hvHeadZone">-</span></div>
+                    <div class="kv hv-address-kv"><span class="k">Full Address</span><span class="v" id="hvHeadAddress">-</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="hv-primary-group hv-primary-group-snapshot" aria-label="Household snapshot">
+                <p class="hv-primary-group-title"><i class="bi bi-house-door" aria-hidden="true"></i> Household Snapshot</p>
+                <div class="kv-grid hv-snapshot-grid">
+                  <div class="kv"><span class="k">Occupation</span><span class="v" id="hvPrimaryOccupation">-</span></div>
+                  <div class="kv"><span class="k">Children</span><span class="v" id="hvPrimaryChildren">-</span></div>
+                  <div class="kv"><span class="k">Ownership</span><span class="v" id="hvPrimaryOwnership">-</span></div>
+                  <div class="kv"><span class="k">House Type</span><span class="v" id="hvPrimaryHouseType">-</span></div>
+                </div>
+              </section>
             </div>
           </div>
         </div>
@@ -478,11 +490,14 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
 
   <!-- PROFILE PHOTO PREVIEW MODAL -->
   <div class="modal fade" id="profilePhotoModal" tabindex="-1" aria-labelledby="profilePhotoModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down hv-photo-preview-dialog">
       <div class="modal-content modern-modal hv-photo-preview-content">
-        <div class="modal-header border-0">
-          <h5 class="modal-title" id="profilePhotoModalLabel">Profile Photo</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close photo preview"></button>
+        <div class="modal-header hv-photo-preview-header">
+          <div class="hv-photo-preview-heading">
+            <h5 class="modal-title" id="profilePhotoModalLabel">Profile Photo</h5>
+            <p class="hv-photo-preview-meta" id="profilePhotoModalMeta">Photo preview</p>
+          </div>
+          <button type="button" class="btn-close hv-photo-preview-close" data-bs-dismiss="modal" aria-label="Close photo preview"></button>
         </div>
         <div class="modal-body hv-photo-preview-body">
           <img id="profilePhotoPreview" class="hv-photo-preview-image" alt="">

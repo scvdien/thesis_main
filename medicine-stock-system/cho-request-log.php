@@ -143,12 +143,12 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   </div>
 
   <div class="modal fade" id="requestModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable request-modal-dialog">
       <div class="modal-content modern-modal">
         <div class="modal-header border-0 pb-0">
           <div>
             <h5 class="modal-title mb-1" id="requestModalTitle">New CHO Request</h5>
-            <p class="inventory-modal-subtitle mb-0" id="requestModalSubtitle">Create one CHO request with all required medicines.</p>
+            <p class="inventory-modal-subtitle mb-0" id="requestModalSubtitle">Select medicines, enter quantities, then set the delivery date.</p>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -156,41 +156,90 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           <form id="requestForm" class="inventory-form-grid">
             <input type="hidden" id="requestId">
 
-            <div class="col-span-2">
-              <div class="request-items-panel">
-                <div class="request-items-head">
-                  <div>
-                    <label class="form-label mb-1">Requested Medicines</label>
-                    <p class="inventory-modal-subtitle mb-0">Add the medicines included in this request.</p>
-                  </div>
-                  <button type="button" class="btn btn-light request-item-add-btn" id="addRequestItemBtn">
-                    <i class="bi bi-plus-lg"></i>Add Medicine
-                  </button>
+            <section class="col-span-2 request-form-section" aria-labelledby="requestMedicinesTitle">
+              <div class="request-section-heading">
+                <span class="request-step-number" aria-hidden="true">1</span>
+                <div>
+                  <h6 id="requestMedicinesTitle">Add medicines</h6>
+                  <p>Search the inventory and add each medicine to this request.</p>
                 </div>
-                <div class="request-items-grid-head" aria-hidden="true">
-                  <span>Medicine</span>
-                  <span>Quantity</span>
-                  <span class="request-items-grid-head__action">Action</span>
-                </div>
-                <div id="requestItemsContainer" class="request-items-list"></div>
               </div>
-            </div>
 
-            <div>
-              <label for="requestDate" class="form-label">Request Date</label>
-              <input type="date" id="requestDate" class="form-control" required>
-            </div>
+              <div class="request-medicine-picker" id="requestMedicinePicker">
+                <label for="requestMedicineSearch" class="form-label">Search medicine</label>
+                <div class="request-medicine-search">
+                  <i class="bi bi-search" aria-hidden="true"></i>
+                  <input
+                    type="search"
+                    id="requestMedicineSearch"
+                    class="form-control"
+                    placeholder="Type a medicine or generic name"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-controls="requestMedicineResults"
+                    aria-expanded="false"
+                  >
+                  <span class="request-medicine-search__hint">Select from inventory</span>
+                </div>
+                <div id="requestMedicineResults" class="request-medicine-results d-none" role="listbox" aria-label="Available medicines" aria-multiselectable="true"></div>
+              </div>
 
-            <div>
-              <label for="requestExpectedDate" class="form-label">Expected Delivery Date</label>
-              <input type="date" id="requestExpectedDate" class="form-control" required>
-            </div>
+              <div class="request-selected-heading">
+                <div>
+                  <h6>Selected medicines</h6>
+                  <p id="requestItemsStatus">Add at least one medicine to continue.</p>
+                </div>
+                <span class="request-selected-count" id="requestItemCount">0 selected</span>
+              </div>
 
-            <div class="col-span-2 inventory-form-actions">
-              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="requestSubmitBtn">
-                <i class="bi bi-save2"></i>Save Request
-              </button>
+              <div id="requestItemsContainer" class="request-items-list"></div>
+              <div id="requestItemsEmpty" class="request-items-empty">
+                <span><i class="bi bi-capsule-pill" aria-hidden="true"></i></span>
+                <div>
+                  <strong>No medicines added yet</strong>
+                  <p>Use the search field above to start your request.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="col-span-2 request-form-section request-schedule-section" aria-labelledby="requestScheduleTitle">
+              <div class="request-section-heading">
+                <span class="request-step-number" aria-hidden="true">2</span>
+                <div>
+                  <h6 id="requestScheduleTitle">Delivery schedule</h6>
+                  <p>Confirm when the request is made and when delivery is expected.</p>
+                </div>
+              </div>
+
+              <div class="request-date-grid">
+                <div>
+                  <label for="requestDate" class="form-label">Request date</label>
+                  <input type="date" id="requestDate" class="form-control" required>
+                  <small>Defaults to today's date.</small>
+                </div>
+
+                <div>
+                  <label for="requestExpectedDate" class="form-label">Expected delivery date</label>
+                  <input type="date" id="requestExpectedDate" class="form-control" required>
+                  <small>Must be on or after the request date.</small>
+                </div>
+              </div>
+            </section>
+
+            <div id="requestFormFeedback" class="col-span-2 request-form-feedback d-none" role="alert"></div>
+
+            <div class="col-span-2 inventory-form-actions request-form-actions">
+              <div class="request-form-summary" aria-live="polite">
+                <strong id="requestSummaryTitle">No medicines selected</strong>
+                <span id="requestSummaryText">Add medicine and quantity details to continue.</span>
+              </div>
+              <div class="request-form-actions__buttons">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="requestSubmitBtn" disabled>
+                  <i class="bi bi-send-check"></i><span id="requestSubmitBtnLabel">Submit Request</span>
+                </button>
+              </div>
             </div>
           </form>
 
@@ -283,7 +332,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
-  <script src="assets/js/session-heartbeat.js?v=20260321-presence"></script>
+  <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
   <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
   <script src="assets/js/cho-request-log.js?v=<?= urlencode($choRequestLogJsVersion) ?>"></script>

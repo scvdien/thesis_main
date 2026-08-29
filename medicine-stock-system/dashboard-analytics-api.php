@@ -1208,15 +1208,15 @@ function mss_dashboard_compute_request_progress(array $request, array $movements
 
     if ($onTime) {
         $statusKey = 'on-time';
-        $statusLabel = 'On Time Delivery';
+        $statusLabel = 'Completed - On Time';
         $tone = 'success';
     } elseif ($delayed) {
         $statusKey = 'delayed';
-        $statusLabel = 'Delayed Delivery';
+        $statusLabel = 'Completed - Delayed';
         $tone = 'danger';
     } elseif ($incomplete) {
         $statusKey = 'partial';
-        $statusLabel = 'Incomplete Delivery';
+        $statusLabel = 'Partially Delivered';
         $tone = $isOverdue ? 'danger' : 'warning';
     }
 
@@ -1324,15 +1324,15 @@ function mss_dashboard_build_supply_analytics(array $requests, array $movements,
 
         if ($onTime) {
             $statusKey = 'on-time';
-            $statusLabel = 'On Time Delivery';
+            $statusLabel = 'Completed - On Time';
             $tone = 'success';
         } elseif ($delayed) {
             $statusKey = 'delayed';
-            $statusLabel = 'Delayed Delivery';
+            $statusLabel = 'Completed - Delayed';
             $tone = 'danger';
         } elseif ($incomplete) {
             $statusKey = 'incomplete';
-            $statusLabel = 'Incomplete Delivery';
+            $statusLabel = 'Partially Delivered';
             $tone = $isOverdue ? 'danger' : 'warning';
         }
 

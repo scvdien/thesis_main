@@ -121,24 +121,15 @@ const buildProfilePhotoUrl = (photoId) => {
     : '';
 };
 
-const renderResidentAvatar = (photoId) => {
-  const normalizedPhotoId = normalizeProfilePhotoId(photoId);
-  const imageUrl = buildProfilePhotoUrl(normalizedPhotoId);
-  const imageMarkup = imageUrl
-    ? `<img class="resident-avatar-image" data-resident-avatar-image src="${imageUrl}" alt="" loading="lazy" decoding="async">`
-    : '';
-  return `
-    <span class="resident-list-avatar" aria-hidden="true">
-      ${imageMarkup}
-      <i class="bi bi-person-fill resident-avatar-fallback"${imageUrl ? ' hidden' : ''}></i>
-    </span>
-  `;
-};
-
 const showResidentAvatarFallback = (image) => {
   if (!(image instanceof HTMLImageElement)) return;
   image.hidden = true;
   image.removeAttribute('src');
+  image.classList.remove('is-previewable');
+  image.removeAttribute('role');
+  image.removeAttribute('tabindex');
+  image.removeAttribute('title');
+  delete image.dataset.photoId;
   const fallback = image.parentElement?.querySelector('.resident-avatar-fallback');
   if (fallback) fallback.hidden = false;
 };
@@ -256,6 +247,10 @@ const residentDetailsModal = residentDetailsModalEl ? new bootstrap.Modal(reside
 const residentModalAvatar = document.getElementById('rdAvatar');
 const residentModalAvatarImage = document.getElementById('rdAvatarImage');
 const residentModalAvatarFallback = document.getElementById('rdAvatarFallback');
+const residentPhotoPreviewModalEl = document.getElementById('residentPhotoPreviewModal');
+const residentPhotoPreviewModal = residentPhotoPreviewModalEl ? new bootstrap.Modal(residentPhotoPreviewModalEl) : null;
+const residentPhotoPreviewImage = document.getElementById('residentPhotoPreviewImage');
+const residentPhotoPreviewModalLabel = document.getElementById('residentPhotoPreviewModalLabel');
 const residentEditBtn = document.getElementById('residentEditBtn');
 const residentDeleteBtn = document.getElementById('residentDeleteBtn');
 const residentDeleteConfirmModalEl = document.getElementById('residentDeleteConfirmModal');
@@ -266,6 +261,8 @@ const residentDeleteConfirmBtn = document.getElementById('residentDeleteConfirmB
 
 let activeQuickFilter = 'all';
 let activeResidentAction = null;
+let residentPhotoPreviewTransitioning = false;
+let restoreResidentDetailsAfterPhoto = false;
 
 const setResidentModalAvatar = (photoId, fullName = '') => {
   const normalizedPhotoId = normalizeProfilePhotoId(photoId);
@@ -282,6 +279,13 @@ const setResidentModalAvatar = (photoId, fullName = '') => {
 
   residentModalAvatarImage.hidden = true;
   residentModalAvatarFallback.hidden = false;
+  residentModalAvatarImage.classList.remove('is-previewable');
+  residentModalAvatarImage.removeAttribute('role');
+  residentModalAvatarImage.removeAttribute('tabindex');
+  residentModalAvatarImage.removeAttribute('title');
+  residentModalAvatarImage.alt = residentName
+    ? `${residentName} profile photo`
+    : 'Resident profile photo';
   if (!imageUrl) {
     residentModalAvatarImage.removeAttribute('src');
     delete residentModalAvatarImage.dataset.photoId;
@@ -295,11 +299,72 @@ const setResidentModalAvatar = (photoId, fullName = '') => {
 residentModalAvatarImage?.addEventListener('load', () => {
   if (!normalizeProfilePhotoId(residentModalAvatarImage.dataset.photoId)) return;
   residentModalAvatarImage.hidden = false;
+  residentModalAvatarImage.classList.add('is-previewable');
+  residentModalAvatarImage.setAttribute('role', 'button');
+  residentModalAvatarImage.tabIndex = 0;
+  residentModalAvatarImage.title = 'View larger photo';
   if (residentModalAvatarFallback) residentModalAvatarFallback.hidden = true;
 });
 
 residentModalAvatarImage?.addEventListener('error', () => {
   showResidentAvatarFallback(residentModalAvatarImage);
+});
+
+const openResidentPhotoPreview = () => {
+  if (
+    !(residentModalAvatarImage instanceof HTMLImageElement)
+    || residentModalAvatarImage.hidden
+    || !residentModalAvatarImage.classList.contains('is-previewable')
+    || !(residentPhotoPreviewImage instanceof HTMLImageElement)
+    || !residentPhotoPreviewModal
+    || residentPhotoPreviewTransitioning
+  ) return;
+
+  const photoSource = residentModalAvatarImage.currentSrc || residentModalAvatarImage.src;
+  if (!photoSource) return;
+
+  residentPhotoPreviewTransitioning = true;
+  residentPhotoPreviewImage.src = photoSource;
+  residentPhotoPreviewImage.alt = residentModalAvatarImage.alt || 'Resident profile photo';
+  if (residentPhotoPreviewModalLabel) {
+    const residentName = normalizeText(residentModalAvatarImage.alt)
+      .replace(/\s+profile photo$/i, '')
+      .trim();
+    residentPhotoPreviewModalLabel.textContent = residentName || 'Resident Photo';
+  }
+
+  restoreResidentDetailsAfterPhoto = Boolean(residentDetailsModalEl?.classList.contains('show'));
+  if (restoreResidentDetailsAfterPhoto && residentDetailsModal) {
+    residentDetailsModalEl.addEventListener('hidden.bs.modal', () => residentPhotoPreviewModal.show(), { once: true });
+    residentDetailsModal.hide();
+    return;
+  }
+
+  residentPhotoPreviewModal.show();
+};
+
+residentModalAvatarImage?.addEventListener('click', openResidentPhotoPreview);
+residentModalAvatarImage?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openResidentPhotoPreview();
+});
+
+residentPhotoPreviewModalEl?.addEventListener('shown.bs.modal', () => {
+  residentPhotoPreviewTransitioning = false;
+});
+
+residentPhotoPreviewModalEl?.addEventListener('hidden.bs.modal', () => {
+  residentPhotoPreviewTransitioning = false;
+  if (residentPhotoPreviewImage instanceof HTMLImageElement) {
+    residentPhotoPreviewImage.removeAttribute('src');
+    residentPhotoPreviewImage.alt = '';
+  }
+
+  if (!restoreResidentDetailsAfterPhoto || !residentDetailsModal || !residentDetailsModalEl) return;
+  restoreResidentDetailsAfterPhoto = false;
+  residentDetailsModalEl.addEventListener('shown.bs.modal', () => residentModalAvatarImage?.focus(), { once: true });
+  residentDetailsModal.show();
 });
 
 const ensureZoneOptions = (rows = []) => {
@@ -466,12 +531,7 @@ const renderResidentsTable = () => {
           data-profile-photo-id="${profilePhotoId}"
           data-base-household-id="${escapeHtml(householdId)}">
           <td>${escapeHtml(displayResidentId || '-')}</td>
-          <td>
-            <span class="resident-name-cell">
-              ${renderResidentAvatar(profilePhotoId)}
-              <span class="resident-name-text">${escapeHtml(fullName)}</span>
-            </span>
-          </td>
+          <td><span class="resident-name-text">${escapeHtml(fullName)}</span></td>
           <td>${escapeHtml(age)}</td>
           <td>${escapeHtml(sex)}</td>
           <td>${escapeHtml(displayHouseholdId || '-')}</td>
@@ -1087,13 +1147,6 @@ yearSelect?.addEventListener('change', () => {
 });
 
 if (residentsTableBody) {
-  residentsTableBody.addEventListener('error', (event) => {
-    const image = event.target;
-    if (image instanceof HTMLImageElement && image.matches('[data-resident-avatar-image]')) {
-      showResidentAvatarFallback(image);
-    }
-  }, true);
-
   residentsTableBody.addEventListener('click', (event) => {
     const viewButton = event.target.closest('.resident-view-btn');
     if (!viewButton) return;

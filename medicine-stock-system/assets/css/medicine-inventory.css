@@ -336,6 +336,12 @@
   text-transform:uppercase;
 }
 
+.inventory-medicine-icon__svg{
+  width:22px;
+  height:22px;
+  display:block;
+}
+
 .inventory-medicine-copy{
   min-width:0;
 }
@@ -819,6 +825,419 @@
   font-weight:600;
 }
 
+.stock-action-dialog{
+  max-width:660px;
+}
+
+#stockActionModal .modern-modal{
+  border-radius:24px;
+}
+
+#stockActionModal .inventory-form-grid{
+  gap:16px;
+}
+
+#stockActionModal .form-label{
+  margin-bottom:7px;
+  color:#315541;
+  font-size:0.78rem;
+  font-weight:800;
+}
+
+#stockActionModal .form-control,
+#stockActionModal .form-select{
+  min-height:46px;
+  background:#fff;
+}
+
+.stock-action-overview{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  align-items:end;
+  gap:12px;
+}
+
+.stock-action-overview__field{
+  min-width:0;
+}
+
+.stock-action-overview__field > .form-label{
+  display:block;
+}
+
+#stockActionModal .stock-action-current{
+  min-height:46px;
+  padding:7px 14px;
+  border-color:#d9e9de;
+  background:linear-gradient(135deg, #f1faf5 0%, #ffffff 100%);
+  box-shadow:none;
+}
+
+.stock-action-current .stock-action-current__icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:30px;
+  height:30px;
+  flex:0 0 30px;
+  gap:7px;
+  border-radius:9px;
+  background:#dff3e7;
+}
+
+.stock-action-current .stock-action-current__icon i{
+  color:#168756;
+  font-size:0.95rem;
+}
+
+.stock-action-current strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.stock-action-type-control{
+  position:relative;
+}
+
+.stock-action-type-control .form-select{
+  padding-left:43px;
+  padding-right:44px;
+  background-image:none;
+  appearance:none;
+}
+
+.stock-action-type-icon{
+  position:absolute;
+  z-index:2;
+  top:50%;
+  left:15px;
+  color:#168756;
+  font-size:1rem;
+  line-height:1;
+  pointer-events:none;
+  transform:translateY(-50%);
+}
+
+.stock-action-type-icon--dispose{
+  color:#b24a4a;
+}
+
+.stock-action-type-chevron{
+  position:absolute;
+  z-index:2;
+  top:50%;
+  right:16px;
+  color:#315541;
+  font-size:0.9rem;
+  line-height:1;
+  pointer-events:none;
+  transform:translateY(-50%);
+  transition:transform 0.15s ease, color 0.15s ease;
+}
+
+.stock-action-type-control:focus-within .stock-action-type-chevron{
+  color:#168756;
+}
+
+.stock-restock-flow{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  padding:16px;
+  border:1px solid #dce8df;
+  border-radius:16px;
+  background:#fbfdfb;
+}
+
+.stock-source-toggle{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:8px;
+}
+
+.stock-source-toggle label{
+  min-height:46px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:9px 12px;
+  border:1px solid #d7e4da;
+  border-radius:12px;
+  background:#fff;
+  color:#52685a;
+  font-size:0.76rem;
+  font-weight:800;
+  cursor:pointer;
+  transition:border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stock-source-toggle label:hover{
+  border-color:#9fc9ae;
+  background:#f4faf6;
+}
+
+.stock-source-toggle .btn-check:focus-visible + label{
+  outline:none;
+  border-color:#138a56;
+  box-shadow:0 0 0 4px rgba(19, 138, 86, 0.1);
+}
+
+.stock-source-toggle .btn-check:checked + label{
+  border-color:#138a56;
+  background:#eaf7ef;
+  color:#126f46;
+  box-shadow:inset 0 0 0 1px rgba(19, 138, 86, 0.08);
+}
+
+.stock-source-toggle .btn-check:disabled + label{
+  border-color:#e2e8e4;
+  background:#f4f6f5;
+  color:#a0aaa4;
+  cursor:not-allowed;
+}
+
+.stock-linked-request-card{
+  margin-top:10px;
+  overflow:hidden;
+  border:1px solid #cfe4d6;
+  border-radius:14px;
+  background:#fff;
+}
+
+.stock-linked-request-card__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 14px;
+  border-bottom:1px solid #e3ece6;
+  background:#f3faf6;
+}
+
+.stock-linked-request-card__head > div{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+
+.stock-linked-request-card__head > div span,
+.stock-linked-request-metrics span{
+  color:#748379;
+  font-size:0.64rem;
+  font-weight:800;
+  letter-spacing:0.03em;
+  text-transform:uppercase;
+}
+
+.stock-linked-request-card__head strong{
+  color:#1f4b34;
+  font-size:0.86rem;
+  font-weight:800;
+}
+
+.stock-request-status{
+  padding:5px 8px;
+  border-radius:999px;
+  font-size:0.64rem;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.stock-request-status--pending{
+  background:#eef4eb;
+  color:#607052;
+}
+
+.stock-request-status--warning{
+  background:#fff3d8;
+  color:#936313;
+}
+
+.stock-request-status--danger{
+  background:#fee9e9;
+  color:#ae3636;
+}
+
+.stock-linked-request-metrics{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  padding:14px;
+}
+
+.stock-linked-request-metrics > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:0 12px;
+  border-right:1px solid #e5ece7;
+}
+
+.stock-linked-request-metrics > div:first-child{
+  padding-left:0;
+}
+
+.stock-linked-request-metrics > div:last-child{
+  padding-right:0;
+  border-right:0;
+}
+
+.stock-linked-request-metrics strong{
+  overflow:hidden;
+  color:#294b38;
+  font-size:0.78rem;
+  font-weight:800;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.stock-linked-request-metrics__remaining strong{
+  color:#b36d13;
+}
+
+.stock-linked-request-card__footer{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:10px 14px;
+  border-top:1px solid #e8eee9;
+  color:#68776e;
+  font-size:0.68rem;
+  font-weight:600;
+}
+
+.stock-linked-request-card__footer i{
+  color:#168756;
+}
+
+.stock-action-quantity-field{
+  position:relative;
+}
+
+.stock-action-quantity-field .form-control{
+  padding-right:96px;
+}
+
+.stock-action-quantity-field > span{
+  position:absolute;
+  top:50%;
+  right:14px;
+  max-width:76px;
+  overflow:hidden;
+  transform:translateY(-50%);
+  color:#718078;
+  font-size:0.7rem;
+  font-weight:800;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  pointer-events:none;
+}
+
+.stock-action-preview{
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  padding:12px 14px;
+  border:1px solid #cfe5d6;
+  border-radius:14px;
+  background:#f0faf4;
+}
+
+.stock-action-preview__icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  width:34px;
+  height:34px;
+  border-radius:10px;
+  background:#dff3e7;
+  color:#148451;
+}
+
+.stock-action-preview > div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+
+.stock-action-preview strong{
+  color:#24523a;
+  font-size:0.78rem;
+  font-weight:800;
+}
+
+.stock-action-preview span:not(.stock-action-preview__icon){
+  color:#607268;
+  font-size:0.69rem;
+  font-weight:600;
+  line-height:1.45;
+}
+
+.stock-action-preview--warning{
+  border-color:#e9d6a8;
+  background:#fff9eb;
+}
+
+.stock-action-preview--warning .stock-action-preview__icon{
+  background:#fff0c9;
+  color:#9b6817;
+}
+
+.stock-action-preview--danger{
+  border-color:#efcccc;
+  background:#fff3f3;
+}
+
+.stock-action-preview--danger .stock-action-preview__icon{
+  background:#fde1e1;
+  color:#b13c3c;
+}
+
+.stock-action-feedback{
+  padding:11px 13px;
+  border:1px solid #efcaca;
+  border-radius:12px;
+  background:#fff4f4;
+  color:#a43b3b;
+  font-size:0.74rem;
+  font-weight:700;
+}
+
+.stock-action-feedback--warning{
+  border-color:#ead6a9;
+  background:#fff9ea;
+  color:#8a641b;
+}
+
+.stock-action-form-actions{
+  align-items:center;
+  padding-top:2px;
+}
+
+.stock-action-form-actions .btn{
+  min-height:42px;
+  padding-right:17px;
+  padding-left:17px;
+}
+
+.stock-action-form-actions .btn-primary{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+}
+
+.stock-action-form-actions .btn-primary:disabled{
+  background:#accbbb;
+  box-shadow:none;
+  opacity:1;
+}
+
 .inventory-dispense-card{
   display:flex;
   flex-direction:column;
@@ -1119,6 +1538,18 @@
     flex-direction:column-reverse;
   }
 
+  .stock-action-form-actions .btn{
+    width:100%;
+  }
+
+  #stockActionModal .modern-modal{
+    padding:18px !important;
+  }
+
+  .stock-restock-flow{
+    padding:14px;
+  }
+
   .inventory-confirm-modal__actions{
     flex-direction:column-reverse;
   }
@@ -1136,6 +1567,26 @@
 }
 
 @media (max-width: 576px){
+  .stock-action-overview{
+    grid-template-columns:1fr;
+  }
+
+  .stock-source-toggle{
+    grid-template-columns:1fr;
+  }
+
+  .stock-linked-request-metrics{
+    padding:12px 10px;
+  }
+
+  .stock-linked-request-metrics > div{
+    padding:0 8px;
+  }
+
+  .stock-linked-request-metrics strong{
+    font-size:0.7rem;
+  }
+
   .inventory-metric-card{
     grid-template-columns:46px minmax(0, 1fr);
     gap:12px;

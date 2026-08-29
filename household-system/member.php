@@ -48,7 +48,7 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
   <meta name="csrf-token" content="<?= htmlspecialchars($memberCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Add Household Member</title>
-  <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+  <link rel="icon" type="image/png" href="assets/img/registration-app-icon-192.png">
 
   <!-- Bootstrap CSS -->
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">

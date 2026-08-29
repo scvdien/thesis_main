@@ -2,14 +2,15 @@ $ErrorActionPreference = 'Stop'
 
 $projectDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $unsignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'app\build\outputs\apk\release\app-release-unsigned.apk'))
-$alignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'app-release-unsigned-aligned.apk'))
-$signedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'app-release-signed.apk'))
+$alignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'Cabarian-Registration-v7-unsigned-aligned.apk'))
+$signedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'INSTALL-THIS-Cabarian-v7.apk'))
 $keystore = 'C:\Users\judea\cabarian-registration.keystore'
 $keyAlias = 'cabarian-registration'
 $buildToolsDir = 'C:\Users\judea\.bubblewrap\android_sdk\build-tools\36.1.0'
 $javaHome = 'C:\Users\judea\.bubblewrap\jdk\jdk-17.0.11+9'
 $zipAlign = Join-Path $buildToolsDir 'zipalign.exe'
 $apkSigner = Join-Path $buildToolsDir 'apksigner.bat'
+$aapt = Join-Path $buildToolsDir 'aapt.exe'
 
 foreach ($outputPath in @($alignedApk, $signedApk)) {
     if (-not $outputPath.StartsWith($projectDir + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -17,7 +18,7 @@ foreach ($outputPath in @($alignedApk, $signedApk)) {
     }
 }
 
-foreach ($requiredPath in @($unsignedApk, $keystore, $zipAlign, $apkSigner, (Join-Path $javaHome 'bin\java.exe'))) {
+foreach ($requiredPath in @($unsignedApk, $keystore, $zipAlign, $apkSigner, $aapt, (Join-Path $javaHome 'bin\java.exe'))) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required file was not found: $requiredPath"
     }
@@ -55,6 +56,16 @@ try {
     & $apkSigner verify --verbose --print-certs $signedApk
     if ($LASTEXITCODE -ne 0) {
         throw "APK signature verification failed with exit code $LASTEXITCODE."
+    }
+
+    $badging = (& $aapt dump badging $signedApk) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $badging -notmatch "versionCode='7'") {
+        throw 'The signed APK is not the expected Version 7 build.'
+    }
+
+    $permissions = (& $aapt dump permissions $signedApk) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $permissions -notmatch 'android\.permission\.CAMERA') {
+        throw 'The signed APK does not contain android.permission.CAMERA.'
     }
 
     Write-Host ''

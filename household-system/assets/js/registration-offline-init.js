@@ -8,11 +8,19 @@
     : `${SERVICE_WORKER_SCOPE_URL.pathname}/`;
   const REGISTRATION_URL = new URL("registration.php", APP_BASE_URL).toString();
   const MEMBER_URL = new URL("member.php", APP_BASE_URL).toString();
-  const HOUSEHOLDS_URL = new URL("households.php", APP_BASE_URL).toString();
-  const HOUSEHOLD_VIEW_URL = new URL("household-view.php", APP_BASE_URL).toString();
+  const REQUIRED_ROUTE_URLS = [REGISTRATION_URL, MEMBER_URL];
   const OFFLINE_NOTICE_ID = "registrationOfflineSetupNotice";
   const OFFLINE_STATUS_EVENT = "registration-offline-status";
+  const MEMBER_WARMUP_HASH = "#registration-member-cache-warmup";
+  const WORKER_MESSAGE_TIMEOUT_MS = 30000;
   const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+  let routeWarmupSequence = 0;
+  let memberNavigationWarmPromise = null;
+  let memberNavigationWarmController = null;
+
+  if (window.self !== window.top && window.location.hash === MEMBER_WARMUP_HASH) {
+    return;
+  }
 
   const dispatchOfflineStatus = (detail) => {
     const status = {
@@ -140,42 +148,192 @@
     return;
   }
 
-  const postToWorker = async (message) => {
+  const postToWorkerWithReply = async (message) => {
+    const registration = await navigator.serviceWorker.ready;
+    const worker = navigator.serviceWorker.controller || registration.active;
+    if (!worker) {
+      throw new Error("No active service worker is available.");
+    }
+
+    return new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      const timeoutId = window.setTimeout(() => {
+        channel.port1.close();
+        reject(new Error("Offline route caching timed out."));
+      }, WORKER_MESSAGE_TIMEOUT_MS);
+
+      channel.port1.onmessage = (event) => {
+        window.clearTimeout(timeoutId);
+        channel.port1.close();
+        resolve(event.data && typeof event.data === "object" ? event.data : {
+          success: false,
+          results: []
+        });
+      };
+
+      worker.postMessage(message, [channel.port2]);
+    });
+  };
+
+  const postRouteWarmupWithoutReply = async (urls = []) => {
     try {
       const registration = await navigator.serviceWorker.ready;
-      const worker = registration.active || navigator.serviceWorker.controller;
-      if (worker) {
-        worker.postMessage(message);
-      }
-    } catch (error) {
-      // Ignore service worker messaging errors.
+      const worker = navigator.serviceWorker.controller || registration.active;
+      if (!worker) return;
+      (Array.isArray(urls) ? urls : []).forEach((url) => {
+        worker.postMessage({
+          type: "CACHE_CURRENT_ROUTE",
+          url: String(url || "")
+        });
+      });
+    } catch {
+      // The acknowledged warm-up below remains the primary path.
     }
   };
 
-  const cacheCurrentRoute = () => postToWorker({
-    type: "CACHE_CURRENT_ROUTE",
-    url: window.location.href
-  });
+  const prewarmMemberPageThroughNavigation = async () => {
+    if (window.navigator.onLine === false) {
+      return false;
+    }
+    const currentRole = String(document.body?.dataset?.role || "").trim().toLowerCase();
+    if (currentRole && !["staff", "secretary", "admin"].includes(currentRole)) {
+      return false;
+    }
 
-  const warmRegistrationRoutes = () => Promise.allSettled([
-    cacheCurrentRoute(),
-    postToWorker({
-      type: "CACHE_CURRENT_ROUTE",
-      url: REGISTRATION_URL
-    }),
-    postToWorker({
-      type: "CACHE_CURRENT_ROUTE",
-      url: MEMBER_URL
-    }),
-    postToWorker({
-      type: "CACHE_CURRENT_ROUTE",
-      url: HOUSEHOLDS_URL
-    }),
-    postToWorker({
-      type: "CACHE_CURRENT_ROUTE",
-      url: HOUSEHOLD_VIEW_URL
-    })
-  ]);
+    const registration = await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise((resolve) => {
+        const handleControllerChange = () => {
+          window.clearTimeout(timeoutId);
+          resolve();
+        };
+        const timeoutId = window.setTimeout(() => {
+          navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+          resolve();
+        }, 3000);
+        navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange, { once: true });
+      });
+    }
+
+    const worker = navigator.serviceWorker.controller || registration.active;
+    if (!worker) return false;
+    if (memberNavigationWarmPromise && memberNavigationWarmController === worker) {
+      return memberNavigationWarmPromise;
+    }
+
+    const navigationPromise = new Promise((resolve) => {
+      const frame = document.createElement("iframe");
+      let settled = false;
+      const finish = (success) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        frame.remove();
+        resolve(Boolean(success));
+      };
+      const timeoutId = window.setTimeout(() => finish(false), 15000);
+      frame.title = "Preparing Add Member for offline use";
+      frame.tabIndex = -1;
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("sandbox", "allow-same-origin");
+      frame.style.cssText = "position:fixed;width:1px;height:1px;left:-9999px;bottom:0;border:0;opacity:0;pointer-events:none;";
+      frame.addEventListener("load", () => finish(true), { once: true });
+      frame.addEventListener("error", () => finish(false), { once: true });
+      frame.src = `${MEMBER_URL}${MEMBER_WARMUP_HASH}`;
+      (document.body || document.documentElement).appendChild(frame);
+    }).catch(() => false);
+
+    const trackedPromise = navigationPromise.finally(() => {
+      if (memberNavigationWarmPromise === trackedPromise) {
+        memberNavigationWarmPromise = null;
+        memberNavigationWarmController = null;
+      }
+    });
+    memberNavigationWarmController = worker;
+    memberNavigationWarmPromise = trackedPromise;
+    return trackedPromise;
+  };
+
+  const getRoutePageName = (value) => {
+    try {
+      const pathname = new URL(String(value || ""), APP_BASE_URL).pathname;
+      return String(pathname.split("/").pop() || "").trim().toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+
+  const hasRequiredRoutes = (results = []) => {
+    const cachedPageNames = new Set(
+      (Array.isArray(results) ? results : [])
+        .filter((item) => item?.success === true)
+        .map((item) => getRoutePageName(item?.url))
+        .filter(Boolean)
+    );
+    return REQUIRED_ROUTE_URLS.every((url) => cachedPageNames.has(getRoutePageName(url)));
+  };
+
+  const warmRegistrationRoutes = async () => {
+    const warmupSequence = ++routeWarmupSequence;
+    const urls = Array.from(new Set([
+      window.location.href,
+      REGISTRATION_URL,
+      MEMBER_URL
+    ]));
+    try {
+      await prewarmMemberPageThroughNavigation();
+      if (warmupSequence !== routeWarmupSequence) {
+        return { success: false, results: [], stale: true };
+      }
+      let result = { success: false, results: [] };
+      let requiredRoutesReady = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        result = await postToWorkerWithReply({
+          type: "WARM_REGISTRATION_ROUTES",
+          urls: attempt === 0 ? urls : REQUIRED_ROUTE_URLS,
+          preferCached: true
+        });
+        if (warmupSequence !== routeWarmupSequence) {
+          return { ...result, stale: true };
+        }
+        requiredRoutesReady = hasRequiredRoutes(result.results);
+        if (requiredRoutesReady || window.navigator.onLine === false) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+      }
+      if (!requiredRoutesReady && window.navigator.onLine !== false) {
+        void postRouteWarmupWithoutReply(REQUIRED_ROUTE_URLS);
+      }
+
+      const routeResults = Array.isArray(result.results) ? result.results : [];
+      const status = dispatchOfflineStatus({
+        state: requiredRoutesReady ? "ready" : "partial",
+        tone: requiredRoutesReady ? "success" : "warning",
+        visible: false,
+        message: "",
+        routeResults
+      });
+      window.registrationOfflineWarmupResult = status;
+      return status;
+    } catch (error) {
+      if (warmupSequence !== routeWarmupSequence) {
+        return { success: false, results: [], stale: true };
+      }
+
+      const status = dispatchOfflineStatus({
+        state: "partial",
+        tone: "warning",
+        visible: false,
+        message: "",
+        routeResults: []
+      });
+      window.registrationOfflineWarmupResult = status;
+      return status;
+    }
+  };
+
+  const retryRouteWarmup = () => {
+    void warmRegistrationRoutes();
+  };
 
   window.clearRegistrationOfflineCaches = async function clearRegistrationOfflineCaches() {
     try {
@@ -202,7 +360,8 @@
   };
 
   navigator.serviceWorker.register(SERVICE_WORKER_URL, {
-    scope: SERVICE_WORKER_SCOPE
+    scope: SERVICE_WORKER_SCOPE,
+    updateViaCache: "none"
   }).then(async (registration) => {
     const waitingWorker = registration.waiting;
     if (waitingWorker) {
@@ -210,8 +369,8 @@
     }
 
     dispatchOfflineStatus({
-      state: "ready",
-      tone: "success",
+      state: "warming",
+      tone: "warning",
       visible: false
     });
 
@@ -226,6 +385,8 @@
   });
 
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    void warmRegistrationRoutes();
+    retryRouteWarmup();
   });
+
+  window.addEventListener("online", retryRouteWarmup);
 })();

@@ -2385,7 +2385,7 @@ function reg_reset_rollover_households(PDO $pdo, int $targetYear, array $authUse
 auth_bootstrap_store();
 $requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $requestAction = strtolower(reg_text($_GET['action'] ?? '', 40));
-$captainReadableActions = ['', 'list_household_years', 'list_households', 'get_household', 'list_residents', 'get_resident'];
+$captainReadableActions = ['', 'list_household_years', 'list_households', 'list_household_offline_records', 'get_household', 'list_residents', 'get_resident'];
 $allowCaptainReadOnly = $requestMethod === 'GET' && in_array($requestAction, $captainReadableActions, true);
 $allowedRoles = [AUTH_ROLE_STAFF, AUTH_ROLE_ADMIN, AUTH_ROLE_SECRETARY];
 if ($allowCaptainReadOnly) {
@@ -2616,6 +2616,55 @@ function reg_build_household_payload(PDO $pdo, array $row): array
         'created_at' => (string) ($row['created_at'] ?? ''),
         'updated_at' => (string) ($row['updated_at'] ?? ''),
         'record' => $record,
+    ];
+}
+
+function reg_list_household_offline_records(PDO $pdo): array
+{
+    $limit = max(1, min(100, (int) ($_GET['limit'] ?? 100)));
+    $afterId = max(0, (int) ($_GET['after_id'] ?? 0));
+    $recordYear = reg_parse_year_value($_GET['year'] ?? 0);
+    if (!reg_valid_record_year($recordYear)) {
+        reg_error(422, 'A valid household record year is required.');
+    }
+    $fetchLimit = $limit + 1;
+
+    $sql = 'SELECT `id`, `household_code`, `client_record_id`, `record_year`, `rollover_source_household_code`, `head_name`, `zone`, `member_count`, `source`,
+                   `row_version`, `head_data_json`, `members_data_json`, `record_data_json`, `created_at`, `updated_at`
+            FROM `registration_households`
+            WHERE `record_year` = :record_year
+              AND `id` > :after_id
+            ORDER BY `id` ASC
+            LIMIT ' . $fetchLimit;
+    $params = [
+        'record_year' => $recordYear,
+        'after_id' => $afterId,
+    ];
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $hasMore = count($rows) > $limit;
+    if ($hasMore) {
+        $rows = array_slice($rows, 0, $limit);
+    }
+    $nextAfterId = $afterId;
+
+    $items = [];
+    foreach ($rows as $row) {
+        if (is_array($row)) {
+            $items[] = reg_build_household_payload($pdo, $row);
+            $nextAfterId = max($nextAfterId, (int) ($row['id'] ?? 0));
+        }
+    }
+
+    return [
+        'items' => $items,
+        'count' => count($items),
+        'limit' => $limit,
+        'after_id' => $afterId,
+        'next_after_id' => $nextAfterId,
+        'has_more' => $hasMore,
     ];
 }
 
@@ -3092,6 +3141,9 @@ try {
 
         if ($action === 'list_households') {
             reg_respond(200, ['success' => true, 'data' => reg_list_households($pdo)]);
+        }
+        if ($action === 'list_household_offline_records') {
+            reg_respond(200, ['success' => true, 'data' => reg_list_household_offline_records($pdo)]);
         }
         if ($action === 'list_household_duplicate_index') {
             reg_respond(200, ['success' => true, 'data' => reg_list_household_duplicate_index($pdo)]);

@@ -40,7 +40,7 @@
     <!-- Value from default config. -->
     <string name="orientation" translatable="false">portrait</string>
     <!-- Value from default config. -->
-    <string name="providerAuthority" translatable="false">online.cabarianportal.registration.fileprovider</string>
+    <string name="providerAuthority" translatable="false">online.cabarianportal.registration.v5.fileprovider</string>
     <!-- Value from default config. -->
     <string name="webManifestUrl" translatable="false">https://cabarianportal.online/household-system/manifest.webmanifest</string>
 

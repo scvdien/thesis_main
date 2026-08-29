@@ -284,7 +284,8 @@
     recipientName: text(entry.recipientName),
     recipientBarangay: text(entry.recipientBarangay),
     releasedByRole: text(entry.releasedByRole),
-    releasedByName: text(entry.releasedByName)
+    releasedByName: text(entry.releasedByName),
+    releasedByUserId: text(entry.releasedByUserId)
   });
 
   const fallbackInventory = () => ([

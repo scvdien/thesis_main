@@ -235,7 +235,7 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
           <div class="resident-modal-heading">
             <span class="resident-modal-avatar" id="rdAvatar" role="img" aria-label="Default resident profile">
               <img id="rdAvatarImage" alt="" hidden>
-              <i class="bi bi-person-fill" id="rdAvatarFallback" aria-hidden="true"></i>
+              <i class="bi bi-person-fill resident-avatar-fallback" id="rdAvatarFallback" aria-hidden="true"></i>
             </span>
             <div>
               <h5 class="modal-title mb-1">Resident Details</h5>
@@ -360,6 +360,24 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
             </button>
           <?php endif; ?>
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESIDENT PHOTO PREVIEW MODAL -->
+  <div class="modal fade" id="residentPhotoPreviewModal" tabindex="-1" aria-labelledby="residentPhotoPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down resident-photo-preview-dialog">
+      <div class="modal-content modern-modal resident-photo-preview-content">
+        <div class="modal-header resident-photo-preview-header">
+          <div>
+            <h5 class="modal-title" id="residentPhotoPreviewModalLabel">Resident Photo</h5>
+            <p class="resident-photo-preview-meta">Resident profile</p>
+          </div>
+          <button type="button" class="btn-close resident-photo-preview-close" data-bs-dismiss="modal" aria-label="Close photo preview"></button>
+        </div>
+        <div class="modal-body resident-photo-preview-body">
+          <img id="residentPhotoPreviewImage" class="resident-photo-preview-image" alt="">
         </div>
       </div>
     </div>

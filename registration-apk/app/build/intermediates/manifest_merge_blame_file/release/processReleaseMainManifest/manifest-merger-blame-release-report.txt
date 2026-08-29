@@ -15,168 +15,173 @@
 15     limitations under the License.
 16-->
 17<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-18    package="online.cabarianportal.registration"
-19    android:versionCode="5"
-20    android:versionName="5" >
+18    package="online.cabarianportal.registration.v5"
+19    android:versionCode="7"
+20    android:versionName="7" >
 21
 22    <uses-sdk
 23        android:minSdkVersion="21"
-24        android:targetSdkVersion="36" />
+24        android:targetSdkVersion="35" />
 25
 26    <uses-permission android:name="android.permission.INTERNET" />
 26-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:19:5-67
 26-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:19:22-64
-27
-28    <permission
-28-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:22:5-24:47
-29        android:name="online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-29-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:23:9-81
-30        android:protectionLevel="signature" />
-30-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:24:9-44
-31
-32    <uses-permission android:name="online.cabarianportal.registration.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
-32-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:5-97
-32-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:22-94
-33
-34    <application
-34-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:21:5-65:19
-35        android:name="online.cabarianportal.registration.Application"
-35-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:22:9-35
-36        android:allowBackup="true"
+27    <uses-permission android:name="android.permission.CAMERA" />
+27-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:20:5-65
+27-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:20:22-62
+28
+29    <permission
+29-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:22:5-24:47
+30        android:name="online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+30-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:23:9-81
+31        android:protectionLevel="signature" />
+31-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:24:9-44
+32
+33    <uses-permission android:name="online.cabarianportal.registration.v5.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+33-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:5-97
+33-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:26:22-94
+34
+35    <application
+35-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:22:5-67:19
+36        android:name="online.cabarianportal.registration.Application"
 36-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:23:9-35
-37        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-37-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:28:18-86
-38        android:extractNativeLibs="true"
-39        android:icon="@mipmap/ic_launcher"
-39-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:24:9-43
-40        android:label="@string/appName"
-40-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:25:9-40
-41        android:supportsRtl="true"
-41-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:26:9-35
-42        android:theme="@android:style/Theme.Material.Light.NoActionBar"
-42-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:27:9-72
-43        android:usesCleartextTraffic="false" >
-43-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:28:9-45
-44        <provider
-44-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:30:9-38:20
-45            android:name="online.cabarianportal.registration.CameraFileProvider"
-45-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:31:13-47
-46            android:authorities="@string/providerAuthority"
-46-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:32:13-60
-47            android:exported="false"
-47-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:33:13-37
-48            android:grantUriPermissions="true" >
-48-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:34:13-47
-49            <meta-data
-49-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:35:13-37:53
-50                android:name="android.support.FILE_PROVIDER_PATHS"
-50-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:36:17-67
-51                android:resource="@xml/filepaths" />
-51-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:37:17-50
-52        </provider>
-53
-54        <activity
-54-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:40:9-64:20
-55            android:name="online.cabarianportal.registration.RegistrationActivity"
-55-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:40:19-55
-56            android:exported="true"
-56-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:13-36
-57            android:label="@string/appName"
-57-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:41:13-44
-58            android:screenOrientation="portrait"
-58-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:43:13-49
-59            android:taskAffinity="online.cabarianportal.registration.webview"
-59-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:44:13-78
-60            android:windowSoftInputMode="adjustResize" >
-60-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:45:13-55
-61            <intent-filter>
-61-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:47:13-50:29
-62                <action android:name="android.intent.action.MAIN" />
-62-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:48:17-69
-62-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:48:25-66
-63
-64                <category android:name="android.intent.category.LAUNCHER" />
-64-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:17-77
-64-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:27-74
-65            </intent-filter>
-66            <intent-filter android:autoVerify="true" >
-66-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:52:13-62:29
-66-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:52:28-53
-67                <action android:name="android.intent.action.VIEW" />
-67-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:53:17-68
-67-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:53:25-66
-68
-69                <category android:name="android.intent.category.DEFAULT" />
-69-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:17-76
-69-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:27-73
-70                <category android:name="android.intent.category.BROWSABLE" />
-70-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:17-77
-70-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:27-75
-71
-72                <data
-72-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:17-61:19
-73                    android:host="@string/hostName"
-73-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:21-52
-74                    android:pathPrefix="/household-system/"
-74-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:59:21-60
-75                    android:scheme="https" />
-75-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:23-45
-76            </intent-filter>
-77        </activity>
-78
-79        <provider
-79-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:24:9-32:20
-80            android:name="androidx.startup.InitializationProvider"
-80-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:25:13-67
-81            android:authorities="online.cabarianportal.registration.androidx-startup"
-81-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:26:13-68
-82            android:exported="false" >
-82-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:27:13-37
-83            <meta-data
-83-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:29:13-31:52
-84                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-84-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:30:17-85
-85                android:value="androidx.startup" />
-85-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:31:17-49
-86        </provider>
-87
-88        <receiver
-88-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:34:9-52:20
-89            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-89-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:35:13-76
-90            android:directBootAware="false"
-90-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:36:13-44
-91            android:enabled="true"
-91-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:37:13-35
-92            android:exported="true"
-92-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:38:13-36
-93            android:permission="android.permission.DUMP" >
-93-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:39:13-57
-94            <intent-filter>
-94-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:40:13-42:29
-95                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-95-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:41:17-91
-95-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:41:25-88
-96            </intent-filter>
-97            <intent-filter>
-97-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:43:13-45:29
-98                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-98-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:44:17-85
-98-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:44:25-82
-99            </intent-filter>
-100            <intent-filter>
-100-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:46:13-48:29
-101                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-101-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:47:17-88
-101-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:47:25-85
-102            </intent-filter>
-103            <intent-filter>
-103-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:49:13-51:29
-104                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-104-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:50:17-95
-104-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:50:25-92
-105            </intent-filter>
-106        </receiver>
-107    </application>
-108
-109</manifest>
+37        android:allowBackup="true"
+37-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:24:9-35
+38        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+38-->[androidx.core:core:1.13.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\a5429f7b20c607b890f08b5283ad4ec0\transformed\core-1.13.0\AndroidManifest.xml:28:18-86
+39        android:extractNativeLibs="true"
+40        android:icon="@mipmap/ic_launcher"
+40-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:25:9-43
+41        android:label="@string/appName"
+41-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:27:9-40
+42        android:roundIcon="@mipmap/ic_launcher"
+42-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:26:9-48
+43        android:supportsRtl="true"
+43-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:28:9-35
+44        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+44-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:29:9-72
+45        android:usesCleartextTraffic="false" >
+45-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:30:9-45
+46        <provider
+46-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:32:9-40:20
+47            android:name="online.cabarianportal.registration.CameraFileProvider"
+47-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:33:13-47
+48            android:authorities="@string/providerAuthority"
+48-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:34:13-60
+49            android:exported="false"
+49-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:35:13-37
+50            android:grantUriPermissions="true" >
+50-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:36:13-47
+51            <meta-data
+51-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:37:13-39:53
+52                android:name="android.support.FILE_PROVIDER_PATHS"
+52-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:38:17-67
+53                android:resource="@xml/filepaths" />
+53-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:39:17-50
+54        </provider>
+55
+56        <activity
+56-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:9-66:20
+57            android:name="online.cabarianportal.registration.RegistrationActivity"
+57-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:42:19-55
+58            android:exported="true"
+58-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:44:13-36
+59            android:label="@string/appName"
+59-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:43:13-44
+60            android:screenOrientation="portrait"
+60-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:45:13-49
+61            android:taskAffinity="online.cabarianportal.registration.webview"
+61-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:46:13-78
+62            android:windowSoftInputMode="adjustResize" >
+62-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:47:13-55
+63            <intent-filter>
+63-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:49:13-52:29
+64                <action android:name="android.intent.action.MAIN" />
+64-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:50:17-69
+64-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:50:25-66
+65
+66                <category android:name="android.intent.category.LAUNCHER" />
+66-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:51:17-77
+66-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:51:27-74
+67            </intent-filter>
+68            <intent-filter android:autoVerify="true" >
+68-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:13-64:29
+68-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:54:28-53
+69                <action android:name="android.intent.action.VIEW" />
+69-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:17-68
+69-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:55:25-66
+70
+71                <category android:name="android.intent.category.DEFAULT" />
+71-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:17-76
+71-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:56:27-73
+72                <category android:name="android.intent.category.BROWSABLE" />
+72-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:17-77
+72-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:57:27-75
+73
+74                <data
+74-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:58:17-63:19
+75                    android:host="@string/hostName"
+75-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:59:21-52
+76                    android:pathPrefix="/household-system/"
+76-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:61:21-60
+77                    android:scheme="https" />
+77-->C:\xampp\htdocs\thesis-main\registration-apk\app\src\main\AndroidManifest.xml:58:23-45
+78            </intent-filter>
+79        </activity>
+80
+81        <provider
+81-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:24:9-32:20
+82            android:name="androidx.startup.InitializationProvider"
+82-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:25:13-67
+83            android:authorities="online.cabarianportal.registration.v5.androidx-startup"
+83-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:26:13-68
+84            android:exported="false" >
+84-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:27:13-37
+85            <meta-data
+85-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:29:13-31:52
+86                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+86-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:30:17-85
+87                android:value="androidx.startup" />
+87-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:31:17-49
+88        </provider>
+89
+90        <receiver
+90-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:34:9-52:20
+91            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+91-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:35:13-76
+92            android:directBootAware="false"
+92-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:36:13-44
+93            android:enabled="true"
+93-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:37:13-35
+94            android:exported="true"
+94-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:38:13-36
+95            android:permission="android.permission.DUMP" >
+95-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:39:13-57
+96            <intent-filter>
+96-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:40:13-42:29
+97                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+97-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:41:17-91
+97-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:41:25-88
+98            </intent-filter>
+99            <intent-filter>
+99-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:43:13-45:29
+100                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+100-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:44:17-85
+100-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:44:25-82
+101            </intent-filter>
+102            <intent-filter>
+102-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:46:13-48:29
+103                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+103-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:47:17-88
+103-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:47:25-85
+104            </intent-filter>
+105            <intent-filter>
+105-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:49:13-51:29
+106                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+106-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:50:17-95
+106-->[androidx.profileinstaller:profileinstaller:1.3.0] C:\Users\judea\.gradle\caches\8.11.1\transforms\4db300f421d3cc6284a56bd30740041f\transformed\profileinstaller-1.3.0\AndroidManifest.xml:50:25-92
+107            </intent-filter>
+108        </receiver>
+109    </application>
+110
+111</manifest>

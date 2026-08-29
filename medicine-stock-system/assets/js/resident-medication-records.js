@@ -137,6 +137,7 @@
     recipientBarangay: text(entry.recipientBarangay),
     releasedByRole: text(entry.releasedByRole),
     releasedByName: text(entry.releasedByName),
+    releasedByUserId: text(entry.releasedByUserId),
     user: text(entry.user)
   });
 

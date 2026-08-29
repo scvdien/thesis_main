@@ -45,7 +45,9 @@
     }
 
     heartbeatTimer = window.setInterval(() => {
-      void sendHeartbeat();
+      if (!document.hidden) {
+        void sendHeartbeat();
+      }
     }, HEARTBEAT_INTERVAL_MS);
   };
 

@@ -6,6 +6,7 @@
 /medicine-stock-system/db.runtime.php
 /*.zip
 /registration-apk/hs_err_pid*.log
+/registration-apk/local.properties
 /private-storage/*
 !/private-storage/backups/
 !/private-storage/tmp/

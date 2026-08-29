@@ -15,7 +15,6 @@
      limitations under the License.
 -->
 <resources>
-  <string name="webview_loading">Loading Cabarian Registration...</string>
   <string name="webview_error_title">Unable to Open Registration</string>
   <string name="webview_startup_error_title">Kailangang Ayusin ang System WebView</string>
   <string name="webview_startup_error_message">I-enable o i-update ang Android System WebView sa phone settings, pagkatapos ay pindutin ang Retry.</string>

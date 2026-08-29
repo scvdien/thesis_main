@@ -1,5 +1,5 @@
 {
-  "packageId": "online.cabarianportal.registration",
+  "packageId": "online.cabarianportal.registration.v5",
   "host": "cabarianportal.online",
   "name": "Cabarian Registration",
   "launcherName": "Registration",
@@ -13,15 +13,15 @@
   "backgroundColor": "#F6F8FB",
   "enableNotifications": true,
   "startUrl": "/household-system/registration.php",
-  "iconUrl": "https://cabarianportal.online/household-system/assets/img/barangay-cabarian-logo.png",
-  "maskableIconUrl": "https://cabarianportal.online/household-system/assets/img/barangay-cabarian-logo.png",
+  "iconUrl": "https://cabarianportal.online/household-system/assets/img/registration-app-icon-512.png",
+  "maskableIconUrl": "https://cabarianportal.online/household-system/assets/img/registration-app-icon-maskable-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "C:\\Users\\judea\\cabarian-registration.keystore",
     "alias": "cabarian-registration"
   },
-  "appVersionName": "5",
-  "appVersionCode": 5,
+  "appVersionName": "7",
+  "appVersionCode": 7,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://cabarianportal.online/household-system/manifest.webmanifest",
@@ -48,5 +48,5 @@
   "fileHandlers": [],
   "launchHandlerClientMode": "",
   "displayOverride": [],
-  "appVersion": "5"
+  "appVersion": "7"
 }
