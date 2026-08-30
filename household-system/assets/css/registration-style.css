@@ -48,6 +48,11 @@ h1,h2,h3,h4,h5,h6{
   position:sticky;
   top:24px;
   height:calc(100vh - 48px);
+  height:calc(100svh - 48px);
+  height:calc(100dvh - 48px);
+  max-height:calc(100vh - 48px);
+  max-height:calc(100svh - 48px);
+  max-height:calc(100dvh - 48px);
   background:linear-gradient(160deg, #0f4c6b 0%, #0f6a88 55%, #0b8f8b 100%);
   color:#e6f7f6;
   border-radius:22px;
@@ -56,8 +61,8 @@ h1,h2,h3,h4,h5,h6{
   display:flex;
   flex-direction:column;
   gap:18px;
-  overflow:auto;
-  -webkit-overflow-scrolling:touch;
+  overflow:hidden;
+  overscroll-behavior-y:contain;
 }
 
 .sidebar-brand{
@@ -280,6 +285,9 @@ h1,h2,h3,h4,h5,h6{
   min-width:0;
 }
 .content-header{
+  position:sticky;
+  top:0;
+  z-index:30;
   background:var(--surface);
   border-radius:18px;
   padding:18px 22px;
@@ -520,10 +528,23 @@ body.sidebar-open{
   background:#f8fafc;
   min-height:44px;
 }
+.form-select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23475569' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 0.85rem center;
+  background-size:14px 14px;
+  padding-right:2.5rem;
+  -webkit-appearance:none;
+  -moz-appearance:none;
+  appearance:none;
+}
 .form-control:focus, .form-select:focus{
   border-color:var(--accent);
   box-shadow:0 0 0 4px rgba(15,76,107,0.14);
-  background:#fff;
+  background-color:#fff;
+}
+.form-select:focus{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%230f4c6b' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708'/%3E%3C/svg%3E");
 }
 
 .member-info-body{
@@ -1951,7 +1972,7 @@ footer.page-footer{
   }
   .content-header{
     position:sticky;
-    top:calc(env(safe-area-inset-top, 0px) + 8px);
+    top:env(safe-area-inset-top, 0px);
     z-index:1030;
     flex-direction:column;
     align-items:flex-start;
@@ -2178,9 +2199,12 @@ footer.page-footer{
     min-height:50px;
     padding:0.7rem 0.85rem;
     border-radius:11px;
-    background:#fff;
+    background-color:#fff;
     font-size:16px;
     line-height:1.35;
+  }
+  #censusForm .form-select{
+    padding-right:2.5rem;
   }
   #censusForm .form-control[readonly]{
     background:#eef2f7;

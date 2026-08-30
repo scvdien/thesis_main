@@ -226,7 +226,18 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
           <div class="col-md-3"><label class="form-label required">First Name</label><input type="text" class="form-control" name="first_name" required></div>
           <div class="col-md-3"><label class="form-label">Middle Name</label><input type="text" class="form-control" name="middle_name"></div>
           <div class="col-md-3"><label class="form-label required">Last Name</label><input type="text" class="form-control" name="last_name" required></div>
-          <div class="col-md-3"><label class="form-label">Extension Name</label><input type="text" class="form-control" name="extension_name" placeholder="e.g., Jr., Sr., III"></div>
+          <div class="col-md-3">
+            <label class="form-label">Extension Name</label>
+            <select class="form-select" name="extension_name">
+              <option value="">None</option>
+              <option>Jr.</option>
+              <option>Sr.</option>
+              <option>II</option>
+              <option>III</option>
+              <option>IV</option>
+              <option>V</option>
+            </select>
+          </div>
           <div class="col-md-3"><label class="form-label required">Birthday</label><input type="date" class="form-control" name="birthday" id="birthday" required></div>
           <div class="col-md-3"><label class="form-label required">Sex/Gender</label>
             <select class="form-select" name="sex" id="sex" required>
@@ -239,11 +250,59 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
               <option>Single</option><option>Married</option><option>Widowed</option><option>Separated</option>
             </select>
           </div>
-                    <div class="col-md-3"><label class="form-label">Nationality/Citizenship</label><input type="text" class="form-control" name="citizenship" value="Filipino"></div>
-          <div class="col-md-3"><label class="form-label">Religion</label><input type="text" class="form-control" name="religion"></div>
-          <div class="col-md-3"><label class="form-label">Blood Type</label><input type="text" class="form-control" name="blood_type"></div>
-          <div class="col-md-2"><label class="form-label">Height (cm)</label><input type="number" class="form-control" name="height"></div>
-          <div class="col-md-2"><label class="form-label">Weight (kg)</label><input type="number" class="form-control" name="weight"></div>
+          <div class="col-md-3">
+            <label class="form-label">Nationality/Citizenship</label>
+            <input type="text" class="form-control" name="citizenship" list="citizenship_options" value="Filipino">
+            <datalist id="citizenship_options">
+              <option value="Filipino"></option>
+              <option value="Dual Citizen"></option>
+              <option value="Naturalized Filipino"></option>
+              <option value="American"></option>
+              <option value="Chinese"></option>
+              <option value="Japanese"></option>
+              <option value="Korean"></option>
+              <option value="Indian"></option>
+              <option value="Canadian"></option>
+              <option value="Australian"></option>
+              <option value="British"></option>
+              <option value="Other"></option>
+            </datalist>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Religion</label>
+            <select class="form-select" name="religion">
+              <option value="">Select</option>
+              <option>Roman Catholic</option>
+              <option>Iglesia ni Cristo</option>
+              <option>Islam</option>
+              <option>Born Again Christian</option>
+              <option>Protestant</option>
+              <option>Seventh-day Adventist</option>
+              <option>Jehovah's Witness</option>
+              <option>Philippine Independent Church</option>
+              <option>Buddhism</option>
+              <option>Hinduism</option>
+              <option>None</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Blood Type</label>
+            <select class="form-select" name="blood_type">
+              <option value="">Select</option>
+              <option>Unknown</option>
+              <option>A+</option>
+              <option>A-</option>
+              <option>B+</option>
+              <option>B-</option>
+              <option>AB+</option>
+              <option>AB-</option>
+              <option>O+</option>
+              <option>O-</option>
+            </select>
+          </div>
+          <div class="col-md-2"><label class="form-label">Height (cm)</label><input type="number" class="form-control positive-num" name="height" min="0" step="any" placeholder="cm"></div>
+          <div class="col-md-2"><label class="form-label">Weight (kg)</label><input type="number" class="form-control positive-num" name="weight" min="0" step="any" placeholder="kg"></div>
           <div class="col-md-2"><label class="form-label">Age</label><input type="number" class="form-control" name="age" id="age" readonly></div>
 
           <div class="col-md-2" id="pregnantWrap" style="display:none;">
@@ -268,9 +327,27 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <div class="card-header section-header">B. Contact & Location</div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4"><label class="form-label required">Contact Number</label><input type="tel" class="form-control" name="contact" inputmode="numeric" minlength="11" maxlength="11" pattern="[0-9]{11}" title="Contact number must contain exactly 11 digits." required></div>
+          <div class="col-md-4">
+            <label class="form-label required">Contact Number</label>
+            <div class="input-group">
+              <span class="input-group-text" style="border-radius:12px 0 0 12px;background:#eef2f7;font-weight:600;font-size:0.85rem;">+63</span>
+              <input type="tel" class="form-control" name="contact" id="contactNumber" data-mask="999-999-9999" placeholder="9XX-XXX-XXXX" inputmode="numeric" maxlength="12" required style="border-radius:0 12px 12px 0;">
+            </div>
+          </div>
           <div class="col-md-4"><label class="form-label required">Complete Address</label><input type="text" class="form-control" name="address" required></div>
-          <div class="col-md-4"><label class="form-label required">Zone</label><input type="text" class="form-control" name="zone" required></div>
+          <div class="col-md-4">
+            <label class="form-label required">Zone</label>
+            <select class="form-select" name="zone" required>
+              <option value="">Select</option>
+              <option>Zone 1</option>
+              <option>Zone 2</option>
+              <option>Zone 3</option>
+              <option>Zone 4</option>
+              <option>Zone 5</option>
+              <option>Zone 6</option>
+              <option>Zone 7</option>
+            </select>
+          </div>
           <div class="col-md-4"><label class="form-label">Barangay</label><input type="text" class="form-control" name="barangay"></div>
           <div class="col-md-4"><label class="form-label">City/Municipality</label><input type="text" class="form-control" name="city"></div>
           <div class="col-md-4"><label class="form-label">Province</label><input type="text" class="form-control" name="province"></div>
@@ -283,7 +360,19 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <div class="card-header section-header">C. Education</div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4"><label class="form-label">Educational Attainment</label><input type="text" class="form-control" name="education"></div>
+          <div class="col-md-4">
+            <label class="form-label required">Educational Attainment</label>
+            <select class="form-select" name="education" required>
+              <option value="">Select</option>
+              <option>No Formal Education</option>
+              <option>Elementary</option>
+              <option>Junior High School</option>
+              <option>Senior High School</option>
+              <option>Vocational/Technical</option>
+              <option>College</option>
+              <option>Postgraduate</option>
+            </select>
+          </div>
           <div class="col-md-4"><label class="form-label">Degree/Course</label><input type="text" class="form-control" name="degree"></div>
           <div class="col-md-4"><label class="form-label">School Name</label><input type="text" class="form-control" name="school_name"></div>
           <div class="col-md-3"><label class="form-label">School Type</label>
@@ -301,12 +390,54 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <div class="card-header section-header">D. Employment</div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-3"><label class="form-label">Occupation</label><input type="text" class="form-control" name="occupation"></div>
-          <div class="col-md-3"><label class="form-label">Employment Status</label>
-            <select class="form-select" name="employment_status"><option>Employed</option><option>Unemployed</option><option>Self-employed</option></select>
+          <div class="col-md-3">
+            <label class="form-label required">Occupation</label>
+            <input type="text" class="form-control" name="occupation" list="occupation_options" placeholder="Select or type" required>
+            <datalist id="occupation_options">
+              <option value="Farmer"></option>
+              <option value="Fisherfolk"></option>
+              <option value="Teacher"></option>
+              <option value="Government Employee"></option>
+              <option value="Private Employee"></option>
+              <option value="Business Owner"></option>
+              <option value="Vendor"></option>
+              <option value="Driver"></option>
+              <option value="Construction Worker"></option>
+              <option value="Skilled Worker"></option>
+              <option value="Healthcare Worker"></option>
+              <option value="Overseas Filipino Worker (OFW)"></option>
+              <option value="Homemaker"></option>
+              <option value="Student"></option>
+              <option value="Retired"></option>
+              <option value="Unemployed"></option>
+              <option value="Other"></option>
+            </datalist>
           </div>
-          <div class="col-md-3"><label class="form-label">Type of Work</label>
-            <select class="form-select" name="work_type"><option>Government</option><option>Private</option><option>Freelance</option></select>
+          <div class="col-md-3"><label class="form-label required">Employment Status</label>
+            <select class="form-select" name="employment_status" required>
+              <option>Employed</option>
+              <option>Unemployed</option>
+              <option>Self-employed</option>
+              <option>Student</option>
+              <option>Homemaker</option>
+              <option>Retired</option>
+              <option>Seasonal Worker</option>
+              <option>Unable to Work</option>
+            </select>
+          </div>
+          <div class="col-md-3"><label class="form-label required">Type of Work</label>
+            <select class="form-select" name="work_type" required>
+              <option>Government</option>
+              <option>Private</option>
+              <option>Self-employed</option>
+              <option>Freelance</option>
+              <option>Contractual</option>
+              <option>Seasonal</option>
+              <option>Agricultural</option>
+              <option>Informal Sector</option>
+              <option>Overseas Filipino Worker (OFW)</option>
+              <option>Not Applicable</option>
+            </select>
           </div>
           <div class="col-md-3"><label class="form-label">Monthly Income</label><input type="text" class="form-control" name="monthly_income" placeholder="optional"></div>
         </div>
@@ -315,7 +446,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 
     <!-- E. Social Welfare -->
     <div class="card section-card mb-4">
-      <div class="card-header section-header">E. Social Welfare</div>
+      <div class="card-header section-header d-flex justify-content-between align-items-center">E. Social Welfare <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-md-3"><label class="form-label">4Ps Member?</label><select class="form-select" name="4ps"><option>No</option><option>Yes</option></select></div>
@@ -328,7 +459,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 
     <!-- F. Voter Info -->
     <div class="card section-card mb-4">
-      <div class="card-header section-header">F. Voter Information</div>
+      <div class="card-header section-header d-flex justify-content-between align-items-center">F. Voter Information <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-md-6"><label class="form-label">Registered Voter?</label><select class="form-select" name="voter"><option>No</option><option>Yes</option></select></div>
@@ -339,27 +470,47 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 
     <!-- G. Government IDs -->
     <div class="card section-card mb-4">
-      <div class="card-header section-header">G. Government IDs</div>
+      <div class="card-header section-header d-flex justify-content-between align-items-center">G. Government IDs <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4"><label class="form-label">SSS Number</label><input type="text" class="form-control" name="sss"></div>
-          <div class="col-md-4"><label class="form-label">PhilHealth Number</label><input type="text" class="form-control" name="philhealth"></div>
-          <div class="col-md-4"><label class="form-label">GSIS Number</label><input type="text" class="form-control" name="gsis"></div>
-          <div class="col-md-3"><label class="form-label">TIN Number</label><input type="text" class="form-control" name="tin"></div>
-          <div class="col-md-3"><label class="form-label">PhilSys National ID</label><input type="text" class="form-control" name="philid"></div>
-          <div class="col-md-3"><label class="form-label">Driver's License</label><input type="text" class="form-control" name="driver_license"></div>
-          <div class="col-md-3"><label class="form-label">Passport Number</label><input type="text" class="form-control" name="passport"></div>
+          <div class="col-md-4"><label class="form-label">SSS Number</label><input type="text" class="form-control gov-id-mask" name="sss" data-mask="99-9999999-9" placeholder="00-0000000-0" maxlength="12" inputmode="numeric"></div>
+          <div class="col-md-4"><label class="form-label">PhilHealth Number</label><input type="text" class="form-control gov-id-mask" name="philhealth" data-mask="99-999999999-9" placeholder="00-000000000-0" maxlength="14" inputmode="numeric"></div>
+          <div class="col-md-4"><label class="form-label">GSIS Number</label><input type="text" class="form-control gov-id-mask" name="gsis" data-mask="99999999999" placeholder="00000000000" maxlength="11" inputmode="numeric"></div>
+          <div class="col-md-3"><label class="form-label">TIN Number</label><input type="text" class="form-control gov-id-mask" name="tin" data-mask="999-999-999-999" placeholder="000-000-000-000" maxlength="15" inputmode="numeric"></div>
+          <div class="col-md-3"><label class="form-label">PhilSys National ID</label><input type="text" class="form-control gov-id-mask" name="philid" data-mask="9999-9999-9999-9999" placeholder="0000-0000-0000-0000" maxlength="19" inputmode="numeric"></div>
+          <div class="col-md-3"><label class="form-label">Driver's License</label><input type="text" class="form-control" name="driver_license" placeholder="XXX-XX-XXXXXX" maxlength="14"></div>
+          <div class="col-md-3"><label class="form-label">Passport Number</label><input type="text" class="form-control" name="passport" placeholder="P1234567A" maxlength="10" style="text-transform:uppercase;"></div>
         </div>
       </div>
     </div>
 
-    <!-- H. Household Data -->
     <div class="card section-card mb-4">
       <div class="card-header section-header">H. Household Data</div>
       <div class="card-body">
         <div class="row g-3 household-data-primary-row">
           <div class="col-md-3"><label class="form-label required">No. of Household Members</label><input type="number" class="form-control" name="num_members" required readonly></div>
-          <div class="col-md-3"><label class="form-label">Relationship to Head</label><input type="text" class="form-control" name="relation_to_head"></div>
+          <div class="col-md-3">
+            <label class="form-label required">Relationship to Head</label>
+            <select class="form-select" name="relation_to_head" required>
+              <option value="">Select</option>
+              <option>Head</option>
+              <option>Spouse</option>
+              <option>Father</option>
+              <option>Mother</option>
+              <option>Son</option>
+              <option>Daughter</option>
+              <option>Brother</option>
+              <option>Sister</option>
+              <option>Grandfather</option>
+              <option>Grandmother</option>
+              <option>Grandson</option>
+              <option>Granddaughter</option>
+              <option>In-law</option>
+              <option>Other Relative</option>
+              <option>Non-relative</option>
+              <option>Other</option>
+            </select>
+          </div>
           <div class="col-md-3"><label class="form-label">No. of Children</label><input type="number" class="form-control" name="num_children" readonly></div>
           <div class="col-md-3"><label class="form-label">Marital Partner Name</label><input type="text" class="form-control" name="partner_name" placeholder="optional"></div>
         </div>
@@ -368,11 +519,36 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 
     <!-- I. Housing & Utilities -->
     <div class="card section-card mb-4">
-      <div class="card-header section-header">I. Housing & Utilities</div>
+      <div class="card-header section-header d-flex justify-content-between align-items-center">I. Housing &amp; Utilities <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4"><label class="form-label">House Ownership</label><select class="form-select" name="ownership"><option>Owned</option><option>Rented</option></select></div>
-          <div class="col-md-4"><label class="form-label">House Type</label><select class="form-select" name="house_type"><option value="" selected>Select or type</option><option value="Concrete">Concrete</option><option value="Wood">Wood</option><option value="Mixed">Mixed</option></select></div>
+          <div class="col-md-4">
+            <label class="form-label">House Ownership</label>
+            <select class="form-select" name="ownership">
+              <option>Owned</option>
+              <option>Rented</option>
+              <option>Rent-free</option>
+              <option>Shared/Co-owned</option>
+              <option>Government-provided</option>
+              <option>Employer-provided</option>
+              <option>Informal Settler</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">House Type</label>
+            <select class="form-select" name="house_type">
+              <option value="" selected>Select</option>
+              <option>Concrete</option>
+              <option>Semi-concrete</option>
+              <option>Wood</option>
+              <option>Mixed</option>
+              <option>Makeshift/Light Materials</option>
+              <option>Apartment/Condominium</option>
+              <option>Duplex</option>
+              <option>Other</option>
+            </select>
+          </div>
           <div class="col-md-4">
             <label class="form-label">Toilet Type</label>
             <input class="form-control" list="toilet_options" name="toilet" id="toilet" placeholder="Select or type">
@@ -757,6 +933,68 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
 <script src="assets/js/registration-photo-storage.js?v=<?= htmlspecialchars($registrationPhotoStorageVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/photo-capture.js?v=<?= htmlspecialchars($photoCaptureVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
 <script src="assets/js/registration-scripts.js?v=<?= htmlspecialchars($registrationScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
+<script>
+(function(){
+  document.querySelectorAll('.gov-id-mask').forEach(function(el){
+    var mask=el.getAttribute('data-mask')||'';
+    if(!mask)return;
+    el.addEventListener('input',function(){
+      var raw=el.value.replace(/\D/g,'');
+      if(!raw){el.value='';return;}
+      var out='',ri=0;
+      for(var i=0;i<mask.length&&ri<raw.length;i++){
+        if(mask[i]==='-'){out+='-';}
+        else{out+=raw[ri];ri++;}
+      }
+      el.value=out;
+    });
+  });
+  var contact=document.getElementById('contactNumber');
+  if(contact){
+    contact.addEventListener('keydown',function(e){
+      var allowed=['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Home','End'];
+      if(allowed.indexOf(e.key)!==-1)return;
+      if(e.ctrlKey||e.metaKey)return;
+      if(!/^\d$/.test(e.key)){e.preventDefault();return;}
+      var raw=contact.value.replace(/\D/g,'');
+      if(raw.length===0&&e.key!=='9'){e.preventDefault();return;}
+      if(raw.length>=10){e.preventDefault();return;}
+    });
+    contact.addEventListener('input',function(){
+      var raw=contact.value.replace(/\D/g,'');
+      if(raw.length>0&&raw[0]!=='9')raw='';
+      if(raw.length>10)raw=raw.substring(0,10);
+      if(!raw){contact.value='';return;}
+      var out=raw.substring(0,3);
+      if(raw.length>3)out+='-'+raw.substring(3,6);
+      if(raw.length>6)out+='-'+raw.substring(6,10);
+      contact.value=out;
+    });
+    contact.addEventListener('paste',function(e){
+      e.preventDefault();
+      var text=(e.clipboardData||window.clipboardData).getData('text');
+      var raw=text.replace(/\D/g,'');
+      if(raw.length>0&&raw[0]==='0')raw=raw.substring(1);
+      if(raw.length>0&&raw[0]!=='9')return;
+      if(raw.length>10)raw=raw.substring(0,10);
+      if(!raw)return;
+      var out=raw.substring(0,3);
+      if(raw.length>3)out+='-'+raw.substring(3,6);
+      if(raw.length>6)out+='-'+raw.substring(6,10);
+      contact.value=out;
+      contact.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+  }
+  document.querySelectorAll('.positive-num').forEach(function(el){
+    el.addEventListener('keydown',function(e){
+      if(e.key==='-'||e.key==='e'||e.key==='E'){e.preventDefault();}
+    });
+    el.addEventListener('input',function(){
+      if(this.value!==''&&parseFloat(this.value)<0){this.value='';}
+    });
+  });
+})();
+</script>
 
 </body>
 </html>

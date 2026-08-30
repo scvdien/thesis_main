@@ -811,6 +811,47 @@
         input.value = normalizeZoneLabel(value);
         return;
       }
+      if (id === "contact") {
+        let rawContact = String(value || "").replace(/\D/g, "");
+        if (rawContact.startsWith("0")) rawContact = rawContact.substring(1);
+        if (rawContact.startsWith("639")) rawContact = rawContact.substring(2);
+        if (rawContact.length > 10) rawContact = rawContact.substring(0, 10);
+        if (rawContact.length > 0) {
+          let formatted = rawContact.substring(0, 3);
+          if (rawContact.length > 3) formatted += "-" + rawContact.substring(3, 6);
+          if (rawContact.length > 6) formatted += "-" + rawContact.substring(6, 10);
+          input.value = formatted;
+        } else {
+          input.value = "";
+        }
+        return;
+      }
+      if (input.classList.contains("gov-id-mask") && input.dataset.mask) {
+        const mask = input.dataset.mask;
+        const rawDigits = String(value || "").replace(/\D/g, "");
+        if (!rawDigits) {
+          input.value = "";
+          return;
+        }
+        let out = "", ri = 0;
+        for (let i = 0; i < mask.length && ri < rawDigits.length; i++) {
+          if (mask[i] === "-") {
+            out += "-";
+          } else {
+            out += rawDigits[ri];
+            ri++;
+          }
+        }
+        input.value = out;
+        return;
+      }
+      if (input.tagName === "SELECT" && value !== "" && !Array.from(input.options).some((option) => option.value === String(value))) {
+        const legacyOption = document.createElement("option");
+        legacyOption.value = String(value);
+        legacyOption.textContent = `${String(value)} (Existing)`;
+        legacyOption.dataset.legacyValue = "true";
+        input.appendChild(legacyOption);
+      }
       input.value = value;
     };
 
@@ -1274,14 +1315,25 @@
       const requiredFields = [
         { id: "first_name", label: "First Name" },
         { id: "last_name", label: "Last Name" },
-        { id: "sex", label: "Sex/Gender" }
+        { id: "birthday", label: "Birthday" },
+        { id: "sex", label: "Sex/Gender" },
+        { id: "civil_status", label: "Civil Status" },
+        { id: "relation_to_head", label: "Relationship to Head" },
+        { id: "contact", label: "Contact Number" },
+        { id: "address", label: "Complete Address" },
+        { id: "zone", label: "Zone" },
+        { id: "education", label: "Educational Attainment" },
+        { id: "occupation", label: "Occupation" },
+        { id: "employment_status", label: "Employment Status" },
+        { id: "work_type", label: "Type of Work" }
       ];
 
       for (const field of requiredFields) {
-        const value = document.getElementById(field.id).value.trim();
+        const inputEl = document.getElementById(field.id);
+        const value = inputEl ? inputEl.value.trim() : "";
         if (!value) {
           alert(`Please enter ${field.label}.`);
-          document.getElementById(field.id).focus();
+          inputEl?.focus();
           return;
         }
       }

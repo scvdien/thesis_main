@@ -252,6 +252,21 @@ function reportYearValue(array $report): int
     return parseSelectedYear($report['year'] ?? null);
 }
 
+/**
+ * @param array<string, mixed> $report
+ */
+function reportDateAccomplishedLabel(array $report): string
+{
+    $label = text($report['date_accomplished'] ?? '', 80);
+    if ($label !== '') {
+        return $label;
+    }
+
+    return str_starts_with((string) ($report['semester_label'] ?? ''), '1ST')
+        ? 'June 30, ' . reportYearValue($report)
+        : 'December 31, ' . reportYearValue($report);
+}
+
 function envValue(array $keys, string $default = ''): string
 {
     if (function_exists('auth_env')) {
@@ -1293,6 +1308,11 @@ function buildOfficeReportData(int $year, array $profile, array $metrics): array
         'Employed' => mapCountValue($employment, ['Employed', 'employed']),
         'Unemployed' => mapCountValue($employment, ['Unemployed', 'unemployed']),
         'Self-Employed' => mapCountValue($employment, ['Self-Employed', 'self employed', 'self-employed']),
+        'Student' => mapCountValue($employment, ['Student', 'student']),
+        'Homemaker' => mapCountValue($employment, ['Homemaker', 'homemaker']),
+        'Retired' => mapCountValue($employment, ['Retired', 'retired']),
+        'Seasonal Worker' => mapCountValue($employment, ['Seasonal Worker', 'seasonal worker']),
+        'Unable to Work' => mapCountValue($employment, ['Unable to Work', 'unable to work']),
     ];
 
     /** @var array<string, int> $educationCounts */
@@ -1593,6 +1613,9 @@ function buildRbiFormCReportData(array $analytics, int $year, array $profile, ar
     $periodTimestamp = $periodText !== '' ? strtotime($periodText) : false;
     $periodMonth = $periodTimestamp !== false ? (int) date('n', $periodTimestamp) : (int) date('n');
     $semester = $periodMonth <= 6 ? '1ST Semester' : '2ND Semester';
+    $dateAccomplished = $periodTimestamp !== false
+        ? date('F t, Y', $periodTimestamp)
+        : (($semester === '1ST Semester' ? 'June 30, ' : 'December 31, ') . $year);
     $ageRows = $makeRows($ageLabels, $ageDistribution);
     $sectorRows = $makeRows($sectorLabels, $sectorDistribution);
     $householdRows = [];
@@ -1625,6 +1648,7 @@ function buildRbiFormCReportData(array $analytics, int $year, array $profile, ar
         'year' => $year,
         'title' => 'ANNUAL MONITORING REPORT',
         'semester_label' => $semester . ' of CY ' . $year,
+        'date_accomplished' => $dateAccomplished,
         'region' => $region,
         'province' => $province,
         'city' => $city,
@@ -2368,11 +2392,7 @@ function renderRbiFormCWithFpdf(array $report, array $profile): string
     $pdf->SetXY($rightX, $lineY + 15);
     $pdf->Cell($columnWidth, 5, '(Signature over Printed Name)', 0, 1, 'C');
 
-    $dateLabel = $blankTemplate
-        ? ''
-        : (str_starts_with((string) ($report['semester_label'] ?? ''), '1ST')
-            ? 'June 30, ' . reportYearValue($report)
-            : 'December 31, ' . reportYearValue($report));
+    $dateLabel = $blankTemplate ? '' : reportDateAccomplishedLabel($report);
     $pdf->SetXY(17, $lineY + 28);
     $pdf->SetFont('Arial', 'B', 8.5);
     $pdf->Cell(80, 5, 'Date Accomplished:', 0, 1, 'L');
@@ -2619,9 +2639,7 @@ function outputRbiFormCSpreadsheet(
     $sheet->mergeCells("D{$row}:E{$row}");
     $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
     $row += 2;
-    $dateLabel = str_starts_with((string) ($report['semester_label'] ?? ''), '1ST')
-        ? 'June 30, ' . reportYearValue($report)
-        : 'December 31, ' . reportYearValue($report);
+    $dateLabel = reportDateAccomplishedLabel($report);
     $sheet->setCellValue("A{$row}", 'Date Accomplished:');
     $sheet->getStyle("A{$row}")->getFont()->setBold(true);
     $row++;

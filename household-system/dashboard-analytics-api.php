@@ -152,7 +152,7 @@ function dash_normalize_education(mixed $value, bool $isDropout): string
     if ($isDropout) {
         return 'Not Finished';
     }
-    if ($normalized === '' || $normalized === 'none' || $normalized === 'no schooling') {
+    if ($normalized === '' || $normalized === 'none' || $normalized === 'no schooling' || $normalized === 'no formal education') {
         return 'No Schooling';
     }
     if (str_contains($normalized, 'elementary') || str_contains($normalized, 'primary')) {
@@ -170,6 +170,9 @@ function dash_normalize_education(mixed $value, bool $isDropout): string
         str_contains($normalized, 'college')
         || str_contains($normalized, 'bachelor')
         || str_contains($normalized, 'undergraduate')
+        || str_contains($normalized, 'postgraduate')
+        || str_contains($normalized, 'master')
+        || str_contains($normalized, 'doctorate')
         || preg_match('/\bbs\b|\bba\b/', $normalized) === 1
     ) {
         return 'College';
@@ -191,6 +194,18 @@ function dash_normalize_employment(mixed $value): string
     }
     if (str_contains($normalized, 'retired') || str_contains($normalized, 'pension')) {
         return 'Retired';
+    }
+    if (str_contains($normalized, 'student')) {
+        return 'Student';
+    }
+    if (str_contains($normalized, 'homemaker') || str_contains($normalized, 'housewife') || str_contains($normalized, 'househusband')) {
+        return 'Homemaker';
+    }
+    if (str_contains($normalized, 'seasonal')) {
+        return 'Seasonal Worker';
+    }
+    if (str_contains($normalized, 'unable to work')) {
+        return 'Unable to Work';
     }
     if (str_contains($normalized, 'employ')) {
         return 'Employed';

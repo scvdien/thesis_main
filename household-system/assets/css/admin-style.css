@@ -51,6 +51,8 @@ h1,h2,h3,h4,h5,h6{
 
 #sidebar{
   width: var(--sidebar-w);
+  flex:0 0 auto;
+  align-self:flex-start;
   background: linear-gradient(160deg, #0c3958 0%, #0f4c6b 60%, #12738a 100%);
   border-right: 1px solid rgba(255,255,255,0.12);
   padding: 20px 16px;
@@ -60,7 +62,13 @@ h1,h2,h3,h4,h5,h6{
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
+  height: 100svh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100svh;
+  max-height: 100dvh;
+  overflow:hidden;
+  overscroll-behavior-y:contain;
   display:flex;
   flex-direction:column;
 }
@@ -190,6 +198,9 @@ h1,h2,h3,h4,h5,h6{
 }
 
 .topbar{
+  position:sticky;
+  top:0;
+  z-index:1020;
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -684,6 +695,9 @@ footer.footer {
   }
 }
 @media(max-width:992px){
+  .topbar{
+    top:env(safe-area-inset-top, 0px);
+  }
   #sidebar{
     position:fixed;
     top:0;
@@ -729,7 +743,10 @@ footer.footer {
 @media(max-width:520px){
   #main{ padding:18px; }
   .stat-card{ padding:14px; }
-  .topbar{ padding:12px; }
+  .topbar{
+    top:env(safe-area-inset-top, 0px);
+    padding:12px;
+  }
 }
 
 /* ===== Admin reports module ===== */

@@ -175,6 +175,10 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
                   <span class="k"><i class="bi bi-heart" aria-hidden="true"></i> Civil Status</span>
                   <span class="v" id="hvHeadCivil">-</span>
                 </div>
+                <div class="hv-profile-stat">
+                  <span class="k"><i class="bi bi-diagram-3" aria-hidden="true"></i> Relationship</span>
+                  <span class="v" id="hvHeadRelationship">-</span>
+                </div>
               </div>
             </aside>
 

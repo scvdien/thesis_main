@@ -642,7 +642,7 @@ const mapApiHouseholdToViewRecord = (payload) => {
     },
     household: {
       numMembers: memberCount,
-      relationToHead: head.relation_to_head,
+      relationToHead: toTextOrEmpty(head.relation_to_head) || 'Head',
       numChildren: head.num_children,
       partnerName: head.partner_name
     },
@@ -1123,6 +1123,7 @@ const hydratePage = (record) => {
   setText('hvHeadAge', head.age);
   setText('hvHeadSex', head.sex);
   setText('hvHeadCivil', head.civilStatus);
+  setText('hvHeadRelationship', hh.relationToHead || 'Head');
   setText('hvHeadBirthday', head.birthday);
   setText('hvHeadAgeInPersonal', head.age);
   setText('hvHeadCitizenship', head.citizenship);

@@ -1339,6 +1339,47 @@ document.addEventListener("DOMContentLoaded", async () => {
         el.value = normalizeZoneLabel(value);
         return;
       }
+      if (el.name === "contact") {
+        let rawContact = String(value || "").replace(/\D/g, "");
+        if (rawContact.startsWith("0")) rawContact = rawContact.substring(1);
+        if (rawContact.startsWith("639")) rawContact = rawContact.substring(2);
+        if (rawContact.length > 10) rawContact = rawContact.substring(0, 10);
+        if (rawContact.length > 0) {
+          let formatted = rawContact.substring(0, 3);
+          if (rawContact.length > 3) formatted += "-" + rawContact.substring(3, 6);
+          if (rawContact.length > 6) formatted += "-" + rawContact.substring(6, 10);
+          el.value = formatted;
+        } else {
+          el.value = "";
+        }
+        return;
+      }
+      if (el.classList.contains("gov-id-mask") && el.dataset.mask) {
+        const mask = el.dataset.mask;
+        const rawDigits = String(value || "").replace(/\D/g, "");
+        if (!rawDigits) {
+          el.value = "";
+          return;
+        }
+        let out = "", ri = 0;
+        for (let i = 0; i < mask.length && ri < rawDigits.length; i++) {
+          if (mask[i] === "-") {
+            out += "-";
+          } else {
+            out += rawDigits[ri];
+            ri++;
+          }
+        }
+        el.value = out;
+        return;
+      }
+      if (el.tagName === "SELECT" && value !== "" && !Array.from(el.options).some((option) => option.value === String(value))) {
+        const legacyOption = document.createElement("option");
+        legacyOption.value = String(value);
+        legacyOption.textContent = `${String(value)} (Existing)`;
+        legacyOption.dataset.legacyValue = "true";
+        el.appendChild(legacyOption);
+      }
       el.value = value;
     });
     updatePregnantVisibility();
@@ -4174,7 +4215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const zoneInput = document.querySelector('input[name="zone"]');
+  const zoneInput = document.querySelector('[name="zone"]');
   const headFields = [
     document.querySelector('input[name="first_name"]'),
     document.querySelector('input[name="last_name"]'),

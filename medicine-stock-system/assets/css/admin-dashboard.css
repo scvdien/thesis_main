@@ -48,6 +48,8 @@ h1,h2,h3,h4,h5,h6{
 
 #sidebar{
   width:var(--sidebar-w);
+  flex-shrink:0;
+  align-self:flex-start;
   background:linear-gradient(160deg, #154f15 0%, #216f1b 58%, #2f8f24 100%);
   border-right:1px solid rgba(255,255,255,0.2);
   padding:20px 16px;
@@ -57,7 +59,10 @@ h1,h2,h3,h4,h5,h6{
   position:sticky;
   top:0;
   height:100vh;
+  height:100svh;
+  height:100dvh;
   overflow:hidden;
+  overscroll-behavior-y:contain;
   display:flex;
   flex-direction:column;
   z-index:1040;
@@ -122,18 +127,19 @@ h1,h2,h3,h4,h5,h6{
   flex:1 1 auto;
   flex-direction:column;
   min-height:0;
-  overflow-y:auto;
-  overflow-x:hidden;
+  overflow:hidden;
   padding-bottom:4px;
   padding-bottom:max(4px, env(safe-area-inset-bottom));
-  overscroll-behavior:contain;
-  -webkit-overflow-scrolling:touch;
 }
 
 @media (max-width:992px){
   #sidebar .menu{
+    overflow-y:auto;
+    overflow-x:hidden;
     padding-bottom:16px;
     padding-bottom:max(16px, env(safe-area-inset-bottom));
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
   }
 }
 
@@ -216,6 +222,10 @@ h1,h2,h3,h4,h5,h6{
   display:flex;
   align-items:center;
   justify-content:space-between;
+  position:sticky;
+  top:env(safe-area-inset-top, 0px);
+  z-index:1020;
+  isolation:isolate;
   margin-bottom:22px;
   flex-wrap:wrap;
   background:var(--surface);

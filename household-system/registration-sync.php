@@ -217,6 +217,24 @@ function reg_strip_health_fields(array $person): array
     return $person;
 }
 
+function reg_normalize_contact_number(mixed $value): string
+{
+    $raw = preg_replace('/\D/', '', (string) $value);
+    if ($raw === '') {
+        return '';
+    }
+    if (strlen($raw) === 10 && $raw[0] === '9') {
+        return '0' . $raw;
+    }
+    if (strlen($raw) === 12 && substr($raw, 0, 3) === '639') {
+        return '0' . substr($raw, 2);
+    }
+    if (strlen($raw) === 11 && substr($raw, 0, 2) === '09') {
+        return $raw;
+    }
+    return $raw;
+}
+
 /**
  * @param array<string, mixed> $person
  * @return array<string, mixed>
@@ -892,7 +910,8 @@ function reg_ensure_sync_procedures(PDO $pdo): void
 
 function reg_friendly_server_error(Throwable $exception): string
 {
-    $message = strtolower(trim($exception->getMessage()));
+    $rawMessage = trim($exception->getMessage());
+    $message = strtolower($rawMessage);
     if ($message === '') {
         return 'Unable to process registration request right now.';
     }
@@ -916,7 +935,7 @@ function reg_friendly_server_error(Throwable $exception): string
         return 'Registration sync failed: legacy database triggers could not be removed with the current database user. Remove them in phpMyAdmin, or use a database user that can drop triggers.';
     }
 
-    return 'Unable to process registration request right now.';
+    return 'Registration sync failed: ' . $rawMessage;
 }
 
 const REG_SCHEMA_MAINTENANCE_SESSION_KEY = '__registration_schema_maintenance_v2_at';
@@ -1501,9 +1520,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
 
     $head = is_array($record['head'] ?? null) ? $record['head'] : [];
     $head = reg_normalize_person_photo_reference(reg_normalize_person_text_fields($head));
-    $headContact = reg_text($head['contact'] ?? '', 40);
-    if (!preg_match('/^\d{11}$/', $headContact)) {
-        throw new InvalidArgumentException('Household head contact number must contain exactly 11 digits.');
+    $headContact = reg_normalize_contact_number($head['contact'] ?? '');
+    if (!preg_match('/^09\d{9}$/', $headContact)) {
+        throw new InvalidArgumentException('Household head contact number must contain a valid 11-digit Philippine mobile number.');
     }
     $head['contact'] = $headContact;
 
@@ -1516,9 +1535,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         } else {
             $member['client_member_id'] = $clientMemberId;
         }
-        $memberContact = reg_text($member['contact'] ?? '', 40);
-        if ($memberContact !== '' && !preg_match('/^\d{11}$/', $memberContact)) {
-            throw new InvalidArgumentException('Member contact number must contain exactly 11 digits when provided.');
+        $memberContact = reg_normalize_contact_number($member['contact'] ?? '');
+        if ($memberContact !== '' && !preg_match('/^09\d{9}$/', $memberContact)) {
+            throw new InvalidArgumentException('Member contact number must contain a valid 11-digit Philippine mobile number when provided.');
         }
         $member['contact'] = $memberContact;
         $members[] = $member;
@@ -1543,6 +1562,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
     if ($zone === '') {
         throw new InvalidArgumentException('Zone is required.');
     }
+    if (preg_match('/^Zone [1-7]$/', $zone) !== 1) {
+        throw new InvalidArgumentException('Zone must be between Zone 1 and Zone 7.');
+    }
     $head['zone'] = $zone;
 
     foreach ($members as $index => $member) {
@@ -1552,6 +1574,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $memberZone = reg_normalize_zone_text($member['zone'] ?? $zone);
         if ($memberZone === '') {
             $memberZone = $zone;
+        }
+        if (preg_match('/^Zone [1-7]$/', $memberZone) !== 1) {
+            throw new InvalidArgumentException('Member zone must be between Zone 1 and Zone 7.');
         }
         $member['zone'] = $memberZone;
         $members[$index] = $member;
@@ -1677,19 +1702,9 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $currentClientRecordId = is_array($existing) ? reg_text($existing['client_record_id'] ?? '', 64) : '';
         $currentUpdatedAt = is_array($existing) ? reg_text($existing['updated_at'] ?? '', 40) : '';
         if ($mode === 'update' && $householdDbId > 0) {
-            $versionMatches = $baseVersion > 0 && $baseVersion === $currentVersion;
-            $clientIdentityMatches = $currentClientRecordId === ''
-                || ($clientRecordId !== '' && hash_equals($currentClientRecordId, $clientRecordId));
-            if (!$versionMatches || !$clientIdentityMatches) {
-                throw new RegHouseholdConflictException([
-                    'household_id' => (string) ($existing['household_code'] ?? $householdCode),
-                    'head_name' => (string) ($existing['head_name'] ?? ''),
-                    'row_version' => $currentVersion,
-                    'updated_at' => $currentUpdatedAt,
-                    'state' => !$clientIdentityMatches
-                        ? 'record_replaced'
-                        : ($baseVersion > 0 ? 'stale' : 'refresh_required'),
-                ]);
+            if ($clientRecordId === '' && $currentClientRecordId !== '') {
+                $clientRecordId = $currentClientRecordId;
+                $recordForStore['client_record_id'] = $clientRecordId;
             }
         }
 
@@ -1775,11 +1790,13 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             );
         }
 
+        $targetClientRecordId = $clientRecordId !== '' ? $clientRecordId : ($currentClientRecordId !== '' ? $currentClientRecordId : null);
+
         if ($householdDbId > 0) {
             $updateStmt = $pdo->prepare(
                 'UPDATE `registration_households`
                  SET `record_year` = :record_year,
-                     `client_record_id` = COALESCE(NULLIF(:client_record_id, ""), `client_record_id`),
+                     `client_record_id` = :client_record_id,
                      `rollover_source_household_code` = :rollover_source_household_code,
                      `source` = :source,
                      `head_name` = :head_name,
@@ -1795,7 +1812,7 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
             );
             $updateStmt->execute([
                 'record_year' => $recordYear,
-                'client_record_id' => $clientRecordId,
+                'client_record_id' => $targetClientRecordId,
                 'rollover_source_household_code' => $rolloverSourceHouseholdCode,
                 'source' => $source,
                 'head_name' => $headName,
@@ -3224,8 +3241,8 @@ try {
             $requestMode = 'update';
         }
         $record['mode'] = $requestMode;
-        if ($requestMode !== 'create') {
-            $duplicate = reg_find_duplicate_household($pdo, $record, $householdCode);
+        if ($requestMode === 'create') {
+            $duplicate = reg_find_duplicate_household($pdo, $record);
             if (is_array($duplicate)) {
                 reg_respond(409, reg_duplicate_household_payload($duplicate));
             }
