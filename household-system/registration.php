@@ -507,7 +507,16 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <div class="card-header section-header">H. Household Data</div>
       <div class="card-body">
         <div class="row g-3 household-data-primary-row">
-          <div class="col-md-3"><label class="form-label required">No. of Household Members</label><input type="number" class="form-control" name="num_members" required readonly></div>
+          <div class="col-md-3">
+            <label class="form-label required">No. of Household Members</label>
+            <input type="number" class="form-control" name="num_members" required readonly>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="soloHouseholdCheck" name="is_solo_household" value="1">
+              <label class="form-check-label small fw-semibold text-secondary" for="soloHouseholdCheck">
+                <i class="bi bi-person-fill"></i> Nakatira nang mag-isa (Solo Living)
+              </label>
+            </div>
+          </div>
           <div class="col-md-3">
             <label class="form-label required">Relationship to Head</label>
             <select class="form-select" name="relation_to_head" required>
@@ -927,10 +936,11 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <div class="modal-icon mb-3 text-warning">
         <i class="bi bi-people-fill fs-1"></i>
       </div>
-      <h5 class="modal-title mb-2">Cannot Save Registration</h5>
-      <p class="mb-3">Please add at least one household member before saving this registration.</p>
+      <h5 class="modal-title mb-2">Walang Kasamang Miyembro</h5>
+      <p class="mb-3 text-muted">Kailangan ng kahit isang miyembro sa bahay. Kung ang residenteng ito ay mag-isang nakatira, maaari mo itong i-save bilang Solo Household (1 miyembro lamang).</p>
       <div class="d-flex justify-content-center gap-2 flex-wrap">
-        <button type="button" class="btn btn-primary btn-modern" data-bs-dismiss="modal">OK</button>
+        <button type="button" class="btn btn-outline-secondary btn-modern" data-bs-dismiss="modal">Magdagdag ng Miyembro</button>
+        <button type="button" class="btn btn-primary btn-modern" id="confirmSoloHouseholdBtn"><i class="bi bi-person-fill"></i> I-save bilang Solo Household</button>
       </div>
     </div>
   </div>

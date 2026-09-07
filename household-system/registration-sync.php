@@ -1542,9 +1542,6 @@ function reg_upsert_household(PDO $pdo, array $record, array $authUser): array
         $member['contact'] = $memberContact;
         $members[] = $member;
     }
-    if (count($members) === 0) {
-        throw new InvalidArgumentException('At least one household member is required.');
-    }
     if (count($members) > REG_MAX_HOUSEHOLD_MEMBERS) {
         throw new InvalidArgumentException('A household cannot contain more than 100 members.');
     }
@@ -2200,7 +2197,10 @@ function reg_rollover_households(PDO $pdo, int $targetYear, int $sourceYear, arr
                 }
             }
             if (count($members) === 0) {
-                continue;
+                $headCheck = trim(($head['first_name'] ?? '') . ($head['last_name'] ?? ''));
+                if ($headCheck === '') {
+                    continue;
+                }
             }
 
             $sourceRecord = reg_json_decode_assoc((string) ($sourceRow['record_data_json'] ?? ''));

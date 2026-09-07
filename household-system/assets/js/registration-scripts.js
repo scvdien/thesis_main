@@ -1778,6 +1778,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       head_name: headName || "Unnamed household head",
       zone: normalizedZone,
       member_count: members.length + 1,
+      is_solo_household: isSoloHousehold(),
       created_at: existingRecord?.created_at || now,
       base_version: Number(existingRecord?.base_version || existingRecord?.row_version || 0),
       base_updated_at: String(existingRecord?.base_updated_at || "").trim(),
@@ -2569,8 +2570,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   duplicateHouseholdModalEl?.addEventListener("hidden.bs.modal", cleanupModalArtifactsIfIdle);
 
-  const ensureMemberRequirementForSave = (memberCount, { closeSaveModal = false } = {}) => {
-    if (Number(memberCount) > 0) {
+  const isSoloHousehold = (record = null) => {
+    if (record && Boolean(record.is_solo_household)) return true;
+    const soloCheck = document.getElementById("soloHouseholdCheck");
+    return Boolean(soloCheck && soloCheck.checked);
+  };
+
+  const ensureMemberRequirementForSave = (memberCount, { closeSaveModal = false, record = null } = {}) => {
+    if (Number(memberCount) > 0 || isSoloHousehold(record)) {
       return true;
     }
     if (closeSaveModal) {
@@ -2580,7 +2587,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       memberRequiredModal.show();
       return false;
     }
-    showSyncToast("Add at least one household member before saving this registration.", "warning", "Member Required");
+    showSyncToast("Magdagdag ng kahit isang miyembro o lagyan ng tsek ang 'Nakatira nang mag-isa' bago i-save.", "warning", "Member Required");
     return false;
   };
 
@@ -3163,7 +3170,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const currentPhotoIds = new Set(getRecordPhotoReferences(record).map(({ photoId }) => photoId));
     let duplicateNotice = null;
     clearSyncSuccessState();
-    if (!ensureMemberRequirementForSave(Array.isArray(record.members) ? record.members.length : 0, { closeSaveModal: true })) {
+    if (!ensureMemberRequirementForSave(Array.isArray(record.members) ? record.members.length : 0, { closeSaveModal: true, record })) {
       return false;
     }
 
@@ -5198,6 +5205,34 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       saveModal?.show();
+    });
+  }
+
+  const soloHouseholdCheckEl = document.getElementById("soloHouseholdCheck");
+  const confirmSoloHouseholdBtnEl = document.getElementById("confirmSoloHouseholdBtn");
+
+  if (soloHouseholdCheckEl) {
+    soloHouseholdCheckEl.addEventListener("change", () => {
+      const members = getMembers();
+      if (soloHouseholdCheckEl.checked && members.length > 0) {
+        showSyncToast("Paalala: May mga miyembro nang nakalista. Kung nakatira nang mag-isa ang Head, alisin ang mga miyembro sa Members tab.", "info", "Solo Household");
+      }
+      syncHouseholdCounts(members);
+      saveHeadData();
+    });
+  }
+
+  if (confirmSoloHouseholdBtnEl) {
+    confirmSoloHouseholdBtnEl.addEventListener("click", () => {
+      if (soloHouseholdCheckEl) {
+        soloHouseholdCheckEl.checked = true;
+        syncHouseholdCounts(getMembers());
+        saveHeadData();
+      }
+      memberRequiredModal?.hide();
+      window.setTimeout(() => {
+        saveModal?.show();
+      }, 350);
     });
   }
 
