@@ -5150,7 +5150,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
   if (logoutConfirm) {
-    logoutConfirm.addEventListener("click", () => {
+    logoutConfirm.addEventListener("click", async () => {
+      try {
+        window.sessionStorage.removeItem("cabarian_session_authenticated");
+        window.sessionStorage.removeItem("cabarian_offline_session_active");
+      } catch (error) {
+        // Storage access may be restricted.
+      }
+
+      try {
+        if ("caches" in window) {
+          const authStateCache = await caches.open("registration-module-auth-state");
+          const loggedOutUrl = new URL(".registration-logged-out", window.location.href).toString();
+          await authStateCache.put(loggedOutUrl, new Response("logged-out", {
+            headers: { "Content-Type": "text/plain; charset=utf-8" }
+          }));
+        }
+      } catch (error) {
+        // Cache API may be unavailable.
+      }
+
+      try {
+        if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: "PREPARE_LOGOUT" });
+        }
+      } catch (error) {
+        // Worker messaging may fail.
+      }
+
+      if (!navigator.onLine) {
+        window.location.replace("login.php");
+        return;
+      }
+
       window.location.href = "logout.php";
     });
   }

@@ -19,6 +19,33 @@
   let memberNavigationWarmPromise = null;
   let memberNavigationWarmController = null;
 
+  const enforceOfflineLoggedOutGuard = async () => {
+    if (window.navigator.onLine !== false) return;
+
+    const pathname = window.location.pathname.toLowerCase();
+    const isAuthPage = pathname.endsWith("registration.php")
+      || pathname.endsWith("member.php")
+      || pathname.endsWith("households.php")
+      || pathname.endsWith("household-view.php");
+
+    if (!isAuthPage) return;
+
+    let isMarkedOut = false;
+    try {
+      if ("caches" in window) {
+        const authStateCache = await caches.open("registration-module-auth-state");
+        const loggedOutUrl = new URL(".registration-logged-out", window.location.href).toString();
+        isMarkedOut = Boolean(await authStateCache.match(loggedOutUrl));
+      }
+    } catch {}
+
+    if (isMarkedOut) {
+      window.location.replace("login.php");
+    }
+  };
+
+  void enforceOfflineLoggedOutGuard();
+
   try {
     const role = document.body.dataset.role || "";
     const username = document.body.dataset.currentUsername || "";

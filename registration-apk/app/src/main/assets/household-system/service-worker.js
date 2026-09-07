@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-08-31-v50";
+const CACHE_VERSION = "2026-09-07-v51";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
@@ -201,8 +201,20 @@ const handleRegistrationNavigation = async (request) => {
 
   if (pageName === "logout.php") {
     await markLoggedOut();
+    if (!navigator.onLine) {
+      const cachedLogin = await findCachedRegistrationPage(new Request(buildScopedUrl("login.php"), {
+        credentials: "same-origin"
+      }));
+      if (cachedLogin) return cachedLogin;
+      const staticCache = await caches.open(STATIC_CACHE_NAME);
+      return (await staticCache.match(OFFLINE_FALLBACK_URL)) || Response.error();
+    }
     try {
-      return await fetch(request);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const response = await fetch(request, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return response;
     } catch {
       const cachedLogin = await findCachedRegistrationPage(new Request(buildScopedUrl("login.php"), {
         credentials: "same-origin"
@@ -213,8 +225,55 @@ const handleRegistrationNavigation = async (request) => {
     }
   }
 
+  if (AUTHENTICATED_PAGE_NAMES.has(pageName)) {
+    const loggedOut = await isMarkedLoggedOut();
+    if (loggedOut) {
+      const cachedLogin = await findCachedRegistrationPage(new Request(buildScopedUrl("login.php"), {
+        credentials: "same-origin"
+      }));
+      if (cachedLogin) return cachedLogin;
+      const staticCache = await caches.open(STATIC_CACHE_NAME);
+      return (await staticCache.match(OFFLINE_FALLBACK_URL)) || Response.error();
+    }
+  }
+
+  if (!navigator.onLine) {
+    const cachedPage = await findCachedRegistrationPage(request);
+    if (cachedPage) {
+      return cachedPage;
+    }
+
+    if (pageName === "member.php") {
+      const cachedMember = await findCachedRegistrationPage(new Request(buildScopedUrl("member.php"), {
+        credentials: "same-origin"
+      }));
+      if (cachedMember) return cachedMember;
+    }
+
+    if (pageName === "registration.php") {
+      const cachedReg = await findCachedRegistrationPage(new Request(buildScopedUrl("registration.php"), {
+        credentials: "same-origin"
+      }));
+      if (cachedReg) return cachedReg;
+    }
+
+    if (pageName === "login.php") {
+      const cachedLogin = await findCachedRegistrationPage(new Request(buildScopedUrl("login.php"), {
+        credentials: "same-origin"
+      }));
+      if (cachedLogin) return cachedLogin;
+    }
+
+    const staticCache = await caches.open(STATIC_CACHE_NAME);
+    return (await staticCache.match(OFFLINE_FALLBACK_URL)) || Response.error();
+  }
+
   try {
-    const response = await fetch(request);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const response = await fetch(request, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (response.status >= 500) {
       const cachedPage = await findCachedRegistrationPage(request);
       if (cachedPage) return cachedPage;
@@ -268,8 +327,25 @@ const cacheAssetResponse = async (request, response) => {
 };
 
 const handleAssetRequest = async (request) => {
+  if (!navigator.onLine) {
+    const cachedExact = await caches.match(request);
+    if (cachedExact) {
+      return cachedExact;
+    }
+
+    const cachedNormalized = await caches.match(normalizedAssetKey(request));
+    if (cachedNormalized) {
+      return cachedNormalized;
+    }
+
+    return Response.error();
+  }
+
   try {
-    const response = await fetch(request);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const response = await fetch(request, { signal: controller.signal });
+    clearTimeout(timeoutId);
     await cacheAssetResponse(request, response.clone());
     return response;
   } catch (error) {
@@ -303,7 +379,7 @@ const cacheCurrentRoute = async (urlString, { preferCached = false } = {}) => {
       cache: "reload",
       credentials: "same-origin"
     });
-    if (preferCached) {
+    if (preferCached || !navigator.onLine) {
       const existingCachedPage = await findCachedRegistrationPage(request);
       if (existingCachedPage) {
         return {
@@ -313,7 +389,20 @@ const cacheCurrentRoute = async (urlString, { preferCached = false } = {}) => {
         };
       }
     }
-    const response = await fetch(request);
+
+    if (!navigator.onLine) {
+      return {
+        url: routeUrl.toString(),
+        success: false,
+        reason: "offline"
+      };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const response = await fetch(request, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     const cached = await cachePageResponse(request, response.clone());
     const existingCachedPage = cached === true
       ? null

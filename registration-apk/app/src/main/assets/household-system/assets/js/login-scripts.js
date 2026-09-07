@@ -106,7 +106,7 @@
     return result;
   }
 
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     clearError();
 
     const fullName = String(fullNameInput?.value || '').trim();
@@ -143,6 +143,12 @@
       }
       try {
         sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        if ('caches' in window) {
+          caches.open('registration-module-auth-state').then((authStateCache) => {
+            const moduleScopeUrl = new URL('./', window.location.href).href;
+            authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+          });
+        }
         const hash = sha256(username.toLowerCase() + '::' + password);
         const authData = {
           username: username.toLowerCase(),
@@ -188,10 +194,9 @@
     // Clear logged-out state so service worker will serve cached registration pages
     try {
       if ('caches' in window) {
-        caches.open('registration-module-auth-state').then((authStateCache) => {
-          const moduleScopeUrl = new URL('./', window.location.href).href;
-          authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
-        });
+        const authStateCache = await caches.open('registration-module-auth-state');
+        const moduleScopeUrl = new URL('./', window.location.href).href;
+        await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
       }
     } catch {}
 
