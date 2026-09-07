@@ -2851,6 +2851,7 @@ try {
              SET `username` = :username,
                  `password_hash` = :password_hash,
                  `must_change_password` = 1,
+                 `offline_reauth_token` = NULL,
                  `updated_at` = CURRENT_TIMESTAMP
              WHERE `id` = :id AND `role` = :role
              LIMIT 1'
@@ -2947,7 +2948,7 @@ try {
         try {
             $stmt = $pdo->prepare(
                 'UPDATE `users`
-                 SET `is_active` = :is_active, `updated_at` = CURRENT_TIMESTAMP
+                 SET `is_active` = :is_active, `offline_reauth_token` = NULL, `updated_at` = CURRENT_TIMESTAMP
                  WHERE `id` = :id AND `role` = :role
                  LIMIT 1'
             );
@@ -2959,7 +2960,7 @@ try {
 
             $staffStmt = $pdo->prepare(
                 'UPDATE `users`
-                 SET `is_active` = :is_active, `updated_at` = CURRENT_TIMESTAMP
+                 SET `is_active` = :is_active, `offline_reauth_token` = NULL, `updated_at` = CURRENT_TIMESTAMP
                  WHERE `role` = :role AND `is_active` = :from_is_active'
             );
             $staffStmt->execute([
@@ -3320,6 +3321,7 @@ try {
              SET `username` = :username,
                  `password_hash` = :password_hash,
                  `must_change_password` = 0,
+                 `offline_reauth_token` = NULL,
                  `updated_at` = CURRENT_TIMESTAMP
              WHERE `id` = :id
              LIMIT 1'
@@ -3330,9 +3332,11 @@ try {
             'id' => $userId,
         ]);
 
+        $newOfflineReauthToken = auth_issue_offline_reauth_token($pdo, $userId);
         $updatedRow = users_api_find_user($pdo, $userId);
         if (is_array($updatedRow)) {
             users_api_refresh_session_user($updatedRow);
+            $_SESSION[AUTH_SESSION_USER_KEY]['offline_reauth_token'] = $newOfflineReauthToken;
             $authUser = $_SESSION[AUTH_SESSION_USER_KEY];
         }
 
@@ -3451,6 +3455,7 @@ try {
              SET `username` = :username,
                  `password_hash` = :password_hash,
                  `must_change_password` = 1,
+                 `offline_reauth_token` = NULL,
                  `updated_at` = CURRENT_TIMESTAMP
              WHERE `id` = :id AND `role` = :role
              LIMIT 1'
@@ -3496,7 +3501,7 @@ try {
 
         $stmt = $pdo->prepare(
             'UPDATE `users`
-             SET `is_active` = :is_active, `updated_at` = CURRENT_TIMESTAMP
+             SET `is_active` = :is_active, `offline_reauth_token` = NULL, `updated_at` = CURRENT_TIMESTAMP
              WHERE `id` = :id AND `role` = :role
              LIMIT 1'
         );

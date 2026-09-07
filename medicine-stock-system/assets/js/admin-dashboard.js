@@ -745,15 +745,22 @@
     const accentOrder = ["danger", "orange", "gold", "teal"];
     const chartColors = ["#75a85a", "#cba43b", "#7cb7ac", "#6baf63", "#eb8b5a", "#79a4d8"];
     const diseaseVisuals = [
-      { match: /(fever|flu|lagnat)/i, accent: "danger", icon: "bi bi-thermometer-half" },
+      { match: /(fever|flu|lagnat|trankaso)/i, accent: "danger", icon: "bi bi-thermometer-half" },
       { match: /(cough|cold|ubo|sipon|uri)/i, accent: "orange", icon: "bi bi-capsule-pill" },
-      { match: /(diarrhea|diarrhoe|gastro|ors)/i, accent: "teal", icon: "bi bi-droplet-half" },
-      { match: /(allergy|skin)/i, accent: "gold", icon: "bi bi-stars" },
-      { match: /(hypertension|bp|heart)/i, accent: "danger", icon: "bi bi-heart-pulse" },
-      { match: /(respiratory|asthma|lungs)/i, accent: "teal", icon: "bi bi-lungs" },
+      { match: /(diarrhea|diarrhoe|dehydration|ors|lbm|tae)/i, accent: "teal", icon: "bi bi-droplet-half" },
+      { match: /(gastro|acid|ulcer|sikmura|heartburn|kabag)/i, accent: "orange", icon: "bi bi-shield-plus" },
+      { match: /(allergy|pantal|hives|urticaria)/i, accent: "gold", icon: "bi bi-stars" },
+      { match: /(skin|buni|alipunga|dermat|eczema|pigsa|sugat)/i, accent: "gold", icon: "bi bi-patch-question" },
+      { match: /(hypertension|bp|heart|blood pressure)/i, accent: "danger", icon: "bi bi-heart-pulse" },
+      { match: /(respiratory|asthma|lungs|hika|bronch)/i, accent: "teal", icon: "bi bi-lungs" },
       { match: /(diabetes|sugar)/i, accent: "orange", icon: "bi bi-activity" },
-      { match: /(pain|inflammation)/i, accent: "gold", icon: "bi bi-bandaid" },
-      { match: /(vitamin|supplement|wellness)/i, accent: "gold", icon: "bi bi-capsule" }
+      { match: /(cholesterol|lipid|cardio)/i, accent: "danger", icon: "bi bi-speedometer" },
+      { match: /(pain|inflammation|headache|ngipin|ulo|katawan|dysmenorrhea)/i, accent: "gold", icon: "bi bi-bandaid" },
+      { match: /(deworming|parasitic|purga|helminth|bulate)/i, accent: "teal", icon: "bi bi-bug" },
+      { match: /(maternal|prenatal|buntis|iron)/i, accent: "danger", icon: "bi bi-person-heart" },
+      { match: /(vitamin|supplement|wellness|malnutrition)/i, accent: "gold", icon: "bi bi-capsule" },
+      { match: /(eye|ear|mata|tainga|sore eyes|otitis)/i, accent: "teal", icon: "bi bi-eye" },
+      { match: /(family planning|contraceptive|reproductive|pill)/i, accent: "teal", icon: "bi bi-people" }
     ];
     const resolvePatternVisual = (label, index) => {
       const matched = diseaseVisuals.find((visual) => visual.match.test(label));

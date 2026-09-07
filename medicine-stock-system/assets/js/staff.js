@@ -40,6 +40,7 @@
     cancelRemoveDispenseMedicineBtn: byId("cancelRemoveDispenseMedicineBtn"),
     confirmRemoveDispenseMedicineBtn: byId("confirmRemoveDispenseMedicineBtn"),
     dashboardLowCount: byId("dashboardLowCount"),
+    dashboardExpiredCount: byId("dashboardExpiredCount"),
     dashboardExpiringCount: byId("dashboardExpiringCount"),
     dashboardReleasedToday: byId("dashboardReleasedToday"),
     dashboardResidentCount: byId("dashboardResidentCount"),
@@ -98,6 +99,7 @@
     quickResidentCity: byId("quickResidentCity"),
     dispenseForm: byId("dispenseForm"),
     dispenseMedicineSearch: byId("dispenseMedicineSearch"),
+    dispenseMedicineCategoryPills: byId("dispenseMedicineCategoryPills"),
     dispenseMedicine: byId("dispenseMedicine"),
     dispenseMedicineResults: byId("dispenseMedicineResults"),
     dispenseStockPreview: byId("dispenseStockPreview"),
@@ -106,7 +108,23 @@
     continueDispenseBtn: byId("continueDispenseBtn"),
     backToMedicinesBtn: byId("backToMedicinesBtn"),
     dispenseDiseaseCategory: byId("dispenseDiseaseCategory"),
+    dispenseDiseaseCategoryBtn: byId("dispenseDiseaseCategoryBtn"),
+    dispenseDiseaseCategoryLabel: byId("dispenseDiseaseCategoryLabel"),
+    dispenseDiseaseCategoryMenu: byId("dispenseDiseaseCategoryMenu"),
+    dispenseDiseaseCategoryDropdownWrap: byId("dispenseDiseaseCategoryDropdownWrap"),
+    dispenseDiseaseCategorySelectWrap: byId("dispenseDiseaseCategorySelectWrap"),
+    dispenseDiseaseCategoryCustomWrap: byId("dispenseDiseaseCategoryCustomWrap"),
+    dispenseDiseaseCategoryCustom: byId("dispenseDiseaseCategoryCustom"),
+    dispenseDiseaseCategoryRevertBtn: byId("dispenseDiseaseCategoryRevertBtn"),
     dispenseIllness: byId("dispenseIllness"),
+    dispenseIllnessBtn: byId("dispenseIllnessBtn"),
+    dispenseIllnessLabel: byId("dispenseIllnessLabel"),
+    dispenseIllnessMenu: byId("dispenseIllnessMenu"),
+    dispenseIllnessDropdownWrap: byId("dispenseIllnessDropdownWrap"),
+    dispenseIllnessSelectWrap: byId("dispenseIllnessSelectWrap"),
+    dispenseIllnessCustomWrap: byId("dispenseIllnessCustomWrap"),
+    dispenseIllnessCustom: byId("dispenseIllnessCustom"),
+    dispenseIllnessRevertBtn: byId("dispenseIllnessRevertBtn"),
     dispenseCancelBtn: byId("dispenseCancelBtn"),
     dispenseSubmitBtn: byId("dispenseSubmitBtn"),
     historyTitle: byId("historyTitle"),
@@ -131,7 +149,11 @@
     settingsNotice: byId("settingsNotice"),
     settingsContact: byId("settingsContact"),
     settingsRole: byId("settingsRole"),
-    staffDispensingRecordsLink: byId("staffDispensingRecordsLink")
+    staffDispensingRecordsLink: byId("staffDispensingRecordsLink"),
+    highQuantityDispenseModal: byId("highQuantityDispenseModal"),
+    highQuantityDispenseModalTitle: byId("highQuantityDispenseModalTitle"),
+    highQuantityDispenseModalMessage: byId("highQuantityDispenseModalMessage"),
+    confirmHighQuantityDispenseBtn: byId("confirmHighQuantityDispenseBtn")
   };
   const staffNavLinks = Array.from(document.querySelectorAll("#sidebar .menu a[href^='#']"));
   const staffSections = Array.from(document.querySelectorAll("[data-staff-section]"));
@@ -158,6 +180,10 @@
   const removeDispenseMedicineModal = refs.removeDispenseMedicineModal && window.bootstrap
     ? new window.bootstrap.Modal(refs.removeDispenseMedicineModal)
     : null;
+  const highQuantityDispenseModal = refs.highQuantityDispenseModal && window.bootstrap
+    ? new window.bootstrap.Modal(refs.highQuantityDispenseModal)
+    : null;
+  let pendingHighQuantityConfirmed = false;
   const staffNotificationMessageModal = byId("staffNotificationMessageModal") && window.bootstrap ? new window.bootstrap.Modal(byId("staffNotificationMessageModal")) : null;
   const staffNotificationRemoveModalElement = byId("staffNotificationRemoveModal");
   const staffNotificationRemoveModal = staffNotificationRemoveModalElement && window.bootstrap
@@ -182,6 +208,7 @@
     residentSearch: "",
     patientProfileSearch: "",
     dispenseResidentSearch: "",
+    dispenseMedicineCategoryFilter: "all",
     residentBarangayFilter: "all",
     residentSort: "recent",
     selectedResidentId: "",
@@ -2165,7 +2192,7 @@
       return { key: "expired", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
     }
 
-    if (expiryDays <= 30) {
+    if (expiryDays <= 90) {
       return { key: "expiring-soon", label: "Expiring Soon", tone: "warning", note: `${expiryDays} days remaining` };
     }
 
@@ -2188,15 +2215,14 @@
       const statusKey = getStatus(medicine).key;
       return statusKey === "out-of-stock" || statusKey === "critical" || statusKey === "low-stock";
     });
-    const expiringItems = inventory.filter((medicine) => {
-      const remainingDays = daysUntil(medicine.expiryDate);
-      return remainingDays >= 0 && remainingDays <= 30;
+    const expiredItems = inventory.filter((medicine) => {
+      return daysUntil(medicine.expiryDate) < 0;
     });
     const releasesToday = dispenseMovements.filter((movement) => text(movement.createdAt).slice(0, 10) === today);
     const profilesWithHistory = state.residentAccounts.filter((resident) => getResidentStats(resident).totalReleases > 0);
 
     if (refs.dashboardLowCount) refs.dashboardLowCount.textContent = formatNumber(lowStockItems.length);
-    if (refs.dashboardExpiringCount) refs.dashboardExpiringCount.textContent = formatNumber(expiringItems.length);
+    if (refs.dashboardExpiredCount) refs.dashboardExpiredCount.textContent = formatNumber(expiredItems.length);
     if (refs.dashboardReleasedToday) refs.dashboardReleasedToday.textContent = formatNumber(releasesToday.length);
     if (refs.dashboardResidentCount) refs.dashboardResidentCount.textContent = formatNumber(profilesWithHistory.length);
   };
@@ -2355,16 +2381,20 @@
     }
     state.residentFormOpen = shouldOpen;
 
-    if (residentFormModal) {
+    const modalInst = refs.residentFormModal && window.bootstrap
+      ? (window.bootstrap.Modal.getOrCreateInstance ? window.bootstrap.Modal.getOrCreateInstance(refs.residentFormModal) : (window.bootstrap.Modal.getInstance(refs.residentFormModal) || residentFormModal))
+      : residentFormModal;
+
+    if (modalInst) {
       if (shouldOpen) {
         state.residentCabarianSearch = "";
         if (refs.residentCabarianSearch) refs.residentCabarianSearch.value = "";
         setResidentFormMode("cabarian");
         void syncHouseholdResidents();
         renderCabarianResidentResults();
-        residentFormModal.show();
+        modalInst.show();
       } else {
-        residentFormModal.hide();
+        modalInst.hide();
       }
       return;
     }
@@ -2385,6 +2415,7 @@
     renderResidentSearchResults();
     renderHistory();
     if (openModal && resident) residentSummaryModal?.show();
+    saveDispenseDraft();
   };
 
   const filteredResidentAccounts = () => {
@@ -2648,13 +2679,499 @@
     renderStockPreview();
   };
 
+  const MEDICINE_DISEASE_MAPPING = {
+    "analgesic": {
+      categories: ["Fever", "Pain / Inflammation"],
+      suggestions: {
+        "Fever": ["Lagnat (Fever)", "Trankaso (Flu-like fever)", "Mataas na lagnat (High fever)"],
+        "Pain / Inflammation": ["Sakit ng ulo (Headache)", "Sakit ng katawan (Body pain)", "Sakit ng ngipin (Toothache)", "Dysmenorrhea (Menstrual cramp)", "Pananakit ng kasu-kasuan (Joint pain)"]
+      }
+    },
+    "antipyretic": {
+      categories: ["Fever", "Pain / Inflammation"],
+      suggestions: {
+        "Fever": ["Lagnat (Fever)", "Trankaso (Flu)", "Mataas na lagnat"],
+        "Pain / Inflammation": ["Sakit ng ulo", "Sakit ng katawan"]
+      }
+    },
+    "antibiotic": {
+      categories: ["Respiratory", "Skin Disease", "Bacterial Infection / UTI"],
+      suggestions: {
+        "Respiratory": ["Ubo na may plema (Bacterial bronchitis)", "Tonsillitis / Sore throat", "Pneumonia / Pulmonya"],
+        "Skin Disease": ["Sugat na may impeksyon", "Pigsa (Boil / Abscess)", "Cellulitis / Pamamaga ng balat"],
+        "Bacterial Infection / UTI": ["Urinary Tract Infection (UTI)", "Bacterial infection", "Impeksyon sa ihi"]
+      }
+    },
+    "antibiotics": {
+      categories: ["Respiratory", "Skin Disease", "Bacterial Infection / UTI"],
+      suggestions: {
+        "Respiratory": ["Ubo na may plema (Bacterial bronchitis)", "Tonsillitis / Sore throat", "Pneumonia / Pulmonya"],
+        "Skin Disease": ["Sugat na may impeksyon", "Pigsa (Boil / Abscess)", "Cellulitis / Pamamaga ng balat"],
+        "Bacterial Infection / UTI": ["Urinary Tract Infection (UTI)", "Bacterial infection", "Impeksyon sa ihi"]
+      }
+    },
+    "antihistamine": {
+      categories: ["Cough / Cold", "Allergy", "Skin Disease"],
+      suggestions: {
+        "Cough / Cold": ["Sipon (Allergic rhinitis)", "Pangangati ng lalamunan at ilong", "Baradong ilong"],
+        "Allergy": ["Allergy (Allergic reaction)", "Pamamantal (Hives / Urticaria)", "Food / environmental allergy"],
+        "Skin Disease": ["Makating pantal / Rashes", "Allergic dermatitis", "Kati-kati sa balat"]
+      }
+    },
+    "antihistamines": {
+      categories: ["Cough / Cold", "Allergy", "Skin Disease"],
+      suggestions: {
+        "Cough / Cold": ["Sipon (Allergic rhinitis)", "Pangangati ng lalamunan at ilong", "Baradong ilong"],
+        "Allergy": ["Allergy (Allergic reaction)", "Pamamantal (Hives / Urticaria)", "Food / environmental allergy"],
+        "Skin Disease": ["Makating pantal / Rashes", "Allergic dermatitis", "Kati-kati sa balat"]
+      }
+    },
+    "respiratory": {
+      categories: ["Cough / Cold", "Respiratory"],
+      suggestions: {
+        "Cough / Cold": ["Ubo (Cough)", "Tuyong ubo (Dry cough)", "Ubo na may malapot na plema"],
+        "Respiratory": ["Hika / Bronchial Asthma", "Wheezing / Huni sa dibdib", "Hirap huminga (Shortness of breath)"]
+      }
+    },
+    "gastrointestinal": {
+      categories: ["Gastrointestinal / Acid Reflux"],
+      suggestions: {
+        "Gastrointestinal / Acid Reflux": ["Sakit ng sikmura (Gastritis)", "Hyperacidity / Acid reflux", "Heartburn / Pangangasim ng sikmura", "Ulcer pain / Ulser", "Kabag / Bloating"]
+      }
+    },
+    "antacid": {
+      categories: ["Gastrointestinal / Acid Reflux"],
+      suggestions: {
+        "Gastrointestinal / Acid Reflux": ["Sakit ng sikmura (Gastritis)", "Hyperacidity / Acid reflux", "Heartburn / Pangangasim", "Ulcer pain"]
+      }
+    },
+    "hydration": {
+      categories: ["Diarrhea", "Dehydration"],
+      suggestions: {
+        "Diarrhea": ["Pagtatae (Acute Diarrhea)", "Gastroenteritis / LBM", "Madalas na pagdumi"],
+        "Dehydration": ["Dehydration dahil sa pagtatae", "Panghihina / Kakulangan sa tubig"]
+      }
+    },
+    "antidiarrheal": {
+      categories: ["Diarrhea", "Dehydration"],
+      suggestions: {
+        "Diarrhea": ["Pagtatae (Acute Diarrhea)", "Gastroenteritis", "LBM"],
+        "Dehydration": ["Dehydration"]
+      }
+    },
+    "anthelmintic": {
+      categories: ["Parasitic Infection / Deworming"],
+      suggestions: {
+        "Parasitic Infection / Deworming": ["Purga sa bulate (Routine deworming)", "Bulate sa tiyan (Soil-transmitted helminths)", "Pangangati ng puwit / bulate"]
+      }
+    },
+    "antihypertensive": {
+      categories: ["Hypertension"],
+      suggestions: {
+        "Hypertension": ["High Blood Pressure Maintenance", "Essential Hypertension", "Mataas na presyon ng dugo"]
+      }
+    },
+    "antidiabetic": {
+      categories: ["Diabetes"],
+      suggestions: {
+        "Diabetes": ["Type 2 Diabetes Mellitus Maintenance", "Mataas na Blood Sugar", "Diabetes maintenance"]
+      }
+    },
+    "lipid-lowering": {
+      categories: ["Cardiovascular / Cholesterol"],
+      suggestions: {
+        "Cardiovascular / Cholesterol": ["High Cholesterol Maintenance", "Hypercholesterolemia", "Cardiovascular support"]
+      }
+    },
+    "maintenance": {
+      categories: ["Hypertension", "Diabetes", "Cardiovascular / Cholesterol"],
+      suggestions: {
+        "Hypertension": ["High Blood Pressure Maintenance", "Essential Hypertension"],
+        "Diabetes": ["Type 2 Diabetes Mellitus Maintenance", "Blood Sugar Control"],
+        "Cardiovascular / Cholesterol": ["High Cholesterol Maintenance"]
+      }
+    },
+    "vitamins": {
+      categories: ["Vitamins / Nutrition", "General Wellness"],
+      suggestions: {
+        "Vitamins / Nutrition": ["Pampalakas ng resistensya (Immune support)", "Bitamina sa katawan", "Pampagana kumain"],
+        "General Wellness": ["Panghihina ng katawan (General weakness)", "Pagod / Fatigue", "Panunumbalik ng lakas"]
+      }
+    },
+    "maternal": {
+      categories: ["Maternal Care / Prenatal", "Vitamins / Nutrition"],
+      suggestions: {
+        "Maternal Care / Prenatal": ["Prenatal care (Buntis)", "Anemia sa pagbubuntis", "Post-partum recovery"],
+        "Vitamins / Nutrition": ["Iron & Folic Acid supplement"]
+      }
+    },
+    "prenatal": {
+      categories: ["Maternal Care / Prenatal", "Vitamins / Nutrition"],
+      suggestions: {
+        "Maternal Care / Prenatal": ["Prenatal care (Buntis)", "Anemia / Maputla", "Post-partum recovery"],
+        "Vitamins / Nutrition": ["Iron & Folic Acid supplement"]
+      }
+    },
+    "topical": {
+      categories: ["Skin Disease"],
+      suggestions: {
+        "Skin Disease": ["Buni / Alipunga (Fungal infection)", "Eczema / Dermatitis", "Bungang-araw / Rashes", "Paso sa balat (Burn)"]
+      }
+    },
+    "dermatological": {
+      categories: ["Skin Disease"],
+      suggestions: {
+        "Skin Disease": ["Buni / Alipunga (Fungal infection)", "Eczema / Dermatitis", "Rashes / Kati-kati", "Paso sa balat"]
+      }
+    },
+    "eye & ear": {
+      categories: ["Eye & Ear Infection"],
+      suggestions: {
+        "Eye & Ear Infection": ["Sore Eyes / Conjunctivitis", "Pananakit ng tainga (Otitis)", "Impeksyon sa mata o tainga"]
+      }
+    },
+    "family planning": {
+      categories: ["Family Planning / Reproductive Health"],
+      suggestions: {
+        "Family Planning / Reproductive Health": ["Family Planning / Contraceptive Pills", "Birth Spacing", "Reproductive health support"]
+      }
+    },
+    "herbal": {
+      categories: ["Cough / Cold", "Respiratory", "Pain / Inflammation"],
+      suggestions: {
+        "Cough / Cold": ["Ubo (Lagundi)", "Ubo na may plema"],
+        "Respiratory": ["Hika / Asthma relief"],
+        "Pain / Inflammation": ["Pananakit ng katawan"]
+      }
+    }
+  };
+
+  const inferMedicineMappingKey = (medicine) => {
+    if (!medicine) return "";
+    const categoryKey = keyOf(medicine.category);
+    if (MEDICINE_DISEASE_MAPPING[categoryKey]) return categoryKey;
+
+    for (const key of Object.keys(MEDICINE_DISEASE_MAPPING)) {
+      if (categoryKey.includes(key) || key.includes(categoryKey)) return key;
+    }
+
+    const nameHaystack = `${keyOf(medicine.name)} ${keyOf(medicine.genericName)}`;
+    if (/(paracetamol|biogesic|tempra|calpol|ibuprofen|mefenamic|aspirin|naproxen)/.test(nameHaystack)) return "analgesic";
+    if (/(amoxicillin|cefalexin|ciprofloxacin|cotrimoxazole|azithromycin|clindamycin|doxycycline)/.test(nameHaystack)) return "antibiotic";
+    if (/(cetirizine|allerkid|loratadine|chlorphenamine|diphenhydramine)/.test(nameHaystack)) return "antihistamine";
+    if (/(salbutamol|lagundi|ambroxol|carbocisteine|asmalin|ventolin)/.test(nameHaystack)) return "respiratory";
+    if (/(kremil|maalox|omeprazole|antacid|ranitidine|famotidine)/.test(nameHaystack)) return "gastrointestinal";
+    if (/(ors|oresol|hydrite|zinc sulfate|zinc)/.test(nameHaystack)) return "hydration";
+    if (/(albendazole|mebendazole|antiox|purga)/.test(nameHaystack)) return "anthelmintic";
+    if (/(amlodipine|losartan|metoprolol|captopril|norvasc)/.test(nameHaystack)) return "antihypertensive";
+    if (/(metformin|gliclazide|glimepiride)/.test(nameHaystack)) return "antidiabetic";
+    if (/(atorvastatin|simvastatin|rosuvastatin)/.test(nameHaystack)) return "lipid-lowering";
+    if (/(ferrous|folic|prenatal|iron)/.test(nameHaystack)) return "maternal";
+    if (/(ascorbic|vitamin|b-complex|multivitamins|calcium)/.test(nameHaystack)) return "vitamins";
+    if (/(clotrimazole|hydrocortisone|betamethasone|calamine|silver sulfadiazine|canesten|ointment)/.test(nameHaystack)) return "topical";
+    if (/(eye drop|ear drop|tobramycin|chloramphenicol)/.test(nameHaystack)) return "eye & ear";
+    if (/(trust pill|microlut|diane|nordette|condom)/.test(nameHaystack)) return "family planning";
+
+    return "";
+  };
+
+  const getDispenseAllowedDiseaseData = () => {
+    const categoriesSet = new Set();
+    const suggestionsMap = new Map();
+
+    const selectedMedicines = state.dispenseItems
+      .map((item) => findMedicine(item.medicineId))
+      .filter(Boolean);
+
+    if (!selectedMedicines.length) {
+      return {
+        categories: [],
+        suggestions: {}
+      };
+    }
+
+    selectedMedicines.forEach((medicine) => {
+      const mappingKey = inferMedicineMappingKey(medicine);
+      const mapped = mappingKey ? MEDICINE_DISEASE_MAPPING[mappingKey] : null;
+
+      if (mapped) {
+        (mapped.categories || []).forEach((cat) => categoriesSet.add(cat));
+        if (mapped.suggestions) {
+          Object.entries(mapped.suggestions).forEach(([cat, list]) => {
+            const currentList = suggestionsMap.get(cat) || [];
+            suggestionsMap.set(cat, Array.from(new Set([...currentList, ...list])));
+          });
+        }
+      } else {
+        categoriesSet.add("Others");
+      }
+    });
+
+    const categories = Array.from(categoriesSet);
+    const suggestions = Object.fromEntries(suggestionsMap.entries());
+
+    return {
+      categories: categories.length ? categories : ["Others"],
+      suggestions
+    };
+  };
+
+  const isDispenseMultiMedMode = () => state.dispenseItems.length > 1;
+
+  const formatSelectedPillText = (allParts, defaultText) => {
+    if (!allParts.length) {
+      return { html: esc(defaultText), title: defaultText };
+    }
+    const fullText = allParts.join(", ");
+    if (allParts.length === 1) {
+      return { html: esc(allParts[0]), title: fullText };
+    }
+    if (allParts.length === 2) {
+      const combined = `${allParts[0]}, ${allParts[1]}`;
+      if (combined.length <= 32) {
+        return {
+          html: `<span class="staff-multi-count-pill">2</span><span>${esc(combined)}</span>`,
+          title: fullText
+        };
+      }
+      return {
+        html: `<span class="staff-multi-count-pill">2</span><span>${esc(allParts[0])} (+1 pa)</span>`,
+        title: fullText
+      };
+    }
+    return {
+      html: `<span class="staff-multi-count-pill">${allParts.length}</span><span>${esc(allParts[0])} (+${allParts.length - 1} pa)</span>`,
+      title: fullText
+    };
+  };
+
+  const getSelectedDispenseCategories = () => {
+    if (!refs.dispenseDiseaseCategoryMenu) return [];
+    if (isDispenseMultiMedMode()) {
+      return Array.from(refs.dispenseDiseaseCategoryMenu.querySelectorAll('input[type="checkbox"]:checked'))
+        .map((cb) => text(cb.getAttribute("data-dispense-category-check")))
+        .filter(Boolean);
+    }
+    const singleEl = refs.dispenseDiseaseCategoryMenu.querySelector('[data-dispense-category-single].is-selected');
+    const val = text(singleEl?.getAttribute("data-dispense-category-single"));
+    return val ? [val] : [];
+  };
+
+  const getDispenseCategoryCustomValue = () => {
+    const input = refs.dispenseDiseaseCategoryMenu?.querySelector("[data-dispense-category-custom-input]");
+    return text(input?.value);
+  };
+
+  const syncDispenseCategoryDisplay = () => {
+    const selected = getSelectedDispenseCategories();
+    const customVal = getDispenseCategoryCustomValue();
+
+    const allParts = [...selected];
+    if (customVal) {
+      allParts.push(customVal);
+    }
+
+    const combinedStr = allParts.join(", ");
+    if (refs.dispenseDiseaseCategory) {
+      refs.dispenseDiseaseCategory.value = combinedStr;
+    }
+
+    if (refs.dispenseDiseaseCategoryLabel) {
+      const formatted = formatSelectedPillText(allParts, "Select disease category");
+      refs.dispenseDiseaseCategoryLabel.innerHTML = formatted.html;
+      refs.dispenseDiseaseCategoryBtn?.setAttribute("title", formatted.title);
+    }
+
+    renderIllnessOptions(selected);
+    syncDispenseSubmitState();
+  };
+
+  const getSelectedDispenseIllnesses = () => {
+    if (!refs.dispenseIllnessMenu) return [];
+    if (isDispenseMultiMedMode()) {
+      return Array.from(refs.dispenseIllnessMenu.querySelectorAll('input[type="checkbox"]:checked'))
+        .map((cb) => text(cb.getAttribute("data-dispense-illness-check")))
+        .filter(Boolean);
+    }
+    const singleEl = refs.dispenseIllnessMenu.querySelector('[data-dispense-illness-single].is-selected');
+    const val = text(singleEl?.getAttribute("data-dispense-illness-single"));
+    return val ? [val] : [];
+  };
+
+  const getDispenseIllnessCustomValue = () => {
+    const input = refs.dispenseIllnessMenu?.querySelector("[data-dispense-illness-custom-input]");
+    return text(input?.value);
+  };
+
+  const syncDispenseIllnessDisplay = () => {
+    const selected = getSelectedDispenseIllnesses();
+    const customVal = getDispenseIllnessCustomValue();
+
+    const allParts = [...selected];
+    if (customVal) {
+      allParts.push(customVal);
+    }
+
+    const combinedStr = allParts.join(", ");
+    if (refs.dispenseIllness) {
+      refs.dispenseIllness.value = combinedStr;
+    }
+
+    if (refs.dispenseIllnessLabel) {
+      const formatted = formatSelectedPillText(allParts, "Select illness / complaint");
+      refs.dispenseIllnessLabel.innerHTML = formatted.html;
+      refs.dispenseIllnessBtn?.setAttribute("title", formatted.title);
+    }
+
+    syncDispenseSubmitState();
+  };
+
+  const getDispenseDiseaseCategoryValue = () => {
+    return text(refs.dispenseDiseaseCategory?.value);
+  };
+
+  const getDispenseIllnessValue = () => {
+    return text(refs.dispenseIllness?.value);
+  };
+
+  let lastPopulatedCategoriesKey = "";
+
+  const renderDynamicDiseaseCategoryOptions = () => {
+    if (!refs.dispenseDiseaseCategoryMenu) return;
+    const { categories } = getDispenseAllowedDiseaseData();
+    const isMulti = isDispenseMultiMedMode();
+    const categoriesKey = `${isMulti ? "multi" : "single"}|${categories.slice().sort().join("|")}`;
+
+    if (lastPopulatedCategoriesKey !== categoriesKey) {
+      lastPopulatedCategoriesKey = categoriesKey;
+
+      const currentSelected = getSelectedDispenseCategories();
+      const currentCustom = getDispenseCategoryCustomValue();
+
+      const initialSelected = currentSelected.length
+        ? currentSelected
+        : (categories.length === 1 ? [categories[0]] : []);
+
+      const itemsHtml = [
+        ...categories.map((category) => {
+          const isChosen = initialSelected.includes(category);
+          if (isMulti) {
+            return `<label class="staff-multi-select-item">
+              <input type="checkbox" data-dispense-category-check="${esc(category)}" ${isChosen ? "checked" : ""}>
+              <span>${esc(category)}</span>
+            </label>`;
+          }
+          return `<div class="staff-multi-select-item staff-single-select-item${isChosen ? " is-selected" : ""}" data-dispense-category-single="${esc(category)}">
+            <i class="bi bi-${isChosen ? "check-circle-fill text-success" : "circle text-muted"}"></i>
+            <span>${esc(category)}</span>
+          </div>`;
+        }),
+        `<div class="staff-multi-select-other-wrap">
+          <div class="staff-multi-select-other-label">
+            <i class="bi bi-pencil-square"></i> Other / Custom Category:
+          </div>
+          <input
+            type="text"
+            class="form-control form-control-sm staff-multi-other-input"
+            data-dispense-category-custom-input
+            placeholder="Type custom category..."
+            value="${esc(currentCustom)}"
+          >
+        </div>`
+      ].join("");
+
+      refs.dispenseDiseaseCategoryMenu.innerHTML = itemsHtml;
+      syncDispenseCategoryDisplay();
+    }
+  };
+
+  let lastPopulatedIllnessCategoryKey = "";
+
+  const renderIllnessOptions = (selectedCategories = null, prefetchedSuggestions = null) => {
+    if (!refs.dispenseIllnessMenu) return;
+
+    const categories = Array.isArray(selectedCategories)
+      ? selectedCategories
+      : getSelectedDispenseCategories();
+
+    const { suggestions: fallbackSuggestions } = prefetchedSuggestions
+      ? { suggestions: prefetchedSuggestions }
+      : getDispenseAllowedDiseaseData();
+
+    let list = [];
+    if (categories.length && fallbackSuggestions) {
+      const allSet = new Set();
+      categories.forEach((cat) => {
+        if (fallbackSuggestions[cat] && Array.isArray(fallbackSuggestions[cat])) {
+          fallbackSuggestions[cat].forEach((item) => allSet.add(item));
+        }
+      });
+      list = Array.from(allSet);
+    } else if (fallbackSuggestions) {
+      const allSet = new Set();
+      Object.values(fallbackSuggestions).forEach((arr) => {
+        if (Array.isArray(arr)) arr.forEach((item) => allSet.add(item));
+      });
+      list = Array.from(allSet);
+    }
+
+    const isMulti = isDispenseMultiMedMode();
+    const categoriesSortedKey = categories.slice().sort().join(",");
+    const illnessCacheKey = `${isMulti ? "multi" : "single"}|${categoriesSortedKey}|${list.join(",")}`;
+
+    if (lastPopulatedIllnessCategoryKey !== illnessCacheKey) {
+      lastPopulatedIllnessCategoryKey = illnessCacheKey;
+
+      const currentSelected = getSelectedDispenseIllnesses();
+      const currentCustom = getDispenseIllnessCustomValue();
+
+      const validCurrent = currentSelected.filter((item) => list.includes(item));
+      const initialSelected = validCurrent.length
+        ? validCurrent
+        : (list.length === 1 ? [list[0]] : []);
+
+      const itemsHtml = [
+        ...list.map((item) => {
+          const isChosen = initialSelected.includes(item);
+          if (isMulti) {
+            return `<label class="staff-multi-select-item">
+              <input type="checkbox" data-dispense-illness-check="${esc(item)}" ${isChosen ? "checked" : ""}>
+              <span>${esc(item)}</span>
+            </label>`;
+          }
+          return `<div class="staff-multi-select-item staff-single-select-item${isChosen ? " is-selected" : ""}" data-dispense-illness-single="${esc(item)}">
+            <i class="bi bi-${isChosen ? "check-circle-fill text-success" : "circle text-muted"}"></i>
+            <span>${esc(item)}</span>
+          </div>`;
+        }),
+        `<div class="staff-multi-select-other-wrap">
+          <div class="staff-multi-select-other-label">
+            <i class="bi bi-pencil-square"></i> Other / Custom Complaint:
+          </div>
+          <input
+            type="text"
+            class="form-control form-control-sm staff-multi-other-input"
+            data-dispense-illness-custom-input
+            placeholder="Type custom complaint..."
+            value="${esc(currentCustom)}"
+          >
+        </div>`
+      ].join("");
+
+      refs.dispenseIllnessMenu.innerHTML = itemsHtml;
+      syncDispenseIllnessDisplay();
+    }
+  };
+
   const updateDispenseGuidance = () => {
     const resident = findResidentAccount(state.selectedResidentId);
     const hasMedicine = Boolean(resident && state.dispenseItems.length);
-    const details = Boolean(text(refs.dispenseDiseaseCategory?.value)
-      && text(refs.dispenseIllness?.value));
-
     const showCase = hasMedicine && state.dispenseStage === "case";
+
+    if (showCase) {
+      renderDynamicDiseaseCategoryOptions();
+    }
+
     refs.dispenseCaseCard?.classList.toggle("d-none", !showCase);
     refs.dispenseFormActions?.classList.toggle("d-none", !showCase);
     refs.selectedMedicinesCard?.classList.toggle("d-none", !state.dispenseItems.length || state.dispenseStage !== "medicine");
@@ -2746,9 +3263,58 @@
       const medicine = findMedicine(item.medicineId);
       return medicine && item.quantity > 0 && item.quantity <= medicine.stockOnHand && !isExpiredMedicine(medicine);
     });
-    const hasDetails = Boolean(text(refs.dispenseDiseaseCategory?.value)
-      && text(refs.dispenseIllness?.value));
+    const hasDetails = Boolean(text(getDispenseDiseaseCategoryValue())
+      && text(getDispenseIllnessValue()));
     refs.dispenseSubmitBtn.disabled = !hasResident || !itemsValid || !hasDetails;
+  };
+
+  const getMedicineDispenseConfig = (medicine) => {
+    const form = keyOf(medicine?.form);
+    const unit = keyOf(medicine?.unit);
+    const name = keyOf(medicine?.name);
+
+    if (form.includes("syrup") || form.includes("suspension") || form.includes("liquid") || form.includes("drops") || form.includes("solution") || unit.includes("bot") || unit.includes("fl")) {
+      const maxLimit = Math.min(2, Math.max(1, Number(medicine?.stockOnHand) || 1));
+      return {
+        type: "liquid",
+        maxLimit,
+        warningThreshold: 1,
+        presets: [1, 2].filter((n) => n <= maxLimit),
+        unitLabel: "bottle(s)"
+      };
+    }
+
+    if (form.includes("ointment") || form.includes("cream") || form.includes("gel") || unit.includes("tube")) {
+      const maxLimit = Math.min(2, Math.max(1, Number(medicine?.stockOnHand) || 1));
+      return {
+        type: "topical",
+        maxLimit,
+        warningThreshold: 1,
+        presets: [1, 2].filter((n) => n <= maxLimit),
+        unitLabel: "tube(s)"
+      };
+    }
+
+    if (form.includes("sachet") || form.includes("powder") || unit.includes("sachet") || name.includes("ors") || name.includes("oral rehydration")) {
+      const maxLimit = Math.min(6, Math.max(1, Number(medicine?.stockOnHand) || 1));
+      return {
+        type: "sachet",
+        maxLimit,
+        warningThreshold: 4,
+        presets: [2, 4, 6].filter((n) => n <= maxLimit),
+        unitLabel: "sachet(s)"
+      };
+    }
+
+    // Default: Tablets, Capsules
+    const maxLimit = Math.min(30, Math.max(1, Number(medicine?.stockOnHand) || 1));
+    return {
+      type: "tablet",
+      maxLimit,
+      warningThreshold: 15,
+      presets: [5, 10, 15, 20, 30].filter((n) => n <= maxLimit),
+      unitLabel: "pc(s)"
+    };
   };
 
   const renderDispenseItems = () => {
@@ -2756,10 +3322,40 @@
     refs.dispenseSelectedItems.innerHTML = state.dispenseItems.map((item) => {
       const medicine = findMedicine(item.medicineId);
       if (!medicine) return "";
+      const cfg = getMedicineDispenseConfig(medicine);
+      const safeQty = Math.max(1, Math.min(cfg.maxLimit, Number(item.quantity) || 1));
+      item.quantity = safeQty;
+
+      const presetsHtml = cfg.presets.map((preset) => {
+        const isActive = Number(item.quantity) === preset ? " is-active" : "";
+        return `<button type="button" class="staff-qty-preset${isActive}" data-dispense-preset-med="${esc(medicine.id)}" data-dispense-preset-val="${preset}">${preset}</button>`;
+      }).join("");
+
       return `<div class="staff-dispense-item" data-selected-medicine-id="${esc(medicine.id)}">
-        <div><strong>${esc(medicineLabel(medicine))}</strong><small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)} available</small></div>
-        <label><span>Quantity</span><input type="number" min="1" max="${esc(medicine.stockOnHand)}" step="1" value="${esc(item.quantity || "")}" data-dispense-item-quantity="${esc(medicine.id)}" class="form-control"></label>
-        <button type="button" class="btn btn-light" data-remove-dispense-item="${esc(medicine.id)}" aria-label="Remove ${esc(medicineLabel(medicine))}"><i class="bi bi-trash"></i></button>
+        <div class="staff-dispense-item__info">
+          <strong>${esc(medicineLabel(medicine))}</strong>
+          <small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)} available &bull; Max: ${cfg.maxLimit} ${cfg.unitLabel}</small>
+        </div>
+        <div class="staff-dispense-item__ctrl">
+          <div class="staff-qty-stepper">
+            <button type="button" class="staff-qty-btn" data-dispense-step-med="${esc(medicine.id)}" data-dispense-step-dir="-1" title="Bawasan" aria-label="Decrease">&minus;</button>
+            <input
+              type="number"
+              min="1"
+              max="${cfg.maxLimit}"
+              step="1"
+              value="${safeQty}"
+              data-dispense-item-quantity="${esc(medicine.id)}"
+              class="staff-qty-input form-control"
+              aria-label="Quantity"
+            >
+            <button type="button" class="staff-qty-btn" data-dispense-step-med="${esc(medicine.id)}" data-dispense-step-dir="1" title="Dagdagan" aria-label="Increase">&plus;</button>
+          </div>
+          ${presetsHtml ? `<div class="staff-qty-presets">${presetsHtml}</div>` : ""}
+        </div>
+        <div class="staff-dispense-item__actions">
+          <button type="button" class="btn staff-item-remove-btn" data-remove-dispense-item="${esc(medicine.id)}" aria-label="Remove ${esc(medicineLabel(medicine))}"><i class="bi bi-trash"></i></button>
+        </div>
       </div>`;
     }).join("");
     updateDispenseGuidance();
@@ -2773,6 +3369,7 @@
     state.dispenseItems = state.dispenseItems.filter((item) => item.medicineId !== normalizedMedicineId);
     renderDispenseItems();
     renderMedicineSearchResults();
+    saveDispenseDraft();
     return true;
   };
 
@@ -2827,6 +3424,41 @@
     renderDispenseItems();
     updateDispenseGuidance();
     syncDispenseSubmitState();
+    saveDispenseDraft();
+  };
+
+  const getMedicineFormIconClass = (form) => {
+    const key = keyOf(form);
+    if (key.includes("syrup") || key.includes("liquid") || key.includes("suspension")) return "bi bi-prescription2";
+    if (key.includes("capsule")) return "bi bi-capsule";
+    if (key.includes("tablet") || key.includes("pill")) return "bi bi-capsule-pill";
+    if (key.includes("inhaler") || key.includes("spray")) return "bi bi-lungs";
+    if (key.includes("injection") || key.includes("vial") || key.includes("ampoule")) return "bi bi-eyedropper";
+    if (key.includes("cream") || key.includes("ointment")) return "bi bi-bandaid";
+    if (key.includes("sachet") || key.includes("powder")) return "bi bi-droplet-half";
+    if (key.includes("drop")) return "bi bi-droplet";
+    return "bi bi-capsule-pill";
+  };
+
+  const renderMedicineCategoryPills = (medicines) => {
+    if (!refs.dispenseMedicineCategoryPills) return;
+    const availableCategories = Array.from(new Set(medicines.map((m) => text(m.category)).filter(Boolean))).sort();
+
+    if (!availableCategories.length) {
+      refs.dispenseMedicineCategoryPills.innerHTML = "";
+      return;
+    }
+
+    const currentFilter = state.dispenseMedicineCategoryFilter || "all";
+    const pills = [
+      { key: "all", label: "All Medicines" },
+      ...availableCategories.map((cat) => ({ key: keyOf(cat), label: cat }))
+    ];
+
+    refs.dispenseMedicineCategoryPills.innerHTML = pills.map((pill) => {
+      const isActive = currentFilter === pill.key ? " is-active" : "";
+      return `<button type="button" class="staff-med-filter-pill${isActive}" data-med-category-filter="${esc(pill.key)}">${esc(pill.label)}</button>`;
+    }).join("");
   };
 
   const renderMedicineSearchResults = () => {
@@ -2835,6 +3467,7 @@
 
     if (!resident) {
       refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">Select a patient first to unlock medicine selection.</div>';
+      if (refs.dispenseMedicineCategoryPills) refs.dispenseMedicineCategoryPills.innerHTML = "";
       return;
     }
 
@@ -2846,8 +3479,11 @@
 
     if (!medicines.length) {
       refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">No non-expired medicine available in inventory.</div>';
+      if (refs.dispenseMedicineCategoryPills) refs.dispenseMedicineCategoryPills.innerHTML = "";
       return;
     }
+
+    renderMedicineCategoryPills(medicines);
 
     if (selectedMedicine && isExpiredMedicine(selectedMedicine)) {
       refs.dispenseMedicineResults.innerHTML = '<div class="staff-empty">Expired medicines cannot be dispensed. Choose a non-expired stock item.</div>';
@@ -2856,11 +3492,19 @@
 
     if (selectedMedicine && (!query || query === keyOf(medicineLabel(selectedMedicine)))) {
       const status = getStatus(selectedMedicine);
+      const iconClass = getMedicineFormIconClass(selectedMedicine.form);
       refs.dispenseMedicineResults.innerHTML = `
         <article class="staff-medicine-selected">
           <div class="staff-medicine-selected__main">
-            <strong>${esc(medicineLabel(selectedMedicine))}</strong>
-            <small>${esc(medicinePickerMeta(selectedMedicine) || "Inventory medicine")}</small>
+            <span class="staff-medicine-row-icon"><i class="${esc(iconClass)}"></i></span>
+            <div class="staff-medicine-row-body">
+              <strong>${esc(medicineLabel(selectedMedicine))}</strong>
+              <div class="staff-medicine-row-tags">
+                ${selectedMedicine.category ? `<span class="staff-med-chip staff-med-chip--category">${esc(selectedMedicine.category)}</span>` : ""}
+                ${selectedMedicine.form ? `<span class="staff-med-chip staff-med-chip--form">${esc(selectedMedicine.form)}</span>` : ""}
+                ${selectedMedicine.genericName ? `<span class="staff-med-generic">${esc(selectedMedicine.genericName)}</span>` : ""}
+              </div>
+            </div>
           </div>
           <div class="staff-medicine-selected__tail">
             <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
@@ -2871,10 +3515,11 @@
       return;
     }
 
+    const categoryFilter = state.dispenseMedicineCategoryFilter || "all";
     const matches = medicines
+      .filter((medicine) => categoryFilter === "all" || keyOf(medicine.category) === categoryFilter || keyOf(medicine.category).includes(categoryFilter))
       .filter((medicine) => !query || medicineSearchText(medicine).includes(query))
-      .filter((medicine) => !state.dispenseItems.some((item) => item.medicineId === medicine.id))
-      .slice(0, 6);
+      .filter((medicine) => !state.dispenseItems.some((item) => item.medicineId === medicine.id));
 
     if (!matches.length) {
       refs.dispenseMedicineResults.innerHTML = hasExpiredMatch
@@ -2885,17 +3530,30 @@
 
     refs.dispenseMedicineResults.innerHTML = matches.map((medicine) => {
       const status = getStatus(medicine);
+      const iconClass = getMedicineFormIconClass(medicine.form);
+      const batchLabel = text(medicine.batchNumber) && medicine.batchNumber !== "-" ? `Batch ${esc(medicine.batchNumber)}` : "";
       return `
         <button type="button" class="staff-medicine-result" data-dispense-medicine-id="${esc(medicine.id)}">
-          <span class="staff-medicine-result__main">
-            <strong>${esc(medicineLabel(medicine))}</strong>
-            <small>${esc(medicinePickerMeta(medicine) || "Inventory medicine")}</small>
-          </span>
-          <span class="staff-medicine-result__tail">
-            <small>${esc(formatNumber(medicine.stockOnHand))} ${esc(medicine.unit)}</small>
+          <div class="staff-medicine-result__main">
+            <span class="staff-medicine-row-icon"><i class="${esc(iconClass)}"></i></span>
+            <div class="staff-medicine-row-body">
+              <strong>${esc(medicineLabel(medicine))}</strong>
+              <div class="staff-medicine-row-tags">
+                ${medicine.category ? `<span class="staff-med-chip staff-med-chip--category">${esc(medicine.category)}</span>` : ""}
+                ${medicine.form ? `<span class="staff-med-chip staff-med-chip--form">${esc(medicine.form)}</span>` : ""}
+                ${medicine.genericName ? `<span class="staff-med-generic">${esc(medicine.genericName)}</span>` : ""}
+                ${batchLabel ? `<span class="staff-med-batch">${batchLabel}</span>` : ""}
+              </div>
+            </div>
+          </div>
+          <div class="staff-medicine-result__tail">
+            <div class="staff-medicine-stock-block">
+              <strong class="staff-medicine-stock-num">${esc(formatNumber(medicine.stockOnHand))}</strong>
+              <small class="staff-medicine-stock-unit">${esc(medicine.unit)}</small>
+            </div>
             <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
             <span class="staff-medicine-add"><i class="bi bi-plus-lg"></i> Add</span>
-          </span>
+          </div>
         </button>
       `;
     }).join("");
@@ -3006,19 +3664,203 @@
     renderTopbarAccount();
   };
 
+  const DISPENSE_DRAFT_STORAGE_KEY = "mss_staff_dispense_draft_v2";
+
+  const clearDispenseDraft = () => {
+    try {
+      window.localStorage.removeItem(DISPENSE_DRAFT_STORAGE_KEY);
+      window.sessionStorage.removeItem(DISPENSE_DRAFT_STORAGE_KEY);
+    } catch (_e) {}
+  };
+
+  const getStoredDispenseDraft = () => {
+    try {
+      const raw = window.localStorage.getItem(DISPENSE_DRAFT_STORAGE_KEY)
+        || window.sessionStorage.getItem(DISPENSE_DRAFT_STORAGE_KEY);
+      if (!raw) return null;
+      const draft = JSON.parse(raw);
+      return (draft && typeof draft === "object") ? draft : null;
+    } catch (_e) {
+      return null;
+    }
+  };
+
+  const saveDispenseDraft = () => {
+    try {
+      if (!state.selectedResidentId) {
+        clearDispenseDraft();
+        return;
+      }
+      const resident = findResidentAccount(state.selectedResidentId);
+      const draft = {
+        selectedResidentId: state.selectedResidentId,
+        selectedResident: resident || null,
+        dispenseStage: state.dispenseStage,
+        dispenseItems: state.dispenseItems,
+        dispenseMedicineCategoryFilter: state.dispenseMedicineCategoryFilter,
+        diseaseCategory: getDispenseDiseaseCategoryValue(),
+        diseaseCategoryCustom: getDispenseCategoryCustomValue(),
+        diseaseCategoryIsCustom: Boolean(getSelectedDispenseCategories().includes("Others")),
+        illness: getDispenseIllnessValue(),
+        illnessCustom: getDispenseIllnessCustomValue(),
+        illnessIsCustom: Boolean(getSelectedDispenseIllnesses().includes("Others")),
+        updatedAt: Date.now()
+      };
+      const payload = JSON.stringify(draft);
+      window.localStorage.setItem(DISPENSE_DRAFT_STORAGE_KEY, payload);
+      window.sessionStorage.setItem(DISPENSE_DRAFT_STORAGE_KEY, payload);
+    } catch (_e) {}
+  };
+
+  const restoreDispenseDraft = () => {
+    const removePreloadStyle = () => {
+      document.getElementById("dispenseDraftPreloadStyle")?.remove();
+    };
+
+    try {
+      const draft = getStoredDispenseDraft();
+      if (!draft) {
+        removePreloadStyle();
+        return false;
+      }
+
+      const residentId = text(draft.selectedResidentId);
+      if (!residentId) {
+        clearDispenseDraft();
+        removePreloadStyle();
+        return false;
+      }
+
+      let resident = findResidentAccount(residentId);
+      if (!resident && draft.selectedResident) {
+        resident = normalizeResidentAccount(draft.selectedResident);
+        state.residentAccounts.push(resident);
+      }
+
+      if (!resident) {
+        clearDispenseDraft();
+        removePreloadStyle();
+        return false;
+      }
+
+      state.selectedResidentId = resident.id;
+
+      if (Array.isArray(draft.dispenseItems)) {
+        state.dispenseItems = draft.dispenseItems.filter((item) => {
+          const med = findMedicine(item.medicineId);
+          return med && item.quantity > 0;
+        });
+      } else {
+        state.dispenseItems = [];
+      }
+
+      if (draft.dispenseMedicineCategoryFilter) {
+        state.dispenseMedicineCategoryFilter = text(draft.dispenseMedicineCategoryFilter) || "all";
+      }
+
+      const validStage = (draft.dispenseStage === "case" && state.dispenseItems.length)
+        ? "case"
+        : "medicine";
+      state.dispenseStage = validStage;
+
+      renderSelectedResident();
+      renderDispenseItems();
+      renderMedicineSearchResults();
+      renderStockPreview();
+
+      refs.dispensePatientCard?.classList.add("d-none");
+
+      if (validStage === "case") {
+        refs.dispenseMedicineCard?.classList.add("d-none");
+        updateDispenseGuidance();
+
+        // Restore disease category
+        if (refs.dispenseDiseaseCategoryMenu) {
+          const savedCategories = draft.diseaseCategory
+            ? draft.diseaseCategory.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const checkboxes = Array.from(refs.dispenseDiseaseCategoryMenu.querySelectorAll('input[data-dispense-category-check]'));
+          checkboxes.forEach((cb) => {
+            const val = cb.getAttribute("data-dispense-category-check");
+            cb.checked = savedCategories.includes(val);
+          });
+          const singleCatItems = Array.from(refs.dispenseDiseaseCategoryMenu.querySelectorAll('[data-dispense-category-single]'));
+          singleCatItems.forEach((el) => {
+            const val = el.getAttribute("data-dispense-category-single");
+            const isMatch = savedCategories.includes(val);
+            el.classList.toggle("is-selected", isMatch);
+            const icon = el.querySelector("i");
+            if (icon) icon.className = isMatch ? "bi bi-check-circle-fill text-success" : "bi bi-circle text-muted";
+          });
+          const customInput = refs.dispenseDiseaseCategoryMenu.querySelector('[data-dispense-category-custom-input]');
+          if (customInput && draft.diseaseCategoryCustom) {
+            customInput.value = draft.diseaseCategoryCustom;
+          }
+          syncDispenseCategoryDisplay();
+        }
+
+        // Restore illness
+        if (refs.dispenseIllnessMenu) {
+          const savedIllnesses = draft.illness
+            ? draft.illness.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+          const checkboxes = Array.from(refs.dispenseIllnessMenu.querySelectorAll('input[data-dispense-illness-check]'));
+          checkboxes.forEach((cb) => {
+            const val = cb.getAttribute("data-dispense-illness-check");
+            cb.checked = savedIllnesses.includes(val);
+          });
+          const singleIllItems = Array.from(refs.dispenseIllnessMenu.querySelectorAll('[data-dispense-illness-single]'));
+          singleIllItems.forEach((el) => {
+            const val = el.getAttribute("data-dispense-illness-single");
+            const isMatch = savedIllnesses.includes(val);
+            el.classList.toggle("is-selected", isMatch);
+            const icon = el.querySelector("i");
+            if (icon) icon.className = isMatch ? "bi bi-check-circle-fill text-success" : "bi bi-circle text-muted";
+          });
+          const customInput = refs.dispenseIllnessMenu.querySelector('[data-dispense-illness-custom-input]');
+          if (customInput && draft.illnessCustom) {
+            customInput.value = draft.illnessCustom;
+          }
+          syncDispenseIllnessDisplay();
+        }
+      } else {
+        refs.dispenseMedicineCard?.classList.remove("d-none");
+        refs.dispenseCaseCard?.classList.add("d-none");
+        updateDispenseGuidance();
+      }
+
+      syncDispenseSubmitState();
+      removePreloadStyle();
+      saveDispenseDraft();
+      return true;
+    } catch (_e) {
+      removePreloadStyle();
+      return false;
+    }
+  };
+
   const resetDispenseForm = () => {
     state.dispenseItems = [];
     state.dispenseStage = findResidentAccount(state.selectedResidentId) ? "medicine" : "patient";
-    updateDispenseMedicineSelection("");
+    lastPopulatedCategoriesKey = "";
+    lastPopulatedIllnessCategoryKey = "";
     renderDispenseItems();
     if (refs.dispenseDiseaseCategory) refs.dispenseDiseaseCategory.value = "";
+    if (refs.dispenseDiseaseCategoryLabel) refs.dispenseDiseaseCategoryLabel.textContent = "Select disease category";
+    if (refs.dispenseDiseaseCategoryMenu) refs.dispenseDiseaseCategoryMenu.innerHTML = "";
+
     if (refs.dispenseIllness) refs.dispenseIllness.value = "";
+    if (refs.dispenseIllnessLabel) refs.dispenseIllnessLabel.textContent = "Select illness / complaint";
+    if (refs.dispenseIllnessMenu) refs.dispenseIllnessMenu.innerHTML = "";
+
+    saveDispenseDraft();
   };
 
   const resetDispenseResidentSelection = () => {
     state.selectedResidentId = "";
     state.dispenseResidentSearch = "";
     if (refs.dispenseResidentSearch) refs.dispenseResidentSearch.value = "";
+    clearDispenseDraft();
     renderSelectedResident();
     renderResidentSearchResults();
     renderHistory();
@@ -3117,18 +3959,8 @@
     }
 
     if (changed) {
-      try {
-        await persistStaffState();
-      } catch (error) {
-        restoreStaffStateSnapshot(snapshot);
-        renderResidentSearchResults();
-        renderPatientProfiles();
-        renderDashboard();
-        renderSelectedResident();
-        renderDispenseResidentPicker();
-        renderHistory();
-        throw error;
-      }
+      saveState();
+      void persistStaffState({ showSyncError: false });
     }
 
     return selectedResident;
@@ -3163,8 +3995,8 @@
     event.preventDefault();
     const resident = findResidentAccount(state.selectedResidentId);
     const dispenseItems = state.dispenseItems.map((item) => ({ ...item, medicine: findMedicine(item.medicineId) }));
-    const diseaseCategory = text(refs.dispenseDiseaseCategory?.value);
-    const illness = text(refs.dispenseIllness?.value);
+    const diseaseCategory = getDispenseDiseaseCategoryValue();
+    const illness = getDispenseIllnessValue();
     const dispenseActor = getCurrentDispenseActor();
 
     if (!resident) {
@@ -3183,7 +4015,7 @@
     }
 
     if (!diseaseCategory) {
-      showNotice("Select the disease category for this dispensing entry.", "danger");
+      showNotice("Select or specify the disease category for this dispensing entry.", "danger");
       return;
     }
 
@@ -3201,6 +4033,28 @@
       showNotice("Dispense quantity cannot be greater than available stock.", "danger");
       return;
     }
+
+    const highQtyItems = dispenseItems.filter((item) => {
+      const cfg = getMedicineDispenseConfig(item.medicine);
+      return item.quantity > cfg.warningThreshold;
+    });
+
+    if (highQtyItems.length && !pendingHighQuantityConfirmed) {
+      if (highQuantityDispenseModal && refs.highQuantityDispenseModalMessage) {
+        refs.highQuantityDispenseModalMessage.innerHTML = `
+          <div class="mb-2">Medyo marami ang bilang ng gamot para kay <strong>${esc(resident.fullName)}</strong>:</div>
+          <ul class="list-unstyled mb-0 d-grid gap-1">
+            ${highQtyItems.map((item) => {
+              const cfg = getMedicineDispenseConfig(item.medicine);
+              return `<li>&bull; <strong>${esc(medicineLabel(item.medicine))}</strong>: <span class="badge bg-warning text-dark">${item.quantity} ${cfg.unitLabel}</span> <span class="text-muted small">(Karaniwang &le; ${cfg.warningThreshold} lang)</span></li>`;
+            }).join("")}
+          </ul>
+        `;
+        highQuantityDispenseModal.show();
+        return;
+      }
+    }
+    pendingHighQuantityConfirmed = false;
 
     const snapshot = createStaffStateSnapshot();
     const createdAt = nowIso();
@@ -3633,6 +4487,9 @@
     setResidentFormMode("cabarian");
     clearResidentForm();
     renderCabarianResidentResults();
+    if (!state.selectedResidentId && state.activeSectionId === "dispense-medicine") {
+      openSection("staff-dashboard");
+    }
   });
 
   refs.dispenseSuccessModal?.addEventListener("hidden.bs.modal", () => {
@@ -3746,15 +4603,121 @@
     updateDispenseGuidance();
     syncDispenseSubmitState();
   });
-  [refs.dispenseDiseaseCategory, refs.dispenseIllness].forEach((field) => {
-    field?.addEventListener("input", () => {
+
+  refs.dispenseMedicineCategoryPills?.addEventListener("click", (event) => {
+    const pill = event.target.closest("[data-med-category-filter]");
+    if (!pill) return;
+    state.dispenseMedicineCategoryFilter = text(pill.getAttribute("data-med-category-filter")) || "all";
+    renderMedicineSearchResults();
+    saveDispenseDraft();
+  });
+
+  refs.dispenseDiseaseCategoryMenu?.addEventListener("change", (event) => {
+    if (event.target.matches('input[type="checkbox"]')) {
+      syncDispenseCategoryDisplay();
       updateDispenseGuidance();
-      syncDispenseSubmitState();
-    });
-    field?.addEventListener("change", () => {
+      saveDispenseDraft();
+    }
+  });
+
+  refs.dispenseDiseaseCategoryMenu?.addEventListener("input", (event) => {
+    if (event.target.matches("[data-dispense-category-custom-input]")) {
+      if (!isDispenseMultiMedMode()) {
+        refs.dispenseDiseaseCategoryMenu.querySelectorAll('[data-dispense-category-single]').forEach((el) => {
+          el.classList.remove("is-selected");
+          const icon = el.querySelector("i");
+          if (icon) icon.className = "bi bi-circle text-muted";
+        });
+      }
+      syncDispenseCategoryDisplay();
+      saveDispenseDraft();
+    }
+  });
+
+  refs.dispenseDiseaseCategoryMenu?.addEventListener("click", (event) => {
+    if (event.target.matches("[data-dispense-category-custom-input]")) {
+      event.stopPropagation();
+      return;
+    }
+
+    const singleItem = event.target.closest("[data-dispense-category-single]");
+    if (singleItem) {
+      event.preventDefault();
+      refs.dispenseDiseaseCategoryMenu.querySelectorAll('[data-dispense-category-single]').forEach((el) => {
+        el.classList.remove("is-selected");
+        const icon = el.querySelector("i");
+        if (icon) icon.className = "bi bi-circle text-muted";
+      });
+      singleItem.classList.add("is-selected");
+      const icon = singleItem.querySelector("i");
+      if (icon) icon.className = "bi bi-check-circle-fill text-success";
+
+      const customInput = refs.dispenseDiseaseCategoryMenu.querySelector('[data-dispense-category-custom-input]');
+      if (customInput) customInput.value = "";
+
+      syncDispenseCategoryDisplay();
       updateDispenseGuidance();
-      syncDispenseSubmitState();
-    });
+      saveDispenseDraft();
+
+      if (window.bootstrap && refs.dispenseDiseaseCategoryBtn) {
+        const dd = (window.bootstrap.Dropdown.getOrCreateInstance ? window.bootstrap.Dropdown.getOrCreateInstance(refs.dispenseDiseaseCategoryBtn) : window.bootstrap.Dropdown.getInstance(refs.dispenseDiseaseCategoryBtn));
+        dd?.hide();
+      }
+    }
+  });
+
+  refs.dispenseIllnessMenu?.addEventListener("change", (event) => {
+    if (event.target.matches('input[type="checkbox"]')) {
+      syncDispenseIllnessDisplay();
+      updateDispenseGuidance();
+      saveDispenseDraft();
+    }
+  });
+
+  refs.dispenseIllnessMenu?.addEventListener("input", (event) => {
+    if (event.target.matches("[data-dispense-illness-custom-input]")) {
+      if (!isDispenseMultiMedMode()) {
+        refs.dispenseIllnessMenu.querySelectorAll('[data-dispense-illness-single]').forEach((el) => {
+          el.classList.remove("is-selected");
+          const icon = el.querySelector("i");
+          if (icon) icon.className = "bi bi-circle text-muted";
+        });
+      }
+      syncDispenseIllnessDisplay();
+      saveDispenseDraft();
+    }
+  });
+
+  refs.dispenseIllnessMenu?.addEventListener("click", (event) => {
+    if (event.target.matches("[data-dispense-illness-custom-input]")) {
+      event.stopPropagation();
+      return;
+    }
+
+    const singleItem = event.target.closest("[data-dispense-illness-single]");
+    if (singleItem) {
+      event.preventDefault();
+      refs.dispenseIllnessMenu.querySelectorAll('[data-dispense-illness-single]').forEach((el) => {
+        el.classList.remove("is-selected");
+        const icon = el.querySelector("i");
+        if (icon) icon.className = "bi bi-circle text-muted";
+      });
+      singleItem.classList.add("is-selected");
+      const icon = singleItem.querySelector("i");
+      if (icon) icon.className = "bi bi-check-circle-fill text-success";
+
+      const customInput = refs.dispenseIllnessMenu.querySelector('[data-dispense-illness-custom-input]');
+      if (customInput) customInput.value = "";
+
+      syncDispenseIllnessDisplay();
+      updateDispenseGuidance();
+      saveDispenseDraft();
+
+      if (window.bootstrap && refs.dispenseIllnessBtn) {
+        const dd = (window.bootstrap.Dropdown.getOrCreateInstance ? window.bootstrap.Dropdown.getOrCreateInstance(refs.dispenseIllnessBtn) : window.bootstrap.Dropdown.getInstance(refs.dispenseIllnessBtn));
+        dd?.hide();
+      }
+    }
   });
 
   refs.residentBarangayFilter?.addEventListener("change", (event) => {
@@ -3802,26 +4765,30 @@
     if (!button) return;
     resetDispenseResidentSelection();
     clearNotice();
-    window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
+    toggleResidentForm(true);
   });
   refs.changeDispensePatientBtn?.addEventListener("click", () => {
     resetDispenseForm();
     resetDispenseResidentSelection();
     clearNotice();
-    window.setTimeout(() => refs.dispenseResidentSearch?.focus(), 120);
+    toggleResidentForm(true);
   });
   refs.continueDispenseBtn?.addEventListener("click", () => {
     if (!state.dispenseItems.length) return;
     state.dispenseStage = "case";
     refs.dispenseMedicineCard?.classList.add("d-none");
+    lastPopulatedCategoriesKey = "";
+    lastPopulatedIllnessCategoryKey = "";
     updateDispenseGuidance();
-    window.setTimeout(() => refs.dispenseDiseaseCategory?.focus(), 100);
+    window.setTimeout(() => refs.dispenseDiseaseCategoryBtn?.focus(), 100);
+    saveDispenseDraft();
   });
   refs.backToMedicinesBtn?.addEventListener("click", () => {
     state.dispenseStage = "medicine";
     refs.dispenseMedicineCard?.classList.remove("d-none");
     updateDispenseGuidance();
     window.setTimeout(() => refs.dispenseMedicineSearch?.focus(), 100);
+    saveDispenseDraft();
   });
 
   refs.residentCabarianResults?.addEventListener("click", (event) => {
@@ -3834,7 +4801,10 @@
       try {
         const patientAccount = await addHouseholdResidentAsPatient(resident);
         setSelectedResident(patientAccount);
-        residentFormModal?.hide();
+        if (refs.residentFormModal && window.bootstrap) {
+          const modalInst = (window.bootstrap.Modal.getOrCreateInstance ? window.bootstrap.Modal.getOrCreateInstance(refs.residentFormModal) : window.bootstrap.Modal.getInstance(refs.residentFormModal)) || residentFormModal;
+          modalInst?.hide();
+        }
         openSection("dispense-medicine");
         window.setTimeout(() => {
           showResidentSelectedSuccess({ residentName: patientAccount.fullName });
@@ -3866,17 +4836,65 @@
   refs.dispenseSelectedItems?.addEventListener("input", (event) => {
     const input = event.target.closest("[data-dispense-item-quantity]");
     if (!input) return;
-    const item = state.dispenseItems.find((entry) => entry.medicineId === text(input.getAttribute("data-dispense-item-quantity")));
-    if (item) item.quantity = Math.max(0, Math.round(numeric(input.value)));
+    const medId = text(input.getAttribute("data-dispense-item-quantity"));
+    const item = state.dispenseItems.find((entry) => entry.medicineId === medId);
+    const medicine = findMedicine(medId);
+    if (item && medicine) {
+      const cfg = getMedicineDispenseConfig(medicine);
+      const val = numeric(input.value);
+      if (val > cfg.maxLimit) {
+        showNotice(`Maximum dispense limit for ${medicineLabel(medicine)} is ${cfg.maxLimit} ${cfg.unitLabel}.`, "warning");
+        input.value = cfg.maxLimit;
+        item.quantity = cfg.maxLimit;
+      } else {
+        item.quantity = Math.max(0, Math.round(val));
+      }
+    }
     updateDispenseGuidance();
     syncDispenseSubmitState();
+    saveDispenseDraft();
   });
   refs.dispenseSelectedItems?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-dispense-item]");
-    if (!button) return;
-    event.preventDefault();
-    const medicineId = text(button.getAttribute("data-remove-dispense-item"));
-    openRemoveDispenseMedicineModal(medicineId, button);
+    const removeBtn = event.target.closest("[data-remove-dispense-item]");
+    if (removeBtn) {
+      event.preventDefault();
+      const medicineId = text(removeBtn.getAttribute("data-remove-dispense-item"));
+      openRemoveDispenseMedicineModal(medicineId, removeBtn);
+      return;
+    }
+
+    const presetBtn = event.target.closest("[data-dispense-preset-med]");
+    if (presetBtn) {
+      event.preventDefault();
+      const medId = text(presetBtn.getAttribute("data-dispense-preset-med"));
+      const presetVal = Number(presetBtn.getAttribute("data-dispense-preset-val")) || 1;
+      const item = state.dispenseItems.find((entry) => entry.medicineId === medId);
+      const medicine = findMedicine(medId);
+      if (item && medicine) {
+        const cfg = getMedicineDispenseConfig(medicine);
+        item.quantity = Math.min(cfg.maxLimit, presetVal);
+        renderDispenseItems();
+        saveDispenseDraft();
+      }
+      return;
+    }
+
+    const stepBtn = event.target.closest("[data-dispense-step-med]");
+    if (stepBtn) {
+      event.preventDefault();
+      const medId = text(stepBtn.getAttribute("data-dispense-step-med"));
+      const dir = Number(stepBtn.getAttribute("data-dispense-step-dir")) || 0;
+      const item = state.dispenseItems.find((entry) => entry.medicineId === medId);
+      const medicine = findMedicine(medId);
+      if (item && medicine) {
+        const cfg = getMedicineDispenseConfig(medicine);
+        const nextQty = Math.max(1, Math.min(cfg.maxLimit, (Number(item.quantity) || 1) + dir));
+        item.quantity = nextQty;
+        renderDispenseItems();
+        saveDispenseDraft();
+      }
+      return;
+    }
   });
 
   refs.selectedResidentUseBtn?.addEventListener("click", () => {
@@ -3888,10 +4906,7 @@
     resetDispenseResidentSelection();
     resetDispenseForm();
     clearNotice();
-    openSection("dispense-medicine");
-    window.setTimeout(() => {
-      refs.dispenseResidentSearch?.focus();
-    }, 120);
+    toggleResidentForm(true);
   });
   refs.toggleResidentFormBtn?.addEventListener("click", () => toggleResidentForm());
   refs.closeResidentFormBtn?.addEventListener("click", () => toggleResidentForm(false));
@@ -3905,7 +4920,13 @@
     renderStockPreview();
   });
   refs.dispenseForm?.addEventListener("submit", handleDispenseSubmit);
+  refs.confirmHighQuantityDispenseBtn?.addEventListener("click", () => {
+    pendingHighQuantityConfirmed = true;
+    highQuantityDispenseModal?.hide();
+    refs.dispenseForm?.requestSubmit();
+  });
   refs.dispenseCancelBtn?.addEventListener("click", () => {
+    pendingHighQuantityConfirmed = false;
     resetDispenseForm();
     resetDispenseResidentSelection();
     clearNotice();
@@ -3973,12 +4994,18 @@
     renderMedicineOptions();
     renderSettings();
     renderTopbarAccount();
-    renderSelectedResident();
     renderResidentSearchResults();
     renderPatientProfiles();
     renderHistory();
     renderStaffNotifications();
-    const initialSectionId = text(window.location.hash).replace(/^#/, "") || "staff-dashboard";
+
+    const hasDraft = restoreDispenseDraft();
+    if (!hasDraft) {
+      renderSelectedResident();
+    }
+
+    const currentHash = text(window.location.hash).replace(/^#/, "");
+    const initialSectionId = currentHash || (hasDraft ? "dispense-medicine" : "staff-dashboard");
     if (requiresCredentialUpdate) {
       forceCredentialUpdateFlow({ focus: false });
       return;

@@ -22,29 +22,21 @@ plugins {
 
 def twaManifest = [
     applicationId: 'online.cabarianportal.registration.v5',
-    hostName: 'cabarianportal.online', // The domain being opened in the TWA.
-    launchUrl: '/household-system/registration.php', // The start path for the TWA. Must be relative to the domain.
-    name: 'Cabarian Registration', // The application name.
-    launcherName: 'Registration', // The name shown on the Android Launcher.
-    themeColor: '#0D6EFD', // The color used for the status bar.
-    themeColorDark: '#000000', // The color used for the dark status bar.
-    navigationColor: '#000000', // The color used for the navigation bar.
-    navigationColorDark: '#000000', // The color used for the dark navbar.
-    navigationDividerColor: '#000000', // The navbar divider color.
-    navigationDividerColorDark: '#000000', // The dark navbar divider color.
-    backgroundColor: '#F6F8FB', // The color used for the splash screen background.
-    enableNotifications: true, // Set to true to enable notification delegation.
-    // Every shortcut must include the following fields:
-    // - name: String that will show up in the shortcut.
-    // - short_name: Shorter string used if |name| is too long.
-    // - url: Absolute path of the URL to launch the app with (e.g '/create').
-    // - icon: Name of the resource in the drawable folder to use as an icon.
+    hostName: 'cabarianportal.online',
+    launchUrl: '/household-system/login.php',
+    name: 'Cabarian Registration',
+    launcherName: 'Registration',
+    themeColor: '#0D6EFD',
+    themeColorDark: '#000000',
+    navigationColor: '#000000',
+    navigationColorDark: '#000000',
+    navigationDividerColor: '#000000',
+    navigationDividerColorDark: '#000000',
+    backgroundColor: '#F6F8FB',
+    enableNotifications: true,
     shortcuts: [],
-    // The duration of fade out animation in milliseconds to be played when removing splash screen.
     splashScreenFadeOutDuration: 300,
-    generatorApp: 'bubblewrap-cli', // Application that generated the Android Project
-    // The fallback strategy for when Trusted Web Activity is not available. Possible values are
-    // 'customtabs' and 'webview'.
+    generatorApp: 'bubblewrap-cli',
     fallbackType: 'webview',
     enableSiteSettingsShortcut: 'true',
     orientation: 'portrait',
@@ -57,79 +49,26 @@ android {
         applicationId "online.cabarianportal.registration.v5"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 7
-        versionName "7"
+        versionCode 37
+        versionName "3.7"
 
-        // The name for the application
         resValue "string", "appName", twaManifest.name
-
-        // The name for the application on the Android Launcher
         resValue "string", "launcherName", twaManifest.launcherName
 
-        // The URL that will be used when launching the TWA from the Android Launcher
         def launchUrl = "https://" + twaManifest.hostName + twaManifest.launchUrl
         resValue "string", "launchUrl", launchUrl
+        resValue "string", "webManifestUrl", 'https://cabarianportal.online/household-system/manifest.webmanifest'
+        resValue "string", "fullScopeUrl", 'https://cabarianportal.online/household-system/'
 
-
-
-
-            // The URL the Web Manifest for the Progressive Web App that the TWA points to. This
-            // is used by Chrome OS and Meta Quest to open the Web version of the PWA instead of
-            // the TWA, as it will probably give a better user experience for non-mobile devices.
-            resValue "string", "webManifestUrl", 'https://cabarianportal.online/household-system/manifest.webmanifest'
-
-
-
-            // This is used by Meta Quest.
-            resValue "string", "fullScopeUrl", 'https://cabarianportal.online/household-system/'
-
-
-
-
-        // The hostname is used when building the intent-filter, so the TWA is able to
-        // handle Intents to open host url of the application.
         resValue "string", "hostName", twaManifest.hostName
-
-        // This attribute sets the status bar color for the TWA. It can be either set here or in
-        // `res/values/colors.xml`. Setting in both places is an error and the app will not
-        // compile. If not set, the status bar color defaults to #FFFFFF - white.
         resValue "color", "colorPrimary", twaManifest.themeColor
-
-        // This attribute sets the dark status bar color for the TWA. It can be either set here or in
-        // `res/values/colors.xml`. Setting in both places is an error and the app will not
-        // compile. If not set, the status bar color defaults to #000000 - white.
         resValue "color", "colorPrimaryDark", twaManifest.themeColorDark
-
-        // This attribute sets the navigation bar color for the TWA. It can be either set here or
-        // in `res/values/colors.xml`. Setting in both places is an error and the app will not
-        // compile. If not set, the navigation bar color defaults to #FFFFFF - white.
         resValue "color", "navigationColor", twaManifest.navigationColor
-
-        // This attribute sets the dark navigation bar color for the TWA. It can be either set here
-        // or in `res/values/colors.xml`. Setting in both places is an error and the app will not
-        // compile. If not set, the navigation bar color defaults to #000000 - black.
         resValue "color", "navigationColorDark", twaManifest.navigationColorDark
-
-        // This attribute sets the navbar divider color for the TWA. It can be either
-        // set here or in `res/values/colors.xml`. Setting in both places is an error and the app
-        // will not compile. If not set, the divider color defaults to #00000000 - transparent.
         resValue "color", "navigationDividerColor", twaManifest.navigationDividerColor
-
-        // This attribute sets the dark navbar divider color for the TWA. It can be either
-        // set here or in `res/values/colors.xml`. Setting in both places is an error and the
-        //app will not compile. If not set, the divider color defaults to #000000 - black.
         resValue "color", "navigationDividerColorDark", twaManifest.navigationDividerColorDark
-
-        // Sets the color for the background used for the splash screen when launching the
-        // Trusted Web Activity.
         resValue "color", "backgroundColor", twaManifest.backgroundColor
-
-        // Defines a provider authority for the Splash Screen
         resValue "string", "providerAuthority", twaManifest.applicationId + '.fileprovider'
-
-        // The enableNotification resource is used to enable or disable the
-        // TrustedWebActivityService, by changing the android:enabled and android:exported
-        // attributes
         resValue "bool", "enableNotification", twaManifest.enableNotifications.toString()
 
         twaManifest.shortcuts.eachWithIndex { shortcut, index ->
@@ -137,22 +76,14 @@ android {
             resValue "string", "shortcut_short_name_$index", "$shortcut.short_name"
         }
 
-        // The splashScreenFadeOutDuration resource is used to set the duration of fade out animation in milliseconds
-        // to be played when removing splash screen. The default is 0 (no animation).
         resValue "integer", "splashScreenFadeOutDuration", twaManifest.splashScreenFadeOutDuration.toString()
-
         resValue "string", "generatorApp", twaManifest.generatorApp
-
         resValue "string", "fallbackType", twaManifest.fallbackType
-
         resValue "bool", "enableSiteSettingsShortcut", twaManifest.enableSiteSettingsShortcut
         resValue "string", "orientation", twaManifest.orientation
-
-
     }
     buildTypes {
         release {
-            // Keep the first compatibility release unshrunk so API-level classes are not merged.
             minifyEnabled false
         }
     }
@@ -168,14 +99,13 @@ android {
 task generateShorcutsFile {
     assert twaManifest.shortcuts.size() < 5, "You can have at most 4 shortcuts."
     twaManifest.shortcuts.eachWithIndex { s, i ->
-        assert s.name != null, 'Missing `name` in shortcut #' + i
-        assert s.short_name != null, 'Missing `short_name` in shortcut #' + i
-        assert s.url != null, 'Missing `icon` in shortcut #' + i
-        assert s.icon != null, 'Missing `url` in shortcut #' + i
+        assert s.name != null, 'Missing name in shortcut #' + i
+        assert s.short_name != null, 'Missing short_name in shortcut #' + i
+        assert s.url != null, 'Missing icon in shortcut #' + i
+        assert s.icon != null, 'Missing url in shortcut #' + i
     }
 
     def shortcutsFile = new File("$projectDir/src/main/res/xml", "shortcuts.xml")
-
     def xmlWriter = new StringWriter()
     def xmlMarkup = new MarkupBuilder(new IndentPrinter(xmlWriter, "    ", true))
 
@@ -200,10 +130,41 @@ task generateShorcutsFile {
     shortcutsFile.text = xmlWriter.toString() + '\n'
 }
 
-preBuild.dependsOn(generateShorcutsFile)
+def householdWebRoot = new File(rootProject.projectDir, '../household-system')
+
+tasks.register('syncOfflineWebAssets', Copy) {
+    from(householdWebRoot) {
+        include 'service-worker.js'
+        include 'manifest.webmanifest'
+        include 'offline-registration.html'
+        include 'bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css'
+        include 'bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js'
+        include 'assets/vendor/bootstrap-icons/bootstrap-icons.css'
+        include 'assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff'
+        include 'assets/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2'
+        include 'assets/css/login-style.css'
+        include 'assets/css/password-toggle.css'
+        include 'assets/css/registration-style.css'
+        include 'assets/js/indexeddb-storage-scripts.js'
+        include 'assets/js/login-scripts.js'
+        include 'assets/js/member-scripts.js'
+        include 'assets/js/password-toggle.js'
+        include 'assets/js/photo-capture.js'
+        include 'assets/js/registration-offline-init.js'
+        include 'assets/js/registration-photo-storage.js'
+        include 'assets/js/registration-scripts.js'
+        include 'assets/img/barangay-cabarian-logo.png'
+        include 'assets/img/ligao-city-logo.png'
+        include 'assets/img/registration-app-icon-192.png'
+        include 'assets/img/registration-app-icon-512.png'
+        include 'assets/img/registration-app-icon-maskable-512.png'
+    }
+    into(file('src/main/assets/household-system'))
+}
+
+preBuild.dependsOn(generateShorcutsFile, syncOfflineWebAssets)
 
 repositories {
-
 }
 
 dependencies {

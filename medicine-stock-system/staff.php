@@ -5,10 +5,10 @@ $authUser = mss_page_require_auth(['staff']);
 $requiresCredentialUpdate = mss_auth_user_requires_credential_update($authUser);
 $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-dashboard.css');
 $notificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/notifications.css');
-$staffCssVersion = (string) @filemtime(__DIR__ . '/assets/css/staff.css');
+$staffCssVersion = (string) @filemtime(__DIR__ . '/assets/css/staff.css') . '-v20260902c';
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $passwordToggleCssVersion = (string) @filemtime(__DIR__ . '/assets/css/password-toggle.css');
-$staffJsVersion = (string) @filemtime(__DIR__ . '/assets/js/staff.js');
+$staffJsVersion = (string) @filemtime(__DIR__ . '/assets/js/staff.js') . '-v20260902c';
 $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-toggle.js');
 ?><!doctype html>
@@ -108,13 +108,13 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
                 </div>
               </article>
 
-              <article class="staff-dashboard-metric staff-dashboard-metric--warning">
+              <article class="staff-dashboard-metric staff-dashboard-metric--expired">
                 <span class="staff-dashboard-metric__icon" aria-hidden="true">
-                  <i class="bi bi-hourglass-split"></i>
+                  <i class="bi bi-x-octagon"></i>
                 </span>
                 <div class="staff-dashboard-metric__content">
-                  <strong id="dashboardExpiringCount">0</strong>
-                  <span class="staff-dashboard-metric__label">Expiring Soon</span>
+                  <strong id="dashboardExpiredCount">0</strong>
+                  <span class="staff-dashboard-metric__label">Expired Medicines</span>
                 </div>
               </article>
 
@@ -215,12 +215,29 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
           </section>
 
           <section class="staff-panel staff-content-panel" id="dispense-medicine" data-staff-section="dispense-medicine">
-            <div class="staff-panel__head">
-              <h5>Dispense Medicine</h5>
-              <p>Select the patient, medicine, and case details for this entry.</p>
-            </div>
-
             <form id="dispenseForm" class="staff-form-grid staff-dispense-form" autocomplete="off">
+              <script>
+                (function(){
+                  try {
+                    var d = localStorage.getItem('mss_staff_dispense_draft_v2') || sessionStorage.getItem('mss_staff_dispense_draft_v2');
+                    if (d) {
+                      var p = JSON.parse(d);
+                      if (p && p.selectedResidentId) {
+                        var css = '#dispensePatientCard{display:none!important;}';
+                        if (p.dispenseStage === 'case') {
+                          css += '#dispenseCaseCard{display:grid!important;}#dispenseFormActions{display:flex!important;}';
+                        } else {
+                          css += '#dispenseMedicineCard{display:grid!important;}';
+                        }
+                        var s = document.createElement('style');
+                        s.id = 'dispenseDraftPreloadStyle';
+                        s.textContent = css;
+                        document.head.appendChild(s);
+                      }
+                    }
+                  } catch(e){}
+                })();
+              </script>
               <section class="col-span-2 staff-dispense-card" id="dispensePatientCard">
                 <div class="staff-dispense-card__head">
                   <div>
@@ -277,6 +294,8 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
                     >
                   </label>
 
+                  <div class="staff-med-filter-pills" id="dispenseMedicineCategoryPills"></div>
+
                   <select id="dispenseMedicine" class="form-select d-none" aria-hidden="true" tabindex="-1">
                     <option value="">Select medicine</option>
                   </select>
@@ -314,35 +333,46 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
 
                 <div class="staff-dispense-grid">
                   <div class="staff-dispense-field">
-                    <label for="dispenseDiseaseCategory" class="form-label">Disease Category</label>
-                    <div class="staff-dispense-select">
-                      <select id="dispenseDiseaseCategory" class="form-select" required>
-                        <option value="">Select category</option>
-                        <option value="Fever">Fever</option>
-                        <option value="Cough / Cold">Cough / Cold</option>
-                        <option value="Respiratory">Respiratory</option>
-                        <option value="Diarrhea">Diarrhea</option>
-                        <option value="Pain / Inflammation">Pain / Inflammation</option>
-                        <option value="Hypertension">Hypertension</option>
-                        <option value="Diabetes">Diabetes</option>
-                        <option value="Skin Disease">Skin Disease</option>
-                        <option value="Others">Others</option>
-                      </select>
-                      <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                    <label class="form-label" for="dispenseDiseaseCategoryBtn">Disease Category</label>
+                    <div class="dropdown staff-multi-select-dropdown" id="dispenseDiseaseCategoryDropdownWrap">
+                      <button
+                        type="button"
+                        class="form-select text-start staff-multi-select-btn"
+                        id="dispenseDiseaseCategoryBtn"
+                        data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside"
+                        aria-expanded="false"
+                      >
+                        <span class="staff-multi-select-label" id="dispenseDiseaseCategoryLabel">Select disease category</span>
+                        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                      </button>
+                      <div class="dropdown-menu staff-multi-select-menu p-2 shadow-sm" id="dispenseDiseaseCategoryMenu">
+                        <!-- Populated by JS with checkboxes and inline Other input -->
+                      </div>
+                      <input type="hidden" id="dispenseDiseaseCategory" name="disease_category" value="" required>
                     </div>
                   </div>
 
                   <div class="staff-dispense-field">
-                    <label for="dispenseIllness" class="form-label">Illness / Complaint</label>
-                    <input
-                      type="text"
-                      id="dispenseIllness"
-                      class="form-control"
-                      placeholder="e.g. Fever, cough, and headache"
-                      required
-                    >
+                    <label class="form-label" for="dispenseIllnessBtn">Illness / Complaint</label>
+                    <div class="dropdown staff-multi-select-dropdown" id="dispenseIllnessDropdownWrap">
+                      <button
+                        type="button"
+                        class="form-select text-start staff-multi-select-btn"
+                        id="dispenseIllnessBtn"
+                        data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside"
+                        aria-expanded="false"
+                      >
+                        <span class="staff-multi-select-label" id="dispenseIllnessLabel">Select illness / complaint</span>
+                        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                      </button>
+                      <div class="dropdown-menu staff-multi-select-menu p-2 shadow-sm" id="dispenseIllnessMenu">
+                        <!-- Populated by JS with checkboxes and inline Other input -->
+                      </div>
+                      <input type="hidden" id="dispenseIllness" name="illness" value="" required>
+                    </div>
                   </div>
-
                 </div>
               </section>
 
@@ -503,6 +533,23 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
         <div class="d-flex justify-content-center gap-2 flex-wrap">
           <button type="button" class="btn btn-secondary btn-modern" id="cancelRemoveDispenseMedicineBtn" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="confirmRemoveDispenseMedicineBtn">Remove Medicine</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="highQuantityDispenseModal" tabindex="-1" aria-labelledby="highQuantityDispenseModalTitle" aria-describedby="highQuantityDispenseModalMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content notification-confirm-modal text-center p-4">
+        <div class="notification-confirm-modal__icon mb-3 text-warning" aria-hidden="true">
+          <i class="bi bi-exclamation-triangle fs-1"></i>
+        </div>
+        <h5 class="modal-title mb-2" id="highQuantityDispenseModalTitle">High Quantity Confirmation</h5>
+        <div class="mb-3 text-start bg-light p-3 rounded-3" id="highQuantityDispenseModalMessage"></div>
+        <p class="mb-3 text-muted small">Sigurado ka ba na nais mong i-release ang ganitong karaming gamot para sa pasyente?</p>
+        <div class="d-flex justify-content-center gap-2 flex-wrap">
+          <button type="button" class="btn btn-secondary btn-modern" id="cancelHighQuantityDispenseBtn" data-bs-dismiss="modal">I-check Ulit / Baguhin</button>
+          <button type="button" class="btn btn-success btn-modern" id="confirmHighQuantityDispenseBtn">Ituloy ang Pag-dispense</button>
         </div>
       </div>
     </div>

@@ -350,7 +350,7 @@
     if (expiryDays < 0) return { key: "expired", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
     if (stock <= Math.max(5, Math.round(requestAlertLevel * 0.5))) return { key: "critical", label: "Critical", tone: "danger", note: "Below half of request alert level" };
     if (stock <= requestAlertLevel) return { key: "low-stock", label: "Low Stock", tone: "warning", note: "At or below request alert level" };
-    if (expiryDays <= 60) return { key: "expiring-soon", label: "Expiring Soon", tone: "olive", note: `${expiryDays} days left` };
+    if (expiryDays <= 90) return { key: "expiring-soon", label: "Expiring Soon", tone: "olive", note: `${expiryDays} days left` };
     return { key: "healthy", label: "Healthy", tone: "success", note: "Stock within target range" };
   };
 
@@ -489,13 +489,13 @@
     });
 
   const buildAvailableMedicinesRows = () => buildInventoryListRows({
-    filter: (medicine, expiryDays) => numeric(medicine.stockOnHand) > 0 && expiryDays > 60,
+    filter: (medicine, expiryDays) => numeric(medicine.stockOnHand) > 0 && expiryDays > 90,
     statusLabel: "Available",
     statusTone: "success"
   });
 
   const buildAboutToExpireRows = () => buildInventoryListRows({
-    filter: (medicine, expiryDays) => numeric(medicine.stockOnHand) > 0 && expiryDays > 30 && expiryDays <= 60,
+    filter: (medicine, expiryDays) => numeric(medicine.stockOnHand) > 0 && expiryDays > 30 && expiryDays <= 90,
     statusLabel: "About to Expire",
     statusTone: "olive"
   });

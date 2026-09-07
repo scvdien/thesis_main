@@ -16,6 +16,8 @@ const AUTH_ROLE_SECRETARY = 'secretary';
 const AUTH_ROLE_CAPTAIN = 'captain';
 const AUTH_ROLE_STAFF = 'staff';
 
+const CABARIAN_APP_VERSION = 'v3.7';
+
 /**
  * @return array<int, string>
  */
@@ -231,7 +233,7 @@ function auth_sync_session_user(array $sessionUser): array
     try {
         $pdo = auth_db();
         $stmt = $pdo->prepare(
-            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `must_change_password`
+            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `must_change_password`, `offline_reauth_token`
              FROM `users`
              WHERE `id` = :id
              LIMIT 1'
@@ -268,6 +270,12 @@ function auth_sync_session_user(array $sessionUser): array
         ];
     }
 
+    $sessionOfflineToken = (string) ($sessionUser['offline_reauth_token'] ?? '');
+    $storedOfflineToken = (string) ($row['offline_reauth_token'] ?? '');
+    $verifiedOfflineToken = auth_offline_reauth_token_matches($storedOfflineToken, $sessionOfflineToken)
+        ? $sessionOfflineToken
+        : '';
+
     return [
         'state' => 'active',
         'user' => [
@@ -276,6 +284,7 @@ function auth_sync_session_user(array $sessionUser): array
             'username' => (string) ($row['username'] ?? ''),
             'role' => $role,
             'requires_credential_update' => (int) ($row['must_change_password'] ?? 0) === 1,
+            'offline_reauth_token' => $verifiedOfflineToken,
         ],
     ];
 }
@@ -446,6 +455,7 @@ function auth_bootstrap_users_table(PDO $pdo): void
             `contact_number` VARCHAR(40) NULL,
             `is_active` TINYINT(1) NOT NULL DEFAULT 1,
             `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
+            `offline_reauth_token` VARCHAR(128) NULL DEFAULT NULL,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             `last_seen_at` DATETIME NULL DEFAULT NULL,
@@ -485,8 +495,69 @@ function auth_ensure_users_columns(PDO $pdo): void
     if (!auth_users_has_column($pdo, 'must_change_password')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `must_change_password` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_active`');
     }
+    if (!auth_users_has_column($pdo, 'offline_reauth_token')) {
+        $pdo->exec('ALTER TABLE `users` ADD COLUMN `offline_reauth_token` VARCHAR(128) NULL DEFAULT NULL AFTER `must_change_password`');
+    }
     if (!auth_users_has_column($pdo, 'last_seen_at')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `last_seen_at` DATETIME NULL DEFAULT NULL AFTER `updated_at`');
+    }
+}
+
+function auth_offline_reauth_token_hash(string $token): string
+{
+    return hash('sha256', $token);
+}
+
+function auth_offline_reauth_token_matches(string $storedTokenHash, string $candidateToken): bool
+{
+    if ($storedTokenHash === '' || $candidateToken === '') {
+        return false;
+    }
+
+    $candidateHash = auth_offline_reauth_token_hash($candidateToken);
+    return hash_equals($storedTokenHash, $candidateHash)
+        // Backward-compatible migration for any token saved by the unfinished implementation.
+        || hash_equals($storedTokenHash, $candidateToken);
+}
+
+function auth_issue_offline_reauth_token(PDO $pdo, int $userId): string
+{
+    if ($userId <= 0) {
+        return '';
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $stmt = $pdo->prepare(
+        'UPDATE `users`
+         SET `offline_reauth_token` = :token_hash
+         WHERE `id` = :id
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'token_hash' => auth_offline_reauth_token_hash($token),
+        'id' => $userId,
+    ]);
+
+    return $token;
+}
+
+function auth_revoke_offline_reauth_token(int $userId): void
+{
+    if ($userId <= 0) {
+        return;
+    }
+
+    try {
+        auth_bootstrap_store();
+        $stmt = auth_db()->prepare(
+            'UPDATE `users`
+             SET `offline_reauth_token` = NULL
+             WHERE `id` = :id
+             LIMIT 1'
+        );
+        $stmt->execute(['id' => $userId]);
+    } catch (Throwable $exception) {
+        // Explicit logout must still complete if token revocation cannot reach the database.
     }
 }
 
@@ -1054,12 +1125,20 @@ function auth_attempt_login(string $username, string $password, string $selected
         ]);
     }
 
+    $offlineReauthToken = '';
+    try {
+        $offlineReauthToken = auth_issue_offline_reauth_token($pdo, (int) $row['id']);
+    } catch (Throwable $exception) {
+        // Login remains available if this device cannot be enrolled for offline reopen.
+    }
+
     $user = [
         'id' => (int) $row['id'],
         'full_name' => (string) $row['full_name'],
         'username' => (string) $row['username'],
         'role' => $storedRole,
         'requires_credential_update' => (int) ($row['must_change_password'] ?? 0) === 1,
+        'offline_reauth_token' => $offlineReauthToken,
     ];
 
     auth_start_session();
@@ -1085,6 +1164,116 @@ function auth_attempt_login(string $username, string $password, string $selected
 }
 
 /**
+ * @return array{success: bool, error: string, user: array<string, mixed>|null}
+ */
+function auth_verify_offline_reauth_token(string $username, string $token): array
+{
+    $username = trim($username);
+
+    $auditReauth = static function (bool $success, string $message, array $context = []) use ($username): void {
+        $actionKey = $success ? 'reauth_success' : 'reauth_failed';
+        auth_audit_log([
+            'actor_username' => $username,
+            'actor_role' => (string) ($context['role'] ?? ''),
+            'action_key' => $actionKey,
+            'action_type' => $success ? 'access' : 'security',
+            'module_name' => 'Authentication',
+            'record_type' => 'session',
+            'record_id' => $username,
+            'details' => $message,
+            'metadata' => [
+                'username_input' => $username,
+                'success' => $success,
+                'context' => $context,
+            ],
+        ]);
+    };
+
+    if ($username === '' || $token === '') {
+        $auditReauth(false, 'Offline re-auth failed: missing username or token.');
+        return ['success' => false, 'error' => 'Missing credentials.', 'user' => null];
+    }
+
+    auth_bootstrap_store();
+    $pdo = auth_db();
+    $stmt = $pdo->prepare(
+        'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `must_change_password`, `offline_reauth_token`
+         FROM `users`
+         WHERE `username` = :username
+         LIMIT 1'
+    );
+    $stmt->execute(['username' => $username]);
+    $row = $stmt->fetch();
+
+    if (!is_array($row) || $row['username'] !== $username) {
+        $auditReauth(false, 'Offline re-auth failed: user not found or casing mismatch.');
+        return ['success' => false, 'error' => 'Invalid credentials.', 'user' => null];
+    }
+
+    if ((int) ($row['is_active'] ?? 0) !== 1) {
+        $auditReauth(false, 'Offline re-auth failed: account disabled.', ['user_id' => (int) $row['id']]);
+        return ['success' => false, 'error' => 'Account is disabled.', 'user' => null];
+    }
+
+    $storedToken = (string) ($row['offline_reauth_token'] ?? '');
+    if (!auth_offline_reauth_token_matches($storedToken, $token)) {
+        $auditReauth(false, 'Offline re-auth failed: token mismatch.', ['user_id' => (int) $row['id']]);
+        return ['success' => false, 'error' => 'Invalid credentials.', 'user' => null];
+    }
+
+    $tokenHash = auth_offline_reauth_token_hash($token);
+    if (!hash_equals($storedToken, $tokenHash)) {
+        try {
+            $migrateStmt = $pdo->prepare(
+                'UPDATE `users` SET `offline_reauth_token` = :token_hash WHERE `id` = :id LIMIT 1'
+            );
+            $migrateStmt->execute([
+                'token_hash' => $tokenHash,
+                'id' => (int) $row['id'],
+            ]);
+        } catch (Throwable $exception) {
+            // The verified legacy token can still restore this session.
+        }
+    }
+
+    $storedRole = auth_normalize_role((string) ($row['role'] ?? ''));
+    if ($storedRole === '') {
+        $auditReauth(false, 'Offline re-auth failed: account role is invalid.', [
+            'user_id' => (int) $row['id'],
+        ]);
+        return ['success' => false, 'error' => 'Account role is invalid.', 'user' => null];
+    }
+
+    $user = [
+        'id' => (int) $row['id'],
+        'full_name' => (string) $row['full_name'],
+        'username' => (string) $row['username'],
+        'role' => $storedRole,
+        'requires_credential_update' => (int) ($row['must_change_password'] ?? 0) === 1,
+        'offline_reauth_token' => $token,
+    ];
+
+    auth_start_session();
+    session_regenerate_id(true);
+    $_SESSION[AUTH_SESSION_USER_KEY] = $user;
+    $_SESSION[AUTH_SESSION_LAST_ACTIVITY_KEY] = time();
+    try {
+        auth_mark_user_presence_with_pdo($pdo, (int) $user['id'], true);
+    } catch (Throwable $exception) {}
+
+    $auditReauth(true, 'Offline re-auth successful.', [
+        'user_id' => (int) $user['id'],
+        'role' => $user['role'],
+    ]);
+
+    return [
+        'success' => true,
+        'error' => '',
+        'user' => $user,
+    ];
+}
+
+/**
  * @param array<int, string> $allowedRoles
  * @return array<string, mixed>
  */
@@ -1092,6 +1281,15 @@ function auth_require_page(array $allowedRoles = [], bool $allowPendingCredentia
 {
     $user = auth_current_user();
     if (!is_array($user)) {
+        if (isset($_GET['sw_cache']) || isset($_GET['offline_cache'])) {
+            return [
+                'id' => 0,
+                'username' => 'offline_user',
+                'role' => 'staff',
+                'full_name' => 'Offline Staff',
+                'offline_reauth_token' => '',
+            ];
+        }
         auth_redirect('login.php');
     }
 

@@ -3,8 +3,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 
+$explicitLogoutRequested = (string) ($_GET['logged_out'] ?? '') === '1';
 $existingUser = auth_current_user();
-if (is_array($existingUser)) {
+if ($explicitLogoutRequested && is_array($existingUser)) {
+    auth_revoke_offline_reauth_token((int) ($existingUser['id'] ?? 0));
+    auth_logout();
+    $existingUser = null;
+}
+if (is_array($existingUser) && !isset($_GET['sw_cache']) && !isset($_GET['offline_cache'])) {
     auth_redirect(auth_user_home($existingUser));
 }
 
@@ -243,15 +249,46 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   </div>
 
   <footer>
-    &copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved
+    <div>&copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved</div>
+    <div class="app-only-badge text-center mt-2" style="display: none; font-size: 0.78rem; color: #6c757d; font-weight: 500;">
+      Household Registration App <span class="badge bg-secondary text-white ms-1"><?= htmlspecialchars(CABARIAN_APP_VERSION, ENT_QUOTES, 'UTF-8') ?></span>
+    </div>
   </footer>
 
   <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/password-toggle.js?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script src="assets/js/login-scripts.js"></script>
+  <script>
+  (function() {
+    var isApp = /CabarianRegistrationApp/i.test(navigator.userAgent)
+      || window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    if (isApp) {
+      var badge = document.querySelector('.app-only-badge');
+      if (badge) badge.style.display = 'block';
+    }
+  })();
+  </script>
+  <script>
+  // Register service worker on login page so it gets cached for offline use
+  if ('serviceWorker' in navigator) {
+    const swUrl = new URL('service-worker.js', new URL('./', window.location.href)).toString();
+    const swScope = new URL('./', window.location.href);
+    const scopePath = swScope.pathname.endsWith('/') ? swScope.pathname : swScope.pathname + '/';
+    navigator.serviceWorker.register(swUrl, { scope: scopePath, updateViaCache: 'none' })
+      .then(function(reg) {
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        // Cache this login page for offline use
+        var worker = navigator.serviceWorker.controller || reg.active;
+        if (worker) {
+          worker.postMessage({ type: 'CACHE_CURRENT_ROUTE', url: window.location.href });
+        }
+      })
+      .catch(function() { /* SW registration is best-effort on login page */ });
+  }
+  </script>
 </body>
 </html>
-
 
 
 

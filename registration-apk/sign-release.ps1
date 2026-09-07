@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 
 $projectDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $unsignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'app\build\outputs\apk\release\app-release-unsigned.apk'))
-$alignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'Cabarian-Registration-v7-unsigned-aligned.apk'))
-$signedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'INSTALL-THIS-Cabarian-v7.apk'))
+$alignedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'Cabarian-Registration-v3.7-unsigned-aligned.apk'))
+$signedApk = [System.IO.Path]::GetFullPath((Join-Path $projectDir 'INSTALL-THIS-Cabarian-Registration-v3.7.apk'))
 $keystore = 'C:\Users\judea\cabarian-registration.keystore'
 $keyAlias = 'cabarian-registration'
 $buildToolsDir = 'C:\Users\judea\.bubblewrap\android_sdk\build-tools\36.1.0'
@@ -59,8 +59,8 @@ try {
     }
 
     $badging = (& $aapt dump badging $signedApk) -join "`n"
-    if ($LASTEXITCODE -ne 0 -or $badging -notmatch "versionCode='7'") {
-        throw 'The signed APK is not the expected Version 7 build.'
+    if ($LASTEXITCODE -ne 0 -or $badging -notmatch "versionCode='37'") {
+        throw 'The signed APK is not the expected Version 3.7 build.'
     }
 
     $permissions = (& $aapt dump permissions $signedApk) -join "`n"

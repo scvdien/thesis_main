@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0d6efd">
+  <meta name="csrf-token" content="offline-token">
+  <script>
+    (function () {
+      try {
+        var access = JSON.parse(localStorage.getItem("cabarian_offline_access_v1") || "null");
+        if (access && Number(access.version) === 1 && access.userId && /^[a-f0-9]{64}$/i.test(String(access.reauthToken || ""))) return;
+      } catch (error) {}
+      location.replace("login.php?offline_required=1");
+    })();
+  </script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Add Household Member</title>
+  <link rel="icon" type="image/png" href="assets/img/registration-app-icon-192.png">
+
+  <!-- Bootstrap CSS -->
+  <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/registration-style.css?v=1">
+</head>
+
+<body
+  data-role=""
+  data-current-username=""
+  data-current-user-id=""
+  data-offline-shell="true"
+>
+
+  <div class="py-4 page-wrap">
+    <div class="page-header mb-4">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 header-row">
+        <div class="d-flex align-items-center gap-3 header-main">
+          <img src="assets/img/barangay-cabarian-logo.png" alt=" Logo" class="brand-logo">
+          <div class="header-text">
+            <div class="title">Add Household Member</div>
+            <div class="subtitle"></div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button type="button" class="btn btn-light btn-sm" id="backBtn">
+            <i class="bi bi-arrow-left"></i> 
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <form id="memberForm">
+      <!-- A. Member Information -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header d-flex justify-content-between align-items-center">
+          <span>A. Member Information</span>
+          <span class="badge rounded-pill">Required</span>
+        </div>
+        <div class="card-body member-info-body">
+          <section class="registration-photo-panel registration-photo-panel-single mb-4" aria-labelledby="memberProfilePhotoHeading">
+            <div class="registration-photo-panel-header">
+              <div class="registration-photo-panel-title" id="memberProfilePhotoHeading">
+                <i class="bi bi-person-bounding-box" aria-hidden="true"></i>
+                Profile Photo
+              </div>
+              <span class="badge rounded-pill">Optional</span>
+            </div>
+            <div class="registration-photo-grid">
+              <div class="registration-photo-card registration-photo-card-member">
+                <div class="registration-photo-preview registration-photo-preview-profile">
+                  <img
+                    id="memberProfilePhotoPreview"
+                    alt="Selected household member profile photo"
+                    hidden
+                  >
+                  <div class="registration-photo-placeholder" id="memberProfilePhotoPlaceholder">
+                    <i class="bi bi-person-fill" aria-hidden="true"></i>
+                    <span class="visually-hidden">No photo</span>
+                  </div>
+                </div>
+                <div class="registration-photo-copy">
+                  <div class="registration-photo-heading">
+                    Household Member
+                  </div>
+                  <div class="registration-photo-status text-muted" id="memberProfilePhotoStatus" role="status" aria-live="polite">
+                    No photo yet
+                  </div>
+                  <input
+                    type="file"
+                    class="visually-hidden registration-photo-input"
+                    id="memberProfilePhotoInput"
+                    accept="image/*"
+                    capture="environment"
+                  >
+                  <div class="registration-photo-actions">
+                    <button type="button" class="btn btn-primary btn-sm registration-photo-capture-btn" id="memberProfilePhotoCaptureBtn">
+                      <i class="bi bi-camera-fill" aria-hidden="true"></i>
+                      <span id="memberProfilePhotoTriggerText">Open Camera</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm registration-photo-remove-btn" id="memberProfilePhotoRemoveBtn" aria-label="Remove member profile photo" title="Remove photo" hidden>
+                      <i class="bi bi-trash3" aria-hidden="true"></i>
+                      <span class="visually-hidden">Remove photo</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="member-info-group">
+            <div class="member-info-group-title">Identity</div>
+            <div class="row g-3">
+              <div class="col-xl-3 col-md-6"><label class="form-label required" for="first_name">First Name</label><input type="text" class="form-control" id="first_name" required></div>
+              <div class="col-xl-3 col-md-6"><label class="form-label" for="middle_name">Middle Name</label><input type="text" class="form-control" id="middle_name"></div>
+              <div class="col-xl-3 col-md-6"><label class="form-label required" for="last_name">Last Name</label><input type="text" class="form-control" id="last_name" required></div>
+              <div class="col-xl-3 col-md-6">
+                <label class="form-label" for="extension_name">Extension Name</label>
+                <select class="form-select" id="extension_name">
+                  <option value="">None</option>
+                  <option>Jr.</option>
+                  <option>Sr.</option>
+                  <option>II</option>
+                  <option>III</option>
+                  <option>IV</option>
+                  <option>V</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="member-info-group">
+            <div class="member-info-group-title">Profile Details</div>
+            <div class="row g-3">
+              <div class="col-lg-3 col-md-6"><label class="form-label required" for="birthday">Birthday</label><input type="date" class="form-control" id="birthday" required></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="age">Age</label><input type="number" class="form-control" id="age" readonly></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label required" for="sex">Sex/Gender</label>
+                <select class="form-select" id="sex" required>
+                  <option value="">Select</option><option>Male</option><option>Female</option><option>Other</option>
+                </select>
+              </div>
+              <div class="col-lg-2 col-md-4"><label class="form-label required" for="civil_status">Civil Status</label>
+                <select class="form-select" id="civil_status" required>
+                  <option value="">Select</option>
+                  <option>Single</option><option>Married</option><option>Widowed</option><option>Separated</option>
+                </select>
+              </div>
+              <div class="col-lg-3 col-md-12"><label class="form-label required" for="relation_to_head">Relationship to Head</label>
+                <select class="form-select" id="relation_to_head" required>
+                  <option value="">Select</option>
+                  <option>Head</option>
+                  <option>Spouse</option>
+                  <option>Father</option>
+                  <option>Mother</option>
+                  <option>Son</option>
+                  <option>Daughter</option>
+                  <option>Brother</option>
+                  <option>Sister</option>
+                  <option>Grandfather</option>
+                  <option>Grandmother</option>
+                  <option>Grandson</option>
+                  <option>Granddaughter</option>
+                  <option>In-law</option>
+                  <option>Other Relative</option>
+                  <option>Non-relative</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="col-lg-3 col-md-6">
+                <label class="form-label" for="citizenship">Nationality/Citizenship</label>
+                <input type="text" class="form-control" id="citizenship" list="memberCitizenshipOptions" value="Filipino">
+                <datalist id="memberCitizenshipOptions">
+                  <option value="Filipino"></option>
+                  <option value="Dual Citizen"></option>
+                  <option value="Naturalized Filipino"></option>
+                  <option value="American"></option>
+                  <option value="Chinese"></option>
+                  <option value="Japanese"></option>
+                  <option value="Korean"></option>
+                  <option value="Indian"></option>
+                  <option value="Canadian"></option>
+                  <option value="Australian"></option>
+                  <option value="British"></option>
+                  <option value="Other"></option>
+                </datalist>
+              </div>
+              <div class="col-lg-3 col-md-6">
+                <label class="form-label" for="religion">Religion</label>
+                <select class="form-select" id="religion">
+                  <option value="">Select</option>
+                  <option>Roman Catholic</option>
+                  <option>Iglesia ni Cristo</option>
+                  <option>Islam</option>
+                  <option>Born Again Christian</option>
+                  <option>Protestant</option>
+                  <option>Seventh-day Adventist</option>
+                  <option>Jehovah's Witness</option>
+                  <option>Philippine Independent Church</option>
+                  <option>Buddhism</option>
+                  <option>Hinduism</option>
+                  <option>None</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="col-lg-2 col-md-4">
+                <label class="form-label" for="blood_type">Blood Type</label>
+                <select class="form-select" id="blood_type">
+                  <option value="">Select</option>
+                  <option>Unknown</option>
+                  <option>A+</option>
+                  <option>A-</option>
+                  <option>B+</option>
+                  <option>B-</option>
+                  <option>AB+</option>
+                  <option>AB-</option>
+                  <option>O+</option>
+                  <option>O-</option>
+                </select>
+              </div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="height">Height (cm)</label><input type="number" class="form-control positive-num" id="height" min="0" step="any" placeholder="cm"></div>
+              <div class="col-lg-2 col-md-4"><label class="form-label" for="weight">Weight (kg)</label><input type="number" class="form-control positive-num" id="weight" min="0" step="any" placeholder="kg"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- B. Contact & Location -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header">B. Contact &amp; Location</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label required" for="contact">Contact Number</label>
+              <div class="input-group">
+                <span class="input-group-text" style="border-radius:12px 0 0 12px;background:#eef2f7;font-weight:600;font-size:0.85rem;">+63</span>
+                <input type="tel" class="form-control" id="contact" data-mask="999-999-9999" placeholder="9XX-XXX-XXXX" inputmode="numeric" maxlength="12" required style="border-radius:0 12px 12px 0;">
+              </div>
+            </div>
+            <div class="col-md-4"><label class="form-label required" for="address">Complete Address</label><input type="text" class="form-control" id="address" required></div>
+            <div class="col-md-4"><label class="form-label required" for="zone">Zone</label>
+              <select class="form-select" id="zone" required>
+                <option value="">Select</option>
+                <option>Zone 1</option>
+                <option>Zone 2</option>
+                <option>Zone 3</option>
+                <option>Zone 4</option>
+                <option>Zone 5</option>
+                <option>Zone 6</option>
+                <option>Zone 7</option>
+              </select>
+            </div>
+            <div class="col-md-4"><label class="form-label" for="barangay">Barangay</label><input type="text" class="form-control" id="barangay"></div>
+            <div class="col-md-4"><label class="form-label" for="city">City/Municipality</label><input type="text" class="form-control" id="city"></div>
+            <div class="col-md-4"><label class="form-label" for="province">Province</label><input type="text" class="form-control" id="province"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- C. Education -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header">C. Education</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label required" for="education">Educational Attainment</label>
+              <select class="form-select" id="education" required>
+                <option value="">Select</option>
+                <option>No Formal Education</option>
+                <option>Elementary</option>
+                <option>Junior High School</option>
+                <option>Senior High School</option>
+                <option>Vocational/Technical</option>
+                <option>College</option>
+                <option>Postgraduate</option>
+              </select>
+            </div>
+            <div class="col-md-4 member-education-subfield"><label class="form-label" for="degree">Degree/Course</label><input type="text" class="form-control" id="degree"></div>
+            <div class="col-md-4 member-education-subfield"><label class="form-label" for="school_name">School Name</label><input type="text" class="form-control" id="school_name"></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="school_type">School Type</label>
+              <select class="form-select" id="school_type"><option value="">N/A</option><option>Private</option><option selected>Public</option></select>
+            </div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="dropout">Drop Out?</label><select class="form-select" id="dropout"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="osy">Out of School Youth?</label><select class="form-select" id="osy"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="currently_studying">Currently Studying?</label><select class="form-select" id="currently_studying"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- D. Employment -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header">D. Employment</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label required" for="occupation">Occupation</label>
+              <input type="text" class="form-control" id="occupation" list="memberOccupationOptions" placeholder="Select or type" required>
+              <datalist id="memberOccupationOptions">
+                <option value="Farmer"></option>
+                <option value="Fisherfolk"></option>
+                <option value="Teacher"></option>
+                <option value="Government Employee"></option>
+                <option value="Private Employee"></option>
+                <option value="Business Owner"></option>
+                <option value="Vendor"></option>
+                <option value="Driver"></option>
+                <option value="Construction Worker"></option>
+                <option value="Skilled Worker"></option>
+                <option value="Healthcare Worker"></option>
+                <option value="Overseas Filipino Worker (OFW)"></option>
+                <option value="Homemaker"></option>
+                <option value="Student"></option>
+                <option value="Retired"></option>
+                <option value="Unemployed"></option>
+                <option value="Other"></option>
+              </datalist>
+            </div>
+            <div class="col-md-3"><label class="form-label required" for="employment_status">Employment Status</label>
+              <select class="form-select" id="employment_status" required>
+                <option>Employed</option>
+                <option>Unemployed</option>
+                <option>Self-employed</option>
+                <option>Student</option>
+                <option>Homemaker</option>
+                <option>Retired</option>
+                <option>Seasonal Worker</option>
+                <option>Unable to Work</option>
+              </select>
+            </div>
+            <div class="col-md-3"><label class="form-label required" for="work_type">Type of Work</label>
+              <select class="form-select" id="work_type" required>
+                <option>Government</option>
+                <option>Private</option>
+                <option>Self-employed</option>
+                <option>Freelance</option>
+                <option>Contractual</option>
+                <option>Seasonal</option>
+                <option>Agricultural</option>
+                <option>Informal Sector</option>
+                <option>Overseas Filipino Worker (OFW)</option>
+                <option>Not Applicable</option>
+              </select>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="monthly_income">Monthly Income</label><input type="text" class="form-control" id="monthly_income" placeholder="optional"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- E. Social Welfare -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header d-flex justify-content-between align-items-center">E. Social Welfare <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3"><label class="form-label" for="four_ps">4Ps Member?</label><select class="form-select" id="four_ps"><option>No</option><option>Yes</option></select></div>
+            <div class="col-md-3"><label class="form-label" for="senior">Senior Citizen?</label><select class="form-select" id="senior"><option>No</option><option>Yes</option></select></div>
+            <div class="col-md-3"><label class="form-label" for="pwd">PWD?</label><select class="form-select" id="pwd"><option>No</option><option>Yes</option></select></div>
+            <div class="col-md-3"><label class="form-label" for="ip">Indigenous People (IP)?</label><select class="form-select" id="ip"><option>No</option><option>Yes</option></select></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- F. Voter Info -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header d-flex justify-content-between align-items-center">F. Voter Information <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label" for="voter">Registered Voter?</label><select class="form-select" id="voter"><option>No</option><option>Yes</option></select></div>
+            <div class="col-md-6"><label class="form-label" for="precinct">Precinct Number</label><input type="text" class="form-control" id="precinct"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- G. Government IDs -->
+      <div class="card section-card mb-4">
+        <div class="card-header section-header d-flex justify-content-between align-items-center">G. Government IDs <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label" for="sss">SSS Number</label><input type="text" class="form-control gov-id-mask" id="sss" data-mask="99-9999999-9" placeholder="00-0000000-0" maxlength="12" inputmode="numeric"></div>
+            <div class="col-md-4"><label class="form-label" for="philhealth">PhilHealth Number</label><input type="text" class="form-control gov-id-mask" id="philhealth" data-mask="99-999999999-9" placeholder="00-000000000-0" maxlength="14" inputmode="numeric"></div>
+            <div class="col-md-4"><label class="form-label" for="gsis">GSIS Number</label><input type="text" class="form-control gov-id-mask" id="gsis" data-mask="99999999999" placeholder="00000000000" maxlength="11" inputmode="numeric"></div>
+            <div class="col-md-3"><label class="form-label" for="tin">TIN Number</label><input type="text" class="form-control gov-id-mask" id="tin" data-mask="999-999-999-999" placeholder="000-000-000-000" maxlength="15" inputmode="numeric"></div>
+            <div class="col-md-3"><label class="form-label" for="philid">PhilSys National ID</label><input type="text" class="form-control gov-id-mask" id="philid" data-mask="9999-9999-9999-9999" placeholder="0000-0000-0000-0000" maxlength="19" inputmode="numeric"></div>
+            <div class="col-md-3"><label class="form-label" for="driver_license">Driver's License</label><input type="text" class="form-control" id="driver_license" placeholder="XXX-XX-XXXXXX" maxlength="14"></div>
+            <div class="col-md-3"><label class="form-label" for="passport">Passport Number</label><input type="text" class="form-control" id="passport" placeholder="P1234567A" maxlength="10" style="text-transform:uppercase;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <div class="d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-primary" id="cancelBtn"><i class="bi bi-arrow-left"></i> Back</button>
+          <button type="reset" class="btn btn-secondary" id="clearBtn"><i class="bi bi-x-circle"></i> Clear</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Member</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <footer class="footer page-footer py-3 text-center mt-4">
+    <div class="page-wrap">
+      <p class="mb-1 fw-semibold">Cabarian Ligao City Online Household Information Management System</p>
+      <p class="mb-0 small">&copy; <span id="year"></span> Cabarian, Ligao City</p>
+    </div>
+  </footer>
+
+  <script src="bootstrap/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/js/indexeddb-storage-scripts.js?v=1"></script>
+  <script src="assets/js/registration-offline-init.js?v=1"></script>
+  <script src="assets/js/registration-photo-storage.js?v=1"></script>
+  <script src="assets/js/photo-capture.js?v=1"></script>
+  <script src="assets/js/member-scripts.js?v=1"></script>
+<script>
+(function(){
+  document.querySelectorAll('.gov-id-mask').forEach(function(el){
+    var mask=el.getAttribute('data-mask')||'';
+    if(!mask)return;
+    el.addEventListener('input',function(){
+      var raw=el.value.replace(/\D/g,'');
+      if(!raw){el.value='';return;}
+      var out='',ri=0;
+      for(var i=0;i<mask.length&&ri<raw.length;i++){
+        if(mask[i]==='-'){out+='-';}
+        else{out+=raw[ri];ri++;}
+      }
+      el.value=out;
+    });
+  });
+  var contact=document.getElementById('contact');
+  if(contact){
+    contact.addEventListener('keydown',function(e){
+      var allowed=['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Home','End'];
+      if(allowed.indexOf(e.key)!==-1)return;
+      if(e.ctrlKey||e.metaKey)return;
+      if(!/^\d$/.test(e.key)){e.preventDefault();return;}
+      var raw=contact.value.replace(/\D/g,'');
+      if(raw.length===0&&e.key!=='9'){e.preventDefault();return;}
+      if(raw.length>=10){e.preventDefault();return;}
+    });
+    contact.addEventListener('input',function(){
+      var raw=contact.value.replace(/\D/g,'');
+      if(raw.length>0&&raw[0]!=='9')raw='';
+      if(raw.length>10)raw=raw.substring(0,10);
+      if(!raw){contact.value='';return;}
+      var out=raw.substring(0,3);
+      if(raw.length>3)out+='-'+raw.substring(3,6);
+      if(raw.length>6)out+='-'+raw.substring(6,10);
+      contact.value=out;
+    });
+    contact.addEventListener('paste',function(e){
+      e.preventDefault();
+      var text=(e.clipboardData||window.clipboardData).getData('text');
+      var raw=text.replace(/\D/g,'');
+      if(raw.length>0&&raw[0]==='0')raw=raw.substring(1);
+      if(raw.length>0&&raw[0]!=='9')return;
+      if(raw.length>10)raw=raw.substring(0,10);
+      if(!raw)return;
+      var out=raw.substring(0,3);
+      if(raw.length>3)out+='-'+raw.substring(3,6);
+      if(raw.length>6)out+='-'+raw.substring(6,10);
+      contact.value=out;
+      contact.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+  }
+  document.querySelectorAll('.positive-num').forEach(function(el){
+    el.addEventListener('keydown',function(e){
+      if(e.key==='-'||e.key==='e'||e.key==='E'){e.preventDefault();}
+    });
+    el.addEventListener('input',function(){
+      if(this.value!==''&&parseFloat(this.value)<0){this.value='';}
+    });
+  });
+})();
+</script>
+</body>
+</html>
+
+
+

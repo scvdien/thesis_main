@@ -21,4 +21,5 @@ header('Content-Type: application/json; charset=utf-8');
 echo json_encode([
     'success' => true,
     'status' => 'online',
+    'csrf_token' => auth_csrf_token(),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

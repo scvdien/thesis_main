@@ -7,6 +7,11 @@
 /*.zip
 /registration-apk/hs_err_pid*.log
 /registration-apk/local.properties
+/registration-apk/app/build/
+/registration-apk/build/
+/registration-apk/.gradle/
+/registration-apk/*.apk
+/registration-apk/*.idsig
 /private-storage/*
 !/private-storage/backups/
 !/private-storage/tmp/

@@ -48,32 +48,31 @@ h1,h2,h3,h4,h5,h6{
 #sidebar{
   width: var(--sidebar-w);
   flex:0 0 auto;
-  align-self:flex-start;
   background: linear-gradient(160deg, #0c3958 0%, #0f4c6b 60%, #12738a 100%);
   border-right: 1px solid rgba(255,255,255,0.12);
   padding: 20px 16px;
   transition: width .3s ease, padding .3s ease, transform .3s cubic-bezier(0.4,0,0.2,1), opacity .25s ease;
   will-change: width, transform;
   color: #e2e8f0;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  bottom: 0;
   height: 100vh;
   height: 100svh;
   height: 100dvh;
-  max-height: 100vh;
-  max-height: 100svh;
-  max-height: 100dvh;
   overflow:hidden;
   overscroll-behavior-y:contain;
-  display:flex;
-  flex-direction:column;
+  display: flex;
+  flex-direction: column;
+  z-index: 1040;
 }
 #sidebar.collapsed{
   width:0;
   padding:0;
   overflow:hidden;
   opacity:0;
-  transform:translateX(-12px);
+  transform:translateX(-100%);
 }
 
 .sidebar-backdrop{
@@ -83,13 +82,6 @@ h1,h2,h3,h4,h5,h6{
   background:rgba(8, 23, 40, .45);
   backdrop-filter: blur(2px);
   z-index:1030;
-}
-
-.brand{
-  font-weight:700;
-  font-size:1.05rem;
-  margin-bottom:20px;
-  color:#fff;
 }
 #sidebar .brand img{
   background: rgba(255,255,255,0.12);
@@ -192,22 +184,30 @@ h1,h2,h3,h4,h5,h6{
 
 #main{
   flex:1;
+  margin-left: var(--sidebar-w);
   padding:24px 24px 0;
   min-width:0;
   display:flex;
   flex-direction:column;
+  transition: margin-left .3s ease;
+}
+
+#sidebar.collapsed ~ #main{
+  margin-left: 0;
 }
 
 .topbar{
   position:sticky;
-  top:0;
+  top:12px;
   z-index:1020;
   display:flex;
   align-items:center;
   justify-content:space-between;
   margin-bottom:14px;
   flex-wrap: wrap;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border:1px solid var(--border);
   border-radius:16px;
   padding:12px 16px;
@@ -1787,7 +1787,12 @@ body.role-can-edit .role-secretary-only{
 }
 .residents-module .residents-toolbar .form-select{
   min-width:0;
-  background:#fff;
+  background-color:#fff;
+  background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23495057' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat:no-repeat;
+  background-position:right 0.75rem center;
+  background-size:16px 12px;
+  padding-right:2.25rem;
 }
 
 .households-module .households-toolbar{
@@ -1826,7 +1831,12 @@ body.role-can-edit .role-secretary-only{
 }
 .households-module .households-toolbar .form-select{
   min-width:0;
-  background:#fff;
+  background-color:#fff;
+  background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23495057' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat:no-repeat;
+  background-position:right 0.75rem center;
+  background-size:16px 12px;
+  padding-right:2.25rem;
 }
 .households-module .household-toolbar-add{
   display:inline-flex;
@@ -2666,14 +2676,11 @@ footer.footer {
   .sidebar-backdrop.show{
     display:block;
   }
+  #main{
+    margin-left:0 !important;
+  }
   body.sidebar-open{
     overflow:hidden;
-  }
-  .staff-account-actions{
-    min-width:0;
-    flex-direction:row;
-    flex-wrap:wrap;
-    justify-content:flex-start;
   }
 }
 @media(max-width:520px){

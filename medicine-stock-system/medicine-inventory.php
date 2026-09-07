@@ -173,14 +173,23 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <label for="medicineCategory" class="form-label">Medicine Category</label>
               <select id="medicineCategory" class="form-select" required>
                 <option value="">Select medicine category</option>
-                <option value="Vitamins">Vitamins</option>
+                <option value="Analgesic">Analgesic / Antipyretic (Pain & Fever)</option>
                 <option value="Antibiotics">Antibiotics</option>
-                <option value="Analgesic">Analgesic</option>
-                <option value="Antihistamine">Antihistamine</option>
-                <option value="Hydration">Hydration</option>
-                <option value="Maintenance">Maintenance</option>
-                <option value="Respiratory">Respiratory</option>
-                <option value="Herbal">Herbal</option>
+                <option value="Antihistamine">Antihistamine (Anti-Allergy & Cold)</option>
+                <option value="Respiratory">Respiratory / Cough Remedies</option>
+                <option value="Gastrointestinal">Antacid & Gastrointestinal (Acid & Ulcer)</option>
+                <option value="Hydration">Hydration & Antidiarrheal (ORS & Diarrhea)</option>
+                <option value="Anthelmintic">Anthelmintic (Deworming / Pampurga)</option>
+                <option value="Antihypertensive">Antihypertensive (Blood Pressure Maintenance)</option>
+                <option value="Antidiabetic">Antidiabetic (Blood Sugar Maintenance)</option>
+                <option value="Lipid-Lowering">Lipid-Lowering (Cholesterol Maintenance)</option>
+                <option value="Maintenance">General Maintenance</option>
+                <option value="Vitamins">Vitamins & Mineral Supplements</option>
+                <option value="Maternal">Maternal & Prenatal Care (Iron & Folic)</option>
+                <option value="Topical">Topical & Dermatological (Skin Ointments)</option>
+                <option value="Eye & Ear">Eye & Ear Drops</option>
+                <option value="Family Planning">Family Planning Supplies</option>
+                <option value="Herbal">Herbal Medicine</option>
                 <option value="Others">Others</option>
               </select>
             </div>

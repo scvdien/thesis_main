@@ -15,6 +15,7 @@ if (is_array($currentUser)) {
         'record_id' => (string) ($currentUser['username'] ?? ''),
         'details' => 'User logged out.',
     ]);
+    auth_revoke_offline_reauth_token((int) ($currentUser['id'] ?? 0));
 }
 
 auth_logout();
@@ -118,29 +119,30 @@ auth_logout();
   await clearBulkOfflineData();
 
   try {
-    if ("serviceWorker" in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(
-        registrations
-          .filter((registration) => String(registration.scope || "").startsWith(moduleScopeUrl))
-          .map((registration) => registration.unregister())
-      );
-    }
+    window.sessionStorage.removeItem("cabarian_session_authenticated");
+    window.sessionStorage.removeItem("cabarian_offline_session_active");
   } catch (error) {
-    // Ignore service worker cleanup failures.
+    // Continue logout when browser storage is unavailable.
   }
 
   try {
     if ("caches" in window) {
-      const cacheKeys = await caches.keys();
-      await Promise.all(
-        cacheKeys
-          .filter((cacheKey) => cacheKey.startsWith("registration-module-"))
-          .map((cacheKey) => caches.delete(cacheKey))
-      );
+      const authStateCache = await caches.open("registration-module-auth-state");
+      const loggedOutUrl = new URL(".registration-logged-out", moduleScopeUrl).toString();
+      await authStateCache.put(loggedOutUrl, new Response("logged-out", {
+        headers: { "Content-Type": "text/plain; charset=utf-8" }
+      }));
     }
   } catch (error) {
-    // Ignore cache cleanup failures.
+    // Ignore cache marker failures.
+  }
+
+  try {
+    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: "PREPARE_LOGOUT" });
+    }
+  } catch (error) {
+    // Ignore message failures.
   }
 
   window.location.replace("login.php");

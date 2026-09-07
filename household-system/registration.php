@@ -362,7 +362,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label required">Educational Attainment</label>
-            <select class="form-select" name="education" required>
+            <select class="form-select" name="education" id="head_education" required>
               <option value="">Select</option>
               <option>No Formal Education</option>
               <option>Elementary</option>
@@ -373,14 +373,14 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
               <option>Postgraduate</option>
             </select>
           </div>
-          <div class="col-md-4"><label class="form-label">Degree/Course</label><input type="text" class="form-control" name="degree"></div>
-          <div class="col-md-4"><label class="form-label">School Name</label><input type="text" class="form-control" name="school_name"></div>
-          <div class="col-md-3"><label class="form-label">School Type</label>
-            <select class="form-select" name="school_type"><option>Private</option><option>Public</option></select>
+          <div class="col-md-4 head-education-subfield"><label class="form-label">Degree/Course</label><input type="text" class="form-control" name="degree"></div>
+          <div class="col-md-4 head-education-subfield"><label class="form-label">School Name</label><input type="text" class="form-control" name="school_name"></div>
+          <div class="col-md-3 head-education-subfield"><label class="form-label">School Type</label>
+            <select class="form-select" name="school_type"><option value="">N/A</option><option>Private</option><option>Public</option></select>
           </div>
-          <div class="col-md-3"><label class="form-label">Drop Out?</label><select class="form-select" name="dropout"><option>No</option><option>Yes</option></select></div>
-          <div class="col-md-3"><label class="form-label">Out of School Youth?</label><select class="form-select" name="osy"><option>No</option><option>Yes</option></select></div>
-          <div class="col-md-3"><label class="form-label">Currently Studying?</label><select class="form-select" name="currently_studying"><option>No</option><option>Yes</option></select></div>
+          <div class="col-md-3 head-education-subfield"><label class="form-label">Drop Out?</label><select class="form-select" name="dropout"><option value="">N/A</option><option>No</option><option>Yes</option></select></div>
+          <div class="col-md-3 head-education-subfield"><label class="form-label">Out of School Youth?</label><select class="form-select" name="osy"><option value="">N/A</option><option>No</option><option>Yes</option></select></div>
+          <div class="col-md-3 head-education-subfield"><label class="form-label">Currently Studying?</label><select class="form-select" name="currently_studying"><option value="">N/A</option><option>No</option><option>Yes</option></select></div>
         </div>
       </div>
     </div>
@@ -862,6 +862,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       </div>
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary btn-modern" id="pendingSyncNowBtn"><i class="bi bi-arrow-repeat me-1"></i> Sync Now</button>
       </div>
     </div>
   </div>

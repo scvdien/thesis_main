@@ -171,10 +171,22 @@
     if (!normalized) return "Others";
     if (["vitamin", "vitamins", "supplement", "supplements"].includes(normalized)) return "Vitamins";
     if (["antibiotic", "antibiotics"].includes(normalized)) return "Antibiotics";
-    if (["analgesic", "antihistamine", "hydration", "maintenance", "respiratory", "herbal", "others"].includes(normalized)) {
+    if (["antihistamine", "antihistamines"].includes(normalized)) return "Antihistamine";
+    if (["analgesic", "analgesics", "antipyretic"].includes(normalized)) return "Analgesic";
+    if (["hydration", "antidiarrheal", "rehydration"].includes(normalized)) return "Hydration";
+    if (["gastrointestinal", "antacid"].includes(normalized)) return "Gastrointestinal";
+    if (["anthelmintic", "deworming"].includes(normalized)) return "Anthelmintic";
+    if (["antihypertensive", "hypertension"].includes(normalized)) return "Antihypertensive";
+    if (["antidiabetic", "diabetes"].includes(normalized)) return "Antidiabetic";
+    if (["lipid-lowering", "cholesterol"].includes(normalized)) return "Lipid-Lowering";
+    if (["maternal", "prenatal"].includes(normalized)) return "Maternal";
+    if (["topical", "dermatological", "skin"].includes(normalized)) return "Topical";
+    if (["eye & ear", "eye and ear", "ophthalmic", "otic"].includes(normalized)) return "Eye & Ear";
+    if (["family planning", "reproductive"].includes(normalized)) return "Family Planning";
+    if (["maintenance", "respiratory", "herbal", "others"].includes(normalized)) {
       return titleCase(normalized);
     }
-    return text(value);
+    return text(value) || "Others";
   };
   const normalizeDosageForm = (value) => {
     const normalized = keyOf(value);
@@ -961,7 +973,7 @@
       return { key: "expiring-soon", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
     }
 
-    if (expiryDays <= 30) {
+    if (expiryDays <= 90) {
       return { key: "expiring-soon", label: "Expiring Soon", tone: "warning", note: `${expiryDays} days remaining` };
     }
 

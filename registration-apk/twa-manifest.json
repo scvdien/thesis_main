@@ -12,7 +12,7 @@
   "navigationDividerColorDark": "#000000",
   "backgroundColor": "#F6F8FB",
   "enableNotifications": true,
-  "startUrl": "/household-system/registration.php",
+  "startUrl": "/household-system/login.php",
   "iconUrl": "https://cabarianportal.online/household-system/assets/img/registration-app-icon-512.png",
   "maskableIconUrl": "https://cabarianportal.online/household-system/assets/img/registration-app-icon-maskable-512.png",
   "splashScreenFadeOutDuration": 300,
@@ -20,8 +20,8 @@
     "path": "C:\\Users\\judea\\cabarian-registration.keystore",
     "alias": "cabarian-registration"
   },
-  "appVersionName": "7",
-  "appVersionCode": 7,
+  "appVersionName": "3.7",
+  "appVersionCode": 37,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://cabarianportal.online/household-system/manifest.webmanifest",
@@ -48,5 +48,5 @@
   "fileHandlers": [],
   "launchHandlerClientMode": "",
   "displayOverride": [],
-  "appVersion": "7"
+  "appVersion": "3.7"
 }

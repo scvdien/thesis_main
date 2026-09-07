@@ -6,6 +6,7 @@ $authUser = auth_require_page(['staff', 'secretary', 'admin']);
 $authRole = auth_user_role($authUser);
 $memberCsrfToken = auth_csrf_token();
 $memberCurrentUserId = (int) ($authUser['id'] ?? 0);
+$memberCurrentUsername = (string) ($authUser['username'] ?? '');
 $brandBarangay = trim(auth_env(['BARANGAY_NAME'], 'Barangay'));
 $brandCity = trim(auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], ''));
 try {
@@ -54,11 +55,33 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/registration-style.css?v=<?= htmlspecialchars($memberStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
+  <script>
+    if (navigator.onLine) {
+      try {
+        sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        sessionStorage.setItem('cabarian_offline_session_active', 'true');
+      } catch {}
+    } else {
+      var isWarmup = window.location.hash === '#registration-member-cache-warmup';
+      var isSessionActive = false;
+      try {
+        isSessionActive = sessionStorage.getItem('cabarian_session_authenticated') === 'true'
+          || sessionStorage.getItem('cabarian_offline_session_active') === 'true';
+      } catch {}
+
+      if (!isWarmup && !isSessionActive) {
+        window.location.replace('login.php');
+      }
+    }
+  </script>
 </head>
 
 <body
   data-role="<?= htmlspecialchars($authRole, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-username="<?= htmlspecialchars($memberCurrentUsername, ENT_QUOTES, 'UTF-8') ?>"
   data-current-user-id="<?= $memberCurrentUserId ?>"
+  data-offline-reauth-token="<?= htmlspecialchars((string) ($authUser['offline_reauth_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+  data-offline-enrollment="verified"
 >
 <?php echo auth_client_role_script($authRole); ?>
   <div class="py-4 page-wrap">
@@ -67,7 +90,9 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
         <div class="d-flex align-items-center gap-3 header-main">
           <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo" class="brand-logo">
           <div class="header-text">
-            <div class="title">Add Household Member</div>
+            <div class="title">
+              Add Household Member
+            </div>
             <div class="subtitle"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></div>
           </div>
         </div>
@@ -302,14 +327,14 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
                 <option>Postgraduate</option>
               </select>
             </div>
-            <div class="col-md-4"><label class="form-label" for="degree">Degree/Course</label><input type="text" class="form-control" id="degree"></div>
-            <div class="col-md-4"><label class="form-label" for="school_name">School Name</label><input type="text" class="form-control" id="school_name"></div>
-            <div class="col-md-3"><label class="form-label" for="school_type">School Type</label>
-              <select class="form-select" id="school_type"><option>Private</option><option>Public</option></select>
+            <div class="col-md-4 member-education-subfield"><label class="form-label" for="degree">Degree/Course</label><input type="text" class="form-control" id="degree"></div>
+            <div class="col-md-4 member-education-subfield"><label class="form-label" for="school_name">School Name</label><input type="text" class="form-control" id="school_name"></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="school_type">School Type</label>
+              <select class="form-select" id="school_type"><option value="">N/A</option><option>Private</option><option selected>Public</option></select>
             </div>
-            <div class="col-md-3"><label class="form-label" for="dropout">Drop Out?</label><select class="form-select" id="dropout"><option>No</option><option>Yes</option></select></div>
-            <div class="col-md-3"><label class="form-label" for="osy">Out of School Youth?</label><select class="form-select" id="osy"><option>No</option><option>Yes</option></select></div>
-            <div class="col-md-3"><label class="form-label" for="currently_studying">Currently Studying?</label><select class="form-select" id="currently_studying"><option>No</option><option>Yes</option></select></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="dropout">Drop Out?</label><select class="form-select" id="dropout"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="osy">Out of School Youth?</label><select class="form-select" id="osy"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
+            <div class="col-md-3 member-education-subfield"><label class="form-label" for="currently_studying">Currently Studying?</label><select class="form-select" id="currently_studying"><option value="">N/A</option><option selected>No</option><option>Yes</option></select></div>
           </div>
         </div>
       </div>
