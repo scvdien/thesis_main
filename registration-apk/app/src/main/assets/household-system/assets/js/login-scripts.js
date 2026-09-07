@@ -170,6 +170,8 @@
       try {
         if ('caches' in window) {
           const authStateCache = await caches.open('registration-module-auth-state');
+          const keys = await authStateCache.keys();
+          await Promise.all(keys.map((k) => authStateCache.delete(k)));
           const moduleScopeUrl = new URL('./', window.location.href).href;
           await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
         }
@@ -178,6 +180,7 @@
       try {
         if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_LOGGED_OUT_STATE' });
         }
       } catch {}
 
@@ -185,6 +188,8 @@
         sessionStorage.setItem('cabarian_session_authenticated', 'true');
         sessionStorage.setItem('cabarian_offline_session_active', 'true');
       } catch {}
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
 
       window.location.assign('registration.php');
     };
@@ -213,8 +218,14 @@
           sessionStorage.setItem('cabarian_session_authenticated', 'true');
           if ('caches' in window) {
             const authStateCache = await caches.open('registration-module-auth-state');
+            const keys = await authStateCache.keys();
+            await Promise.all(keys.map((k) => authStateCache.delete(k)));
             const moduleScopeUrl = new URL('./', window.location.href).href;
             await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+          }
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
+            navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_LOGGED_OUT_STATE' });
           }
           const hash = sha256(username.toLowerCase() + '::' + password);
           const authData = {
