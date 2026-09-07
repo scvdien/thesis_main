@@ -76,6 +76,24 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/registration-style.css?v=<?= htmlspecialchars($registrationStyleVersion, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>">
+  <script>
+    if (navigator.onLine) {
+      try {
+        sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        sessionStorage.setItem('cabarian_offline_session_active', 'true');
+      } catch {}
+    } else {
+      var isSessionActive = false;
+      try {
+        isSessionActive = sessionStorage.getItem('cabarian_session_authenticated') === 'true'
+          || sessionStorage.getItem('cabarian_offline_session_active') === 'true';
+      } catch {}
+
+      if (!isSessionActive) {
+        window.location.replace('login.php');
+      }
+    }
+  </script>
 </head>
 
 <body

@@ -158,7 +158,7 @@
       }
 
       const enteredHash = sha256(username.toLowerCase() + '::' + password);
-      if (staffAuth.passwordHash && enteredHash !== staffAuth.passwordHash) {
+      if (!staffAuth.passwordHash || enteredHash !== staffAuth.passwordHash) {
         showError('Invalid username or password.');
         return;
       }
@@ -263,10 +263,8 @@
         return;
       }
 
-      if (response.ok) {
-        window.location.assign('registration.php');
-        return;
-      }
+      showError('Invalid username or password.');
+      return;
 
       await performOfflineLogin();
     } catch (networkError) {

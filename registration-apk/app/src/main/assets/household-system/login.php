@@ -10,7 +10,9 @@ if ($explicitLogoutRequested && is_array($existingUser)) {
     $existingUser = null;
 }
 if (is_array($existingUser) && !isset($_GET['sw_cache']) && !isset($_GET['offline_cache'])) {
-    auth_redirect(auth_user_home($existingUser));
+    if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+        auth_redirect(auth_user_home($existingUser));
+    }
 }
 
 $fullNameInput = '';
