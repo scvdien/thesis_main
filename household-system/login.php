@@ -6,7 +6,6 @@ require_once __DIR__ . '/auth.php';
 $explicitLogoutRequested = (string) ($_GET['logged_out'] ?? '') === '1';
 $existingUser = auth_current_user();
 if ($explicitLogoutRequested && is_array($existingUser)) {
-    auth_revoke_offline_reauth_token((int) ($existingUser['id'] ?? 0));
     auth_logout();
     $existingUser = null;
 }

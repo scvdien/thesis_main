@@ -83,6 +83,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
   data-requires-credential-update="<?= $registrationRequiresCredentialUpdate ? 'true' : 'false' ?>"
   data-current-username="<?= htmlspecialchars($registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?>"
   data-current-user-id="<?= $registrationCurrentUserId ?>"
+  data-offline-reauth-token="<?= htmlspecialchars((string) ($authUser['offline_reauth_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
 >
 <?php echo auth_client_role_script($authRole); ?>
 <div class="layout">

@@ -20,22 +20,29 @@ if (!is_array($data)) {
     exit;
 }
 
-$username = (string) ($data['username'] ?? '');
-$reauthToken = (string) ($data['reauth_token'] ?? '');
+$username = trim((string) ($data['username'] ?? ''));
+$reauthToken = trim((string) ($data['reauth_token'] ?? ''));
+$password = (string) ($data['password'] ?? '');
 
-$result = auth_verify_offline_reauth_token($username, $reauthToken);
+if ($password !== '' && $username !== '') {
+    $result = auth_attempt_login($username, $password);
+} else {
+    $result = auth_verify_offline_reauth_token($username, $reauthToken);
+}
 
 if (!$result['success']) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'error' => $result['error']]);
+    echo json_encode(['success' => false, 'error' => $result['error'] ?? 'Authentication failed.']);
     exit;
 }
 
 $csrfToken = auth_csrf_token();
+$reauthOutput = (string) ($result['user']['offline_reauth_token'] ?? '');
 
 echo json_encode([
     'success' => true,
     'csrf_token' => $csrfToken,
+    'reauth_token' => $reauthOutput,
     'user' => [
         'id' => $result['user']['id'],
         'username' => $result['user']['username'],

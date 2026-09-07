@@ -52,11 +52,20 @@
     const userId = document.body.dataset.currentUserId || "";
     const reauthToken = document.body.dataset.offlineReauthToken || "";
     if (username) {
+      let existingToken = reauthToken;
+      if (!existingToken) {
+        try {
+          const oldAuth = JSON.parse(window.localStorage.getItem("cabarian_authenticated_staff") || "{}");
+          const oldStaff = JSON.parse(window.localStorage.getItem("cabarian_offline_staff_auth") || "{}");
+          existingToken = oldAuth.reauthToken || oldStaff.reauthToken || "";
+        } catch {}
+      }
+
       window.localStorage.setItem("cabarian_authenticated_staff", JSON.stringify({
         username: username.toLowerCase(),
         userId,
         role: role || "staff",
-        reauthToken,
+        reauthToken: existingToken,
         savedAt: Date.now()
       }));
 
@@ -73,7 +82,7 @@
       staffAuth.username = username.toLowerCase();
       staffAuth.userId = userId || staffAuth.userId || "";
       staffAuth.role = role || staffAuth.role || "staff";
-      staffAuth.reauthToken = reauthToken || staffAuth.reauthToken || "";
+      staffAuth.reauthToken = existingToken || staffAuth.reauthToken || "";
       staffAuth.savedAt = Date.now();
 
       try {

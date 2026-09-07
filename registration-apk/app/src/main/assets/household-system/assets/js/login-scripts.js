@@ -187,6 +187,8 @@
       try {
         sessionStorage.setItem('cabarian_session_authenticated', 'true');
         sessionStorage.setItem('cabarian_offline_session_active', 'true');
+        sessionStorage.setItem('cabarian_offline_reauth_pass', password);
+        sessionStorage.setItem('cabarian_offline_reauth_user', username.toLowerCase());
       } catch {}
 
       await new Promise((resolve) => setTimeout(resolve, 60));
@@ -228,9 +230,18 @@
             navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_LOGGED_OUT_STATE' });
           }
           const hash = sha256(username.toLowerCase() + '::' + password);
+          let existingReauthToken = '';
+          try {
+            const rawOld = localStorage.getItem('cabarian_offline_staff_auth') || localStorage.getItem('cabarian_authenticated_staff');
+            const parsedOld = rawOld ? JSON.parse(rawOld) : null;
+            if (parsedOld && (parsedOld.reauthToken || parsedOld.reauth_token)) {
+              existingReauthToken = parsedOld.reauthToken || parsedOld.reauth_token;
+            }
+          } catch {}
           const authData = {
             username: username.toLowerCase(),
             passwordHash: hash,
+            reauthToken: existingReauthToken,
             savedAt: Date.now()
           };
           localStorage.setItem('cabarian_offline_staff_auth', JSON.stringify(authData));

@@ -15,7 +15,6 @@ if (is_array($currentUser)) {
         'record_id' => (string) ($currentUser['username'] ?? ''),
         'details' => 'User logged out.',
     ]);
-    auth_revoke_offline_reauth_token((int) ($currentUser['id'] ?? 0));
 }
 
 auth_logout();

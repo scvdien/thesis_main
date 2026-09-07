@@ -109,32 +109,89 @@ document.addEventListener("DOMContentLoaded", async () => {
   const autoReauthenticateOnline = async () => {
     if (reauthInProgress) return false;
     const offlineAuth = getOfflineStaffAuth();
-    if (!offlineAuth || !offlineAuth.reauthToken || !offlineAuth.username) return false;
+    const pendingPass = sessionStorage.getItem("cabarian_offline_reauth_pass") || "";
+    const pendingUser = sessionStorage.getItem("cabarian_offline_reauth_user") || "";
+    const username = String(offlineAuth?.username || pendingUser || "").trim();
+    const reauthToken = String(offlineAuth?.reauthToken || "").trim();
+
+    if (!username || (!reauthToken && !pendingPass)) return false;
 
     reauthInProgress = true;
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 10000);
       try {
-        const response = await fetch(AUTO_REAUTH_ENDPOINT, {
-          method: "POST",
-          credentials: "same-origin",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: offlineAuth.username,
-            reauth_token: offlineAuth.reauthToken
-          }),
-          signal: controller.signal
-        });
-        const payload = await response.json();
-        if (response.ok && payload && payload.success === true) {
+        let response = null;
+        let payload = null;
+
+        if (reauthToken) {
+          try {
+            response = await fetch(AUTO_REAUTH_ENDPOINT, {
+              method: "POST",
+              credentials: "same-origin",
+              cache: "no-store",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                username,
+                reauth_token: reauthToken
+              }),
+              signal: controller.signal
+            });
+            payload = await response.json();
+          } catch {
+            response = null;
+            payload = null;
+          }
+        }
+
+        if ((!response || !response.ok) && pendingPass) {
+          try {
+            response = await fetch(AUTO_REAUTH_ENDPOINT, {
+              method: "POST",
+              credentials: "same-origin",
+              cache: "no-store",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                username,
+                password: pendingPass
+              }),
+              signal: controller.signal
+            });
+            payload = await response.json();
+          } catch {
+            response = null;
+            payload = null;
+          }
+        }
+
+        if (response && response.ok && payload && payload.success === true) {
           if (payload.csrf_token) {
             csrfToken = String(payload.csrf_token).trim();
           }
+          if (payload.reauth_token) {
+            try {
+              const raw = localStorage.getItem("cabarian_offline_staff_auth");
+              const data = raw ? JSON.parse(raw) : {};
+              data.username = username.toLowerCase();
+              data.reauthToken = payload.reauth_token;
+              data.savedAt = Date.now();
+              localStorage.setItem("cabarian_offline_staff_auth", JSON.stringify(data));
+              localStorage.setItem("cabarian_authenticated_staff", JSON.stringify({
+                username: username.toLowerCase(),
+                role: payload.user?.role || "staff",
+                userId: payload.user?.id || "",
+                reauthToken: payload.reauth_token,
+                savedAt: Date.now()
+              }));
+            } catch {}
+          }
+          try {
+            sessionStorage.removeItem("cabarian_offline_reauth_pass");
+          } catch {}
           return true;
         }
-        if (response.status === 401 || response.status === 403) {
+
+        if (response && (response.status === 401 || response.status === 403) && !pendingPass) {
           window.CabarianOfflineAccess?.clear?.();
         }
         return false;
@@ -911,7 +968,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch {
           payload = null;
         }
-        if ([401, 403].includes(response.status) && getOfflineStaffAuth()) {
+        if ([401, 403].includes(response.status) || (payload && payload.authenticated === false)) {
           const restored = await autoReauthenticateOnline();
           if (restored) {
             response = await fetch(`${PRESENCE_ENDPOINT}?_=${Date.now()}`, {
@@ -929,6 +986,9 @@ document.addEventListener("DOMContentLoaded", async () => {
               payload = null;
             }
           }
+        }
+        if (payload && payload.csrf_token) {
+          csrfToken = String(payload.csrf_token).trim();
         }
         reachable = Boolean(
           response.ok
@@ -4808,16 +4868,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   window.addEventListener("online", async () => {
-    await triggerAutoSyncWhenOnline({ delayMs: 0, forceProbe: true });
+    await triggerAutoSyncWhenOnline({ delayMs: 250, forceProbe: true });
     window.setTimeout(() => {
-      if (isAppOnline() && getSyncQueue().length > 0) {
+      if (getSyncQueue().length > 0) {
         flushSyncQueue({ showSuccessState: true });
       } else if (!isAppOnline()) {
         void triggerAutoSyncWhenOnline({ delayMs: 0, forceProbe: true });
       }
     }, 2000);
     window.setTimeout(() => {
-      if (isAppOnline() && getSyncQueue().length > 0) {
+      if (getSyncQueue().length > 0) {
         flushSyncQueue({ showSuccessState: true });
       }
     }, 4500);

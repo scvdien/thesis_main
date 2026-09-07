@@ -15,11 +15,13 @@ if ($method !== 'GET') {
 }
 
 auth_bootstrap_store();
-auth_require_api([], true);
+$currentUser = auth_current_user();
+$isAuthenticated = is_array($currentUser);
 
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode([
     'success' => true,
     'status' => 'online',
+    'authenticated' => $isAuthenticated,
     'csrf_token' => auth_csrf_token(),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
