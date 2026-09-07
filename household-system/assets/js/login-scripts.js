@@ -107,6 +107,7 @@
   }
 
   form.addEventListener('submit', async (event) => {
+    event.preventDefault();
     clearError();
 
     const fullName = String(fullNameInput?.value || '').trim();
@@ -116,101 +117,138 @@
 
     if (mode === 'setup') {
       if (!fullName || !username || !password || !passwordConfirm) {
-        event.preventDefault();
         showError('Complete all fields to create the first captain account.');
         return;
       }
       if (password !== passwordConfirm) {
-        event.preventDefault();
         showError('Passwords do not match.');
         return;
       }
       if (password.length < 8 || !/[^A-Za-z0-9]/.test(password)) {
-        event.preventDefault();
         showError('Password must be at least 8 characters and include 1 special character.');
         return;
       }
     } else if (!username || !password) {
-      event.preventDefault();
       showError('Please enter username and password.');
-      return;
-    }
-
-    if (window.navigator.onLine) {
-      if (submitButton) {
-        submitButton.disabled = true;
-        submitButton.textContent = mode === 'setup' ? 'Creating account...' : 'Signing in...';
-      }
-      try {
-        sessionStorage.setItem('cabarian_session_authenticated', 'true');
-        if ('caches' in window) {
-          caches.open('registration-module-auth-state').then((authStateCache) => {
-            const moduleScopeUrl = new URL('./', window.location.href).href;
-            authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
-          });
-        }
-        const hash = sha256(username.toLowerCase() + '::' + password);
-        const authData = {
-          username: username.toLowerCase(),
-          passwordHash: hash,
-          savedAt: Date.now()
-        };
-        localStorage.setItem('cabarian_offline_staff_auth', JSON.stringify(authData));
-        localStorage.setItem('cabarian_offline_auth_staging', JSON.stringify(authData));
-      } catch {}
-      return;
-    }
-
-    event.preventDefault();
-
-    let staffAuth = null;
-    try {
-      const raw = localStorage.getItem('cabarian_offline_staff_auth');
-      staffAuth = raw ? JSON.parse(raw) : null;
-    } catch {}
-
-    if (!staffAuth || !staffAuth.username) {
-      showError('Please sign in online first with your staff account before using offline mode.');
-      return;
-    }
-
-    const expectedUsername = String(staffAuth.username || '').toLowerCase();
-    if (username.toLowerCase() !== expectedUsername) {
-      showError('Invalid username or password.');
-      return;
-    }
-
-    const enteredHash = sha256(username.toLowerCase() + '::' + password);
-    if (staffAuth.passwordHash && enteredHash !== staffAuth.passwordHash) {
-      showError('Invalid username or password.');
       return;
     }
 
     if (submitButton) {
       submitButton.disabled = true;
-      submitButton.textContent = 'Opening offline...';
+      submitButton.textContent = mode === 'setup' ? 'Creating account...' : 'Signing in...';
     }
 
-    // Clear logged-out state so service worker will serve cached registration pages
-    try {
-      if ('caches' in window) {
-        const authStateCache = await caches.open('registration-module-auth-state');
-        const moduleScopeUrl = new URL('./', window.location.href).href;
-        await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+    const performOfflineLogin = async () => {
+      let staffAuth = null;
+      try {
+        const raw = localStorage.getItem('cabarian_offline_staff_auth')
+          || localStorage.getItem('cabarian_authenticated_staff');
+        staffAuth = raw ? JSON.parse(raw) : null;
+      } catch {}
+
+      if (!staffAuth || !staffAuth.username) {
+        showError('Please sign in online first with your staff account before using offline mode.');
+        return;
       }
-    } catch {}
 
-    try {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
+      const expectedUsername = String(staffAuth.username || '').toLowerCase().trim();
+      if (username.toLowerCase() !== expectedUsername) {
+        showError('Invalid username or password.');
+        return;
       }
-    } catch {}
+
+      const enteredHash = sha256(username.toLowerCase() + '::' + password);
+      if (staffAuth.passwordHash && enteredHash !== staffAuth.passwordHash) {
+        showError('Invalid username or password.');
+        return;
+      }
+
+      if (submitButton) {
+        submitButton.textContent = 'Opening offline...';
+      }
+
+      try {
+        if ('caches' in window) {
+          const authStateCache = await caches.open('registration-module-auth-state');
+          const moduleScopeUrl = new URL('./', window.location.href).href;
+          await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+        }
+      } catch {}
+
+      try {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
+        }
+      } catch {}
+
+      try {
+        sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        sessionStorage.setItem('cabarian_offline_session_active', 'true');
+      } catch {}
+
+      window.location.assign('registration.php');
+    };
+
+    if (window.navigator.onLine === false) {
+      await performOfflineLogin();
+      return;
+    }
 
     try {
-      sessionStorage.setItem('cabarian_session_authenticated', 'true');
-      sessionStorage.setItem('cabarian_offline_session_active', 'true');
-    } catch {}
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 2500);
 
-    window.location.assign('registration.php');
+      const formData = new FormData(form);
+      const response = await fetch(form.action || 'login.php', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      window.clearTimeout(timeoutId);
+
+      const responseUrl = String(response.url || '').toLowerCase();
+      if (responseUrl.includes('registration.php') || responseUrl.includes('member.php') || responseUrl.includes('households')) {
+        try {
+          sessionStorage.setItem('cabarian_session_authenticated', 'true');
+          if ('caches' in window) {
+            const authStateCache = await caches.open('registration-module-auth-state');
+            const moduleScopeUrl = new URL('./', window.location.href).href;
+            await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+          }
+          const hash = sha256(username.toLowerCase() + '::' + password);
+          const authData = {
+            username: username.toLowerCase(),
+            passwordHash: hash,
+            savedAt: Date.now()
+          };
+          localStorage.setItem('cabarian_offline_staff_auth', JSON.stringify(authData));
+          localStorage.setItem('cabarian_offline_auth_staging', JSON.stringify(authData));
+        } catch {}
+
+        window.location.assign('registration.php');
+        return;
+      }
+
+      const htmlText = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, 'text/html');
+      const errorDiv = doc.getElementById('error');
+      const errorMsg = errorDiv ? errorDiv.textContent.trim() : '';
+
+      if (errorMsg) {
+        showError(errorMsg);
+        return;
+      }
+
+      if (response.ok) {
+        window.location.assign('registration.php');
+        return;
+      }
+
+      await performOfflineLogin();
+    } catch (networkError) {
+      await performOfflineLogin();
+    }
   });
 })();
