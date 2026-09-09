@@ -2587,7 +2587,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       memberRequiredModal.show();
       return false;
     }
-    showSyncToast("Magdagdag ng kahit isang miyembro o lagyan ng tsek ang 'Nakatira nang mag-isa' bago i-save.", "warning", "Member Required");
+    showSyncToast("Please add at least one household member or check 'Single-Person Household (Living Alone)' before saving.", "warning", "Member Required");
     return false;
   };
 
@@ -5215,7 +5215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     soloHouseholdCheckEl.addEventListener("change", () => {
       const members = getMembers();
       if (soloHouseholdCheckEl.checked && members.length > 0) {
-        showSyncToast("Paalala: May mga miyembro nang nakalista. Kung nakatira nang mag-isa ang Head, alisin ang mga miyembro sa Members tab.", "info", "Solo Household");
+        showSyncToast("Notice: Household members are already listed. If the Head lives alone, please remove other members from the Members tab.", "info", "Single-Person Household");
       }
       syncHouseholdCounts(members);
       saveHeadData();

@@ -33,6 +33,41 @@
     error.classList.remove('is-visible');
   };
 
+  const syncCsrfToken = async () => {
+    if (!window.navigator.onLine) return '';
+    try {
+      const res = await fetch('login.php?csrf_token_refresh=1', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json, text/html;q=0.9' }
+      });
+      if (res.ok) {
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          if (data && typeof data.csrf_token === 'string' && data.csrf_token.length > 0) {
+            const tokenInput = form.querySelector('input[name="csrf_token"]');
+            if (tokenInput) tokenInput.value = data.csrf_token;
+            return data.csrf_token;
+          }
+        } catch {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(text, 'text/html');
+          const tokenInputInHtml = doc.querySelector('input[name="csrf_token"]');
+          if (tokenInputInHtml && tokenInputInHtml.value) {
+            const tokenInput = form.querySelector('input[name="csrf_token"]');
+            if (tokenInput) tokenInput.value = tokenInputInHtml.value;
+            return tokenInputInHtml.value;
+          }
+        }
+      }
+    } catch {}
+    return '';
+  };
+
+  syncCsrfToken();
+  window.addEventListener('pageshow', () => syncCsrfToken());
+
   function sha256(ascii) {
     function rightRotate(value, amount) {
       return (value >>> amount) | (value << (32 - amount));
@@ -201,74 +236,131 @@
       return;
     }
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 2500);
-
-      const formData = new FormData(form);
-      const response = await fetch(form.action || 'login.php', {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
-        signal: controller.signal
-      });
-      window.clearTimeout(timeoutId);
-
-      const responseUrl = String(response.url || '').toLowerCase();
-      if (responseUrl.includes('registration.php') || responseUrl.includes('member.php') || responseUrl.includes('households')) {
+    const handleLoginSuccess = async (targetRedirectUrl) => {
+      try {
+        sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        if ('caches' in window) {
+          const authStateCache = await caches.open('registration-module-auth-state');
+          const keys = await authStateCache.keys();
+          await Promise.all(keys.map((k) => authStateCache.delete(k)));
+          const moduleScopeUrl = new URL('./', window.location.href).href;
+          await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+        }
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_LOGGED_OUT_STATE' });
+        }
+        const hash = sha256(username.toLowerCase() + '::' + password);
+        let existingReauthToken = '';
         try {
-          sessionStorage.setItem('cabarian_session_authenticated', 'true');
-          if ('caches' in window) {
-            const authStateCache = await caches.open('registration-module-auth-state');
-            const keys = await authStateCache.keys();
-            await Promise.all(keys.map((k) => authStateCache.delete(k)));
-            const moduleScopeUrl = new URL('./', window.location.href).href;
-            await authStateCache.delete(new URL('.registration-logged-out', moduleScopeUrl).toString());
+          const rawOld = localStorage.getItem('cabarian_offline_staff_auth') || localStorage.getItem('cabarian_authenticated_staff');
+          const parsedOld = rawOld ? JSON.parse(rawOld) : null;
+          if (parsedOld && (parsedOld.reauthToken || parsedOld.reauth_token)) {
+            existingReauthToken = parsedOld.reauthToken || parsedOld.reauth_token;
           }
-          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({ type: 'OFFLINE_LOGIN_SUCCESS' });
-            navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_LOGGED_OUT_STATE' });
-          }
-          const hash = sha256(username.toLowerCase() + '::' + password);
-          let existingReauthToken = '';
-          try {
-            const rawOld = localStorage.getItem('cabarian_offline_staff_auth') || localStorage.getItem('cabarian_authenticated_staff');
-            const parsedOld = rawOld ? JSON.parse(rawOld) : null;
-            if (parsedOld && (parsedOld.reauthToken || parsedOld.reauth_token)) {
-              existingReauthToken = parsedOld.reauthToken || parsedOld.reauth_token;
-            }
-          } catch {}
-          const authData = {
-            username: username.toLowerCase(),
-            passwordHash: hash,
-            reauthToken: existingReauthToken,
-            savedAt: Date.now()
-          };
-          localStorage.setItem('cabarian_offline_staff_auth', JSON.stringify(authData));
-          localStorage.setItem('cabarian_offline_auth_staging', JSON.stringify(authData));
         } catch {}
+        const authData = {
+          username: username.toLowerCase(),
+          passwordHash: hash,
+          reauthToken: existingReauthToken,
+          savedAt: Date.now()
+        };
+        localStorage.setItem('cabarian_offline_staff_auth', JSON.stringify(authData));
+        localStorage.setItem('cabarian_offline_auth_staging', JSON.stringify(authData));
+      } catch {}
 
-        window.location.assign('registration.php');
-        return;
+      window.location.assign(targetRedirectUrl || 'registration.php');
+    };
+
+    const performOnlineLogin = async (isRetry = false) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+        const formData = new FormData(form);
+        const response = await fetch(form.action || 'login.php', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json, text/html;q=0.9',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          signal: controller.signal
+        });
+        window.clearTimeout(timeoutId);
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          let payload = null;
+          try {
+            payload = await response.json();
+          } catch {
+            payload = null;
+          }
+
+          if (payload && payload.success === true) {
+            await handleLoginSuccess(payload.redirect || 'registration.php');
+            return;
+          }
+
+          if (payload && payload.csrf_token) {
+            const tokenInput = form.querySelector('input[name="csrf_token"]');
+            if (tokenInput) tokenInput.value = payload.csrf_token;
+          }
+
+          const errorMsg = payload?.error ? String(payload.error).trim() : '';
+          if (errorMsg && /session expired/i.test(errorMsg) && !isRetry) {
+            await syncCsrfToken();
+            return performOnlineLogin(true);
+          }
+
+          showError(errorMsg || 'Invalid username or password.');
+          return;
+        }
+
+        const responseUrl = String(response.url || '').toLowerCase();
+        const isKnownSuccessUrl = responseUrl.includes('registration.php')
+          || responseUrl.includes('member.php')
+          || responseUrl.includes('households')
+          || responseUrl.includes('admin.php')
+          || responseUrl.includes('index.php')
+          || responseUrl.includes('settings.php');
+
+        if (isKnownSuccessUrl && !responseUrl.includes('login.php')) {
+          await handleLoginSuccess(response.url || 'registration.php');
+          return;
+        }
+
+        const htmlText = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, 'text/html');
+
+        const newTokenInput = doc.querySelector('input[name="csrf_token"]');
+        const currentTokenInput = form.querySelector('input[name="csrf_token"]');
+        if (newTokenInput && currentTokenInput && newTokenInput.value) {
+          currentTokenInput.value = newTokenInput.value;
+        }
+
+        const errorDiv = doc.getElementById('error');
+        const errorMsg = errorDiv ? errorDiv.textContent.trim() : '';
+
+        if (errorMsg && /session expired/i.test(errorMsg) && !isRetry) {
+          await syncCsrfToken();
+          return performOnlineLogin(true);
+        }
+
+        if (errorMsg) {
+          showError(errorMsg);
+          return;
+        }
+
+        showError('Invalid username or password.');
+      } catch (networkError) {
+        await performOfflineLogin();
       }
+    };
 
-      const htmlText = await response.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlText, 'text/html');
-      const errorDiv = doc.getElementById('error');
-      const errorMsg = errorDiv ? errorDiv.textContent.trim() : '';
-
-      if (errorMsg) {
-        showError(errorMsg);
-        return;
-      }
-
-      showError('Invalid username or password.');
-      return;
-
-      await performOfflineLogin();
-    } catch (networkError) {
-      await performOfflineLogin();
-    }
+    await performOnlineLogin(false);
   });
 })();

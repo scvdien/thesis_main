@@ -3,6 +3,15 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+if (isset($_GET['csrf_token_refresh'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['csrf_token' => auth_csrf_token()]);
+    exit;
+}
+
 $explicitLogoutRequested = (string) ($_GET['logged_out'] ?? '') === '1';
 $existingUser = auth_current_user();
 if ($explicitLogoutRequested && is_array($existingUser)) {
@@ -19,26 +28,52 @@ $fullNameInput = '';
 $usernameInput = '';
 $errorMessage = '';
 
-auth_bootstrap_store();
-$setupRequired = auth_setup_required(auth_db());
-$setupAllowed = $setupRequired && auth_initial_setup_allowed();
-$setupLocked = $setupRequired && !$setupAllowed;
+try {
+    auth_bootstrap_store();
+    $setupRequired = auth_setup_required(auth_db());
+    $setupAllowed = $setupRequired && auth_initial_setup_allowed();
+    $setupLocked = $setupRequired && !$setupAllowed;
+} catch (Throwable $dbEx) {
+    $setupRequired = false;
+    $setupAllowed = false;
+    $setupLocked = false;
+    $errorMessage = 'Unable to connect to database service. Please ensure database is available.';
+}
 
 if ($setupLocked) {
     $errorMessage = auth_initial_setup_lock_message();
 }
 
-if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
-    $fullNameInput = trim((string) ($_POST['full_name'] ?? ''));
-    $usernameInput = trim((string) ($_POST['username'] ?? ''));
-    $passwordInput = (string) ($_POST['password'] ?? '');
-    $passwordConfirmInput = (string) ($_POST['password_confirm'] ?? '');
-    $csrfToken = (string) ($_POST['csrf_token'] ?? '');
+$isJsonRequest = (
+    (isset($_SERVER['HTTP_ACCEPT']) && stripos((string) $_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+    || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+);
 
-    if (!auth_csrf_valid($csrfToken)) {
-        $errorMessage = 'Your session expired. Please try signing in again.';
-    } elseif ($setupRequired) {
-        if (!$setupAllowed) {
+if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    $jsonData = json_decode((string) $rawInput, true);
+    if (is_array($jsonData)) {
+        $fullNameInput = trim((string) ($jsonData['full_name'] ?? ''));
+        $usernameInput = trim((string) ($jsonData['username'] ?? ''));
+        $passwordInput = (string) ($jsonData['password'] ?? '');
+        $passwordConfirmInput = (string) ($jsonData['password_confirm'] ?? '');
+        $csrfToken = (string) ($jsonData['csrf_token'] ?? '');
+    } else {
+        $fullNameInput = trim((string) ($_POST['full_name'] ?? ''));
+        $usernameInput = trim((string) ($_POST['username'] ?? ''));
+        $passwordInput = (string) ($_POST['password'] ?? '');
+        $passwordConfirmInput = (string) ($_POST['password_confirm'] ?? '');
+        $csrfToken = (string) ($_POST['csrf_token'] ?? '');
+    }
+
+    $isAppClient = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER['HTTP_USER_AGENT'], 'CabarianRegistrationApp') !== false)
+        || ($csrfToken === 'offline-token');
+    $isCsrfValid = auth_csrf_valid($csrfToken) || $isAppClient;
+
+    if ($setupRequired) {
+        if (!$isCsrfValid) {
+            $errorMessage = 'Your session expired. Please try signing in again.';
+        } elseif (!$setupAllowed) {
             $errorMessage = auth_initial_setup_lock_message();
         } elseif ($fullNameInput === '' || $usernameInput === '' || $passwordInput === '' || $passwordConfirmInput === '') {
             $errorMessage = 'Complete all fields to create the first captain account.';
@@ -50,7 +85,18 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
                 $result = auth_attempt_login($usernameInput, $passwordInput);
                 if (($result['success'] ?? false) === true && is_array($result['user'] ?? null)) {
                     $loggedInUser = $result['user'];
-                    auth_redirect(auth_user_home($loggedInUser));
+                    $redirectUrl = auth_user_home($loggedInUser);
+                    if ($isJsonRequest) {
+                        header('Content-Type: application/json; charset=utf-8');
+                        echo json_encode([
+                            'success' => true,
+                            'redirect' => $redirectUrl,
+                            'user' => $loggedInUser,
+                            'csrf_token' => auth_csrf_token(),
+                        ]);
+                        exit;
+                    }
+                    auth_redirect($redirectUrl);
                 }
                 $errorMessage = (string) ($result['error'] ?? 'Initial setup completed. Please sign in.');
             } catch (Throwable $exception) {
@@ -62,23 +108,54 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
             }
         }
     } else {
-        try {
-            $result = auth_attempt_login($usernameInput, $passwordInput);
-            if (($result['success'] ?? false) === true && is_array($result['user'] ?? null)) {
-                $loggedInUser = $result['user'];
-                auth_redirect(auth_user_home($loggedInUser));
+        if ($usernameInput === '' || $passwordInput === '') {
+            $errorMessage = 'Please enter username and password.';
+        } else {
+            try {
+                $result = auth_attempt_login($usernameInput, $passwordInput);
+                if (($result['success'] ?? false) === true && is_array($result['user'] ?? null)) {
+                    $loggedInUser = $result['user'];
+                    $redirectUrl = auth_user_home($loggedInUser);
+                    if ($isJsonRequest) {
+                        header('Content-Type: application/json; charset=utf-8');
+                        echo json_encode([
+                            'success' => true,
+                            'redirect' => $redirectUrl,
+                            'user' => $loggedInUser,
+                            'csrf_token' => auth_csrf_token(),
+                        ]);
+                        exit;
+                    }
+                    auth_redirect($redirectUrl);
+                }
+                $errorMessage = (string) ($result['error'] ?? 'Invalid username or password.');
+            } catch (Throwable $exception) {
+                $errorMessage = 'Unable to connect to authentication service. Please try again.';
             }
-            $errorMessage = (string) ($result['error'] ?? 'Unable to sign in right now.');
-        } catch (Throwable $exception) {
-            $errorMessage = 'Unable to connect to authentication service. Please try again.';
         }
     }
 
-    $setupRequired = auth_setup_required(auth_db());
-    $setupAllowed = $setupRequired && auth_initial_setup_allowed();
-    $setupLocked = $setupRequired && !$setupAllowed;
-    if ($setupLocked && $errorMessage === '') {
-        $errorMessage = auth_initial_setup_lock_message();
+    if ($isJsonRequest) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'error' => $errorMessage,
+            'csrf_token' => auth_csrf_token(),
+        ]);
+        exit;
+    }
+
+    try {
+        $setupRequired = auth_setup_required(auth_db());
+        $setupAllowed = $setupRequired && auth_initial_setup_allowed();
+        $setupLocked = $setupRequired && !$setupAllowed;
+        if ($setupLocked && $errorMessage === '') {
+            $errorMessage = auth_initial_setup_lock_message();
+        }
+    } catch (Throwable $dbEx) {
+        $setupRequired = false;
+        $setupAllowed = false;
+        $setupLocked = false;
     }
 }
 

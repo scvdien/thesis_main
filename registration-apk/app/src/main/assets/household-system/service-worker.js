@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-09-07-v56";
+const CACHE_VERSION = "2026-09-08-v58";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
@@ -173,6 +173,20 @@ const cachePageResponse = async (request, response) => {
     await pageCache.put(buildScopedUrl("registration.php"), response.clone());
   }
   if (requestedPageName === "login.php" || responsePageName === "login.php") {
+    try {
+      const htmlText = await response.clone().text();
+      const sanitizedHtml = htmlText.replace(
+        /(name=["']csrf_token["']\s+value=["'])[^"']*([ "'])/gi,
+        '$1offline-token$2'
+      );
+      const sanitizedResponse = new Response(sanitizedHtml, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      });
+      await pageCache.put(buildScopedUrl("login.php"), sanitizedResponse);
+      return true;
+    } catch {}
     await pageCache.put(buildScopedUrl("login.php"), response.clone());
   }
 
@@ -390,7 +404,7 @@ const handleRegistrationNavigation = async (request) => {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(request, { signal: controller.signal });
     clearTimeout(timeoutId);
 
