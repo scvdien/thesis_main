@@ -2463,14 +2463,17 @@
         `;
       }
 
+      const isMultiBatch = hasReserve || activeBatchCount > 1;
       let expiryBadgeMarkup = "";
-      if (expiryDays < 0) {
-        expiryBadgeMarkup = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1" style="font-size:0.65rem;" title="Batch has expired"><i class="bi bi-exclamation-triangle me-0.5"></i>Expired</span>`;
-      } else if (expiryDays <= 90) {
-        const batchQtyNote = (activeBatchCount > 1 && effectiveBatch) ? ` (${formatNumber(effectiveBatch.quantityRemaining)} ${medicine.unit})` : "";
-        expiryBadgeMarkup = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1" style="font-size:0.65rem;" title="Batch expiring soon in ${expiryDays} days${batchQtyNote}"><i class="bi bi-clock-history me-0.5"></i>Expiring Soon</span>`;
-      } else if (activeBatchCount > 1 && effectiveBatch) {
-        expiryBadgeMarkup = `<span class="badge bg-success-subtle text-success border border-success-subtle me-1" style="font-size:0.65rem;" title="Next batch to be dispensed: ${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)}">Next Out</span>`;
+      if (isMultiBatch) {
+        if (expiryDays < 0) {
+          expiryBadgeMarkup = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1" style="font-size:0.65rem;" title="Batch has expired"><i class="bi bi-exclamation-triangle me-0.5"></i>Expired</span>`;
+        } else if (expiryDays <= 90) {
+          const batchQtyNote = effectiveBatch ? ` (${formatNumber(effectiveBatch.quantityRemaining)} ${medicine.unit})` : "";
+          expiryBadgeMarkup = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1" style="font-size:0.65rem;" title="Batch expiring soon in ${expiryDays} days${batchQtyNote}"><i class="bi bi-clock-history me-0.5"></i>Expiring Soon</span>`;
+        } else if (effectiveBatch) {
+          expiryBadgeMarkup = `<span class="badge bg-success-subtle text-success border border-success-subtle me-1" style="font-size:0.65rem;" title="Next batch to be dispensed: ${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)}">Next Out</span>`;
+        }
       }
 
       return `
@@ -2517,7 +2520,7 @@
           <td>
             <div class="inventory-expiry">
               <strong>${esc(formatDate(displayExpiryDate))}</strong>
-              <small>${expiryBadgeMarkup}${esc(expiryNote)}${activeBatchCount > 1 && effectiveBatch ? ` <span class="text-muted" style="font-size:0.75rem;">(${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)})</span>` : ""}</small>
+              <small>${expiryBadgeMarkup}${esc(expiryNote)}${isMultiBatch && effectiveBatch ? ` <span class="text-muted" style="font-size:0.75rem;">(${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)})</span>` : ""}</small>
               ${reserveMarkup}
             </div>
           </td>
