@@ -47,6 +47,8 @@
     medicineStrength: byId("medicineStrength"),
     medicineUnit: byId("medicineUnit"),
     stockOnHand: byId("stockOnHand"),
+    stockOnHandDisplay: byId("stockOnHandDisplay"),
+    stockOnHandDisplayValue: byId("stockOnHandDisplayValue"),
     reorderLevel: byId("reorderLevel"),
     batchNumber: byId("batchNumber"),
     expiryDate: byId("expiryDate"),
@@ -88,11 +90,37 @@
     stockActionNoteGroup: byId("stockActionNoteGroup"),
     stockActionNoteLabel: byId("stockActionNoteLabel"),
     stockActionNote: byId("stockActionNote"),
+    stockActionQuantityGroup: byId("stockActionQuantityGroup"),
+    stockDisposeBatchSection: byId("stockDisposeBatchSection"),
+    stockDisposeSelectExpiredBtn: byId("stockDisposeSelectExpiredBtn"),
+    stockDisposeSelectAllCheck: byId("stockDisposeSelectAllCheck"),
+    stockDisposeBatchTableBody: byId("stockDisposeBatchTableBody"),
+    stockDisposeSummary: byId("stockDisposeSummary"),
+    stockDisposeTotalCount: byId("stockDisposeTotalCount"),
+    stockDisposeTotalUnit: byId("stockDisposeTotalUnit"),
+    stockDisposeBatchCountBadge: byId("stockDisposeBatchCountBadge"),
+    stockDisposeRemainingStock: byId("stockDisposeRemainingStock"),
     stockActionFeedback: byId("stockActionFeedback"),
     stockActionSubmitBtn: byId("stockActionSubmitBtn"),
     stockActionSubmitLabel: byId("stockActionSubmitLabel"),
     stockActionCloseBtn: byId("stockActionCloseBtn"),
     stockActionCancelBtn: byId("stockActionCancelBtn"),
+    stockActionBatchGroup: byId("stockActionBatchGroup"),
+    stockActionBatchNumber: byId("stockActionBatchNumber"),
+    stockActionBatchNumberLabel: byId("stockActionBatchNumberLabel"),
+    stockActionExpiryDate: byId("stockActionExpiryDate"),
+    stockActionExpiryDateLabel: byId("stockActionExpiryDateLabel"),
+    batchDetailsModal: byId("batchDetailsModal"),
+    batchDetailsModalTitle: byId("batchDetailsModalTitle"),
+    batchDetailsMedicineName: byId("batchDetailsMedicineName"),
+    batchDetailsMedicineMeta: byId("batchDetailsMedicineMeta"),
+    batchDetailsTotalStock: byId("batchDetailsTotalStock"),
+    batchDetailsTableBody: byId("batchDetailsTableBody"),
+    batchHistoryToggleBtn: byId("batchHistoryToggleBtn"),
+    batchHistoryToggleIcon: byId("batchHistoryToggleIcon"),
+    batchHistoryToggleLabel: byId("batchHistoryToggleLabel"),
+    batchDetailsCountHint: byId("batchDetailsCountHint"),
+    batchDetailsExhaustedToggleContainer: byId("batchDetailsExhaustedToggleContainer"),
     dispenseResidentSection: byId("dispenseResidentSection"),
     selectedResidentId: byId("selectedResidentId"),
     residentLookupInput: byId("residentLookupInput"),
@@ -105,19 +133,47 @@
     quickResidentFields: byId("quickResidentFields"),
     quickResidentName: byId("quickResidentName"),
     quickResidentBarangay: byId("quickResidentBarangay"),
-    quickResidentCity: byId("quickResidentCity")
+    quickResidentCity: byId("quickResidentCity"),
+    disposeConfirmModal: byId("disposeConfirmModal"),
+    disposeConfirmMedicineName: byId("disposeConfirmMedicineName"),
+    disposeConfirmTotalQty: byId("disposeConfirmTotalQty"),
+    disposeConfirmBatchList: byId("disposeConfirmBatchList"),
+    disposeConfirmReason: byId("disposeConfirmReason"),
+    disposeConfirmStockAdjustment: byId("disposeConfirmStockAdjustment"),
+    disposeConfirmSubmitBtn: byId("disposeConfirmSubmitBtn"),
+    medicineModalBatchNumberGroup: byId("medicineModalBatchNumberGroup"),
+    medicineModalExpiryDateGroup: byId("medicineModalExpiryDateGroup"),
+    medicineModalMultiBatchBanner: byId("medicineModalMultiBatchBanner"),
+    medicineModalBatchCount: byId("medicineModalBatchCount"),
+    medicineModalManageBatchesBtn: byId("medicineModalManageBatchesBtn"),
+    editBatchModal: byId("editBatchModal"),
+    editBatchForm: byId("editBatchForm"),
+    editBatchMedicineId: byId("editBatchMedicineId"),
+    editBatchId: byId("editBatchId"),
+    editBatchMedicineName: byId("editBatchMedicineName"),
+    editBatchQuantity: byId("editBatchQuantity"),
+    editBatchSource: byId("editBatchSource"),
+    editBatchNumber: byId("editBatchNumber"),
+    editBatchExpiryDate: byId("editBatchExpiryDate"),
+    editBatchFeedback: byId("editBatchFeedback"),
+    editBatchCancelBtn: byId("editBatchCancelBtn"),
+    editBatchSubmitBtn: byId("editBatchSubmitBtn")
   };
 
   const medicineModal = byId("medicineModal") && window.bootstrap ? new window.bootstrap.Modal(byId("medicineModal")) : null;
   const stockActionModal = byId("stockActionModal") && window.bootstrap ? new window.bootstrap.Modal(byId("stockActionModal")) : null;
+  const batchDetailsModal = byId("batchDetailsModal") && window.bootstrap ? new window.bootstrap.Modal(byId("batchDetailsModal")) : null;
   const recordStatusModalEl = byId("recordStatusModal");
   const recordStatusModal = recordStatusModalEl && window.bootstrap ? new window.bootstrap.Modal(recordStatusModalEl) : null;
+  const disposeConfirmModal = byId("disposeConfirmModal") && window.bootstrap ? new window.bootstrap.Modal(byId("disposeConfirmModal")) : null;
+  const editBatchModal = byId("editBatchModal") && window.bootstrap ? new window.bootstrap.Modal(byId("editBatchModal")) : null;
   const logoutModal = byId("logoutModal") && window.bootstrap ? new window.bootstrap.Modal(byId("logoutModal")) : null;
 
   if (refs.year) refs.year.textContent = String(new Date().getFullYear());
 
   const state = {
     inventory: [],
+    inventoryBatches: [],
     movements: [],
     residentAccounts: [],
     choRequests: [],
@@ -138,6 +194,11 @@
     selectedResidentId: "",
     quickResidentOpen: false
   };
+
+  let currentBatchDetailsMedicine = null;
+  let batchDetailsViewingHistory = false;
+  let currentEditingBatch = null;
+  let batchEditSaved = false;
 
   let alertTimer = 0;
   let inventoryHydrationPromise = null;
@@ -566,6 +627,120 @@
     });
   };
 
+  const confirmDisposalAction = ({
+    medicine,
+    totalQty,
+    batchItems = [],
+    reason,
+    stockBefore,
+    stockAfter
+  }) => {
+    const modalEl = byId("disposeConfirmModal");
+    const modalInstance = modalEl && window.bootstrap
+      ? (window.bootstrap.Modal.getOrCreateInstance ? window.bootstrap.Modal.getOrCreateInstance(modalEl) : (disposeConfirmModal || new window.bootstrap.Modal(modalEl)))
+      : null;
+
+    if (
+      !modalInstance
+      || !modalEl
+      || !refs.disposeConfirmMedicineName
+      || !refs.disposeConfirmTotalQty
+      || !refs.disposeConfirmBatchList
+      || !refs.disposeConfirmReason
+      || !refs.disposeConfirmStockAdjustment
+      || !refs.disposeConfirmSubmitBtn
+    ) {
+      return Promise.resolve(window.confirm(`Are you sure you want to dispose ${formatNumber(totalQty)} ${medicine?.unit || "units"} of ${medicineLabel(medicine)}? This action cannot be undone.`));
+    }
+
+    refs.disposeConfirmMedicineName.textContent = medicineLabel(medicine);
+    refs.disposeConfirmTotalQty.textContent = `${formatNumber(totalQty)} ${medicine?.unit || "units"}`;
+    refs.disposeConfirmReason.textContent = reason || "No reason specified";
+    refs.disposeConfirmStockAdjustment.textContent = `${formatNumber(stockBefore)} → ${formatNumber(stockAfter)} ${medicine?.unit || "units"}`;
+
+    if (refs.disposeConfirmSubmitBtn) {
+      refs.disposeConfirmSubmitBtn.disabled = false;
+      refs.disposeConfirmSubmitBtn.innerHTML = `<i class="bi bi-trash3-fill me-1"></i>Confirm Disposal`;
+    }
+
+    if (batchItems && batchItems.length > 0) {
+      refs.disposeConfirmBatchList.innerHTML = batchItems.map(({ batch, quantity }) => {
+        const days = daysUntil(batch.expiryDate);
+        const isExpired = days < 0;
+        const expiryLabel = isExpired ? `Expired (${Math.abs(days)}d ago)` : `Exp: ${batch.expiryDate}`;
+        const badgeClass = isExpired ? "badge bg-danger text-white" : "badge bg-light text-dark border";
+        return `
+          <div class="dispose-confirm-batch-item">
+            <div>
+              <span class="fw-bold text-dark">${esc(batch.batchNumber || "No Batch")}</span>
+              <span class="${badgeClass} ms-1" style="font-size:0.75rem;">${esc(expiryLabel)}</span>
+            </div>
+            <span class="fw-bold text-danger">-${formatNumber(quantity)} ${esc(medicine?.unit || "units")}</span>
+          </div>
+        `;
+      }).join("");
+    } else {
+      refs.disposeConfirmBatchList.innerHTML = `
+        <div class="text-muted small fst-italic py-1">
+          Stock deduction without batch tracking (${formatNumber(totalQty)} ${esc(medicine?.unit || "units")})
+        </div>
+      `;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const finalize = (value) => {
+        if (settled) return;
+        settled = true;
+        refs.disposeConfirmSubmitBtn?.removeEventListener("click", handleConfirm);
+        modalEl.removeEventListener("hidden.bs.modal", handleHidden);
+        modalEl.removeEventListener("shown.bs.modal", handleShown);
+
+        if (!value) {
+          // If cancelled, re-open stockActionModal so the user returns to the form with all their inputs intact
+          setTimeout(() => {
+            stockActionModal?.show();
+          }, 50);
+        }
+        resolve(Boolean(value));
+      };
+
+      const handleConfirm = () => {
+        if (refs.disposeConfirmSubmitBtn) {
+          refs.disposeConfirmSubmitBtn.disabled = true;
+          refs.disposeConfirmSubmitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Disposing...`;
+        }
+        finalize(true);
+        modalInstance.hide();
+      };
+
+      const handleHidden = () => {
+        finalize(false);
+      };
+
+      const handleShown = () => {
+        refs.disposeConfirmSubmitBtn?.focus();
+      };
+
+      refs.disposeConfirmSubmitBtn?.addEventListener("click", handleConfirm);
+      modalEl.addEventListener("hidden.bs.modal", handleHidden);
+      modalEl.addEventListener("shown.bs.modal", handleShown);
+
+      // Hide stockActionModal first, then show disposeConfirmModal once it's completely hidden
+      const stockModalEl = byId("stockActionModal");
+      if (stockModalEl && stockModalEl.classList.contains("show")) {
+        const onStockModalHidden = () => {
+          modalInstance.show();
+        };
+        stockModalEl.addEventListener("hidden.bs.modal", onStockModalHidden, { once: true });
+        stockActionModal?.hide();
+      } else {
+        modalInstance.show();
+      }
+    });
+  };
+
   const closeMobileSidebar = () => {
     refs.sidebar?.classList.remove("open");
     refs.sidebarBackdrop?.classList.remove("show");
@@ -606,14 +781,34 @@
       unitCost: Number(numeric(entry.unitCost).toFixed(2)),
       recordStatus: normalizeRecordStatus(entry.recordStatus || entry.record_status),
       updatedBy: text(entry.updatedBy) || actorName(),
-      lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
+      lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso(),
+      batches: Array.isArray(entry.batches) ? entry.batches.map(normalizeBatch) : [],
+      activeBatchesCount: typeof entry.activeBatchesCount === "number" ? entry.activeBatchesCount : 0
     };
   };
+
+  const normalizeBatch = (entry = {}) => ({
+    id: text(entry.id) || `batch_${uid()}`,
+    medicineId: text(entry.medicineId || entry.medicine_id),
+    batchNumber: text(entry.batchNumber || entry.batch_number).toUpperCase() || "-",
+    expiryDate: text(entry.expiryDate || entry.expiry_date),
+    quantityReceived: Math.max(0, Math.round(numeric(entry.quantityReceived || entry.quantity_received))),
+    quantityRemaining: Math.max(0, Math.round(numeric(entry.quantityRemaining || entry.quantity_remaining))),
+    receivedDate: text(entry.receivedDate || entry.received_date) || todayInputValue(),
+    sourceType: text(entry.sourceType || entry.source_type) || "initial",
+    sourceReference: text(entry.sourceReference || entry.source_reference),
+    status: text(entry.status) || "active",
+    createdAt: text(entry.createdAt || entry.created_at) || nowIso(),
+    updatedAt: text(entry.updatedAt || entry.updated_at) || nowIso()
+  });
 
   const normalizeMovement = (entry = {}) => ({
     id: text(entry.id) || uid(),
     medicineId: text(entry.medicineId),
     medicineName: text(entry.medicineName),
+    batchId: text(entry.batchId || entry.batch_id),
+    batchNumber: text(entry.batchNumber || entry.batch_number),
+    batchExpiry: text(entry.batchExpiry || entry.batch_expiry),
     actionType: text(entry.actionType) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
     note: text(entry.note) || "Inventory movement recorded.",
@@ -757,6 +952,28 @@
         .filter(([id, version]) => id && version));
       state.inventory = serverState.inventory.map(normalizeMedicine);
     }
+    if (Array.isArray(serverState.inventoryBatches)) {
+      state.inventoryBatches = serverState.inventoryBatches.map(normalizeBatch);
+    }
+    if (Array.isArray(state.inventory) && Array.isArray(state.inventoryBatches) && state.inventoryBatches.length) {
+      state.inventory.forEach((med) => {
+        const medBatches = (med.batches && med.batches.length)
+          ? med.batches
+          : state.inventoryBatches.filter((b) => b.medicineId === med.id);
+        const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+        if (activeBatches.length > 0) {
+          med.stockOnHand = activeBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+          const validActiveBatches = activeBatches
+            .filter((b) => daysUntil(b.expiryDate) >= 0)
+            .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+          const primaryBatch = validActiveBatches.length > 0
+            ? validActiveBatches[0]
+            : [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
+          med.batchNumber = primaryBatch.batchNumber;
+          med.expiryDate = primaryBatch.expiryDate;
+        }
+      });
+    }
     state.movements = Array.isArray(serverState.movements)
       ? serverState.movements.map(normalizeMovement)
       : state.movements;
@@ -774,6 +991,7 @@
   const cloneEntries = (entries = []) => entries.map((entry) => ({ ...entry }));
   const createStateSnapshot = () => ({
     inventory: cloneEntries(state.inventory),
+    inventoryBatches: cloneEntries(state.inventoryBatches),
     movements: cloneEntries(state.movements),
     residentAccounts: cloneEntries(state.residentAccounts),
     activityLogs: cloneEntries(state.activityLogs)
@@ -782,6 +1000,7 @@
   const restoreStateSnapshot = (snapshot) => {
     if (!snapshot) return;
     state.inventory = snapshot.inventory.map(normalizeMedicine);
+    state.inventoryBatches = (snapshot.inventoryBatches || []).map(normalizeBatch);
     state.movements = snapshot.movements.map(normalizeMovement);
     state.residentAccounts = snapshot.residentAccounts.map(normalizeResidentAccount);
     state.activityLogs = snapshot.activityLogs.map(normalizeActivityLog);
@@ -801,6 +1020,7 @@
           state: {
             inventory: state.inventory,
             inventoryExpectedVersions: { ...inventoryExpectedVersions },
+            inventoryBatches: state.inventoryBatches || [],
             movements: state.movements,
             residentAccounts: state.residentAccounts,
             logs: state.activityLogs
@@ -963,7 +1183,34 @@
 
     const stock = numeric(medicine.stockOnHand);
     const reorderLevel = Math.max(1, numeric(medicine.reorderLevel));
-    const expiryDays = daysUntil(medicine.expiryDate);
+
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+
+    let effectiveExpiryDate = medicine.expiryDate;
+    let safeReserveStock = 0;
+
+    if (activeBatches.length > 0) {
+      const validBatches = activeBatches.filter((b) => daysUntil(b.expiryDate) >= 0)
+        .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+      if (validBatches.length > 0) {
+        effectiveExpiryDate = validBatches[0].expiryDate;
+        safeReserveStock = validBatches
+          .filter((b) => daysUntil(b.expiryDate) > 90)
+          .reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+      } else {
+        const sortedActive = [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+        effectiveExpiryDate = sortedActive[0].expiryDate;
+      }
+    } else {
+      if (daysUntil(medicine.expiryDate) > 90) {
+        safeReserveStock = stock;
+      }
+    }
+
+    const expiryDays = daysUntil(effectiveExpiryDate);
 
     if (stock <= 0) {
       return { key: "out-of-stock", label: "Out of Stock", tone: "danger", note: "No units on hand" };
@@ -973,7 +1220,10 @@
       return { key: "expiring-soon", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
     }
 
-    if (expiryDays <= 90) {
+    // Option A: If safe reserve stock is at or below reorder level and earliest batch expires in <= 90 days,
+    // the medicine will soon drop below alert level upon expiry -> Expiring Soon.
+    // If safe reserve stock is well above reorder level (> reorderLevel), overall status remains Healthy!
+    if (expiryDays <= 90 && safeReserveStock <= reorderLevel) {
       return { key: "expiring-soon", label: "Expiring Soon", tone: "warning", note: `${expiryDays} days remaining` };
     }
 
@@ -1088,9 +1338,15 @@
       refs.stockActionNote,
       refs.stockRestockSourceCho,
       refs.stockRestockSourceManual,
-      refs.stockLinkedRequestId
+      refs.stockLinkedRequestId,
+      refs.stockDisposeSelectAllCheck,
+      refs.stockDisposeSelectExpiredBtn
     ].forEach((field) => {
       if (field) field.disabled = saving;
+    });
+    const batchInputs = refs.stockDisposeBatchTableBody?.querySelectorAll("input") || [];
+    batchInputs.forEach((input) => {
+      if (input) input.disabled = saving;
     });
     if (refs.stockActionCloseBtn) refs.stockActionCloseBtn.disabled = saving;
     if (refs.stockActionCancelBtn) refs.stockActionCancelBtn.disabled = saving;
@@ -1213,6 +1469,18 @@
     if (!refs.stockActionPreview || !refs.stockActionSubmitBtn) return;
     const medicine = findMedicine(text(refs.stockMedicineId?.value));
     const actionType = text(refs.stockActionType?.value) || "restock";
+
+    const medBatches = (medicine?.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine?.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    const hasBatches = activeBatches.length > 0;
+
+    if (actionType === "dispose" && hasBatches) {
+      updateDisposeSummary(medicine);
+      return;
+    }
+
     const source = stockRestockSource();
     const quantity = Number(text(refs.stockActionQuantity?.value));
     const validQuantity = Number.isInteger(quantity) && quantity > 0;
@@ -1369,12 +1637,156 @@
     if (!dispenseState.quickResidentOpen) clearQuickResidentFields();
   };
 
+  const updateDisposeSummary = (medicine = null) => {
+    if (!medicine) {
+      medicine = findMedicine(text(refs.stockMedicineId?.value));
+    }
+    if (!medicine) return;
+
+    let totalDisposeQty = 0;
+    let selectedBatchCount = 0;
+    let hasInvalidQty = false;
+
+    const rows = refs.stockDisposeBatchTableBody?.querySelectorAll("tr[data-batch-id]") || [];
+    rows.forEach((row) => {
+      const check = row.querySelector(".stock-dispose-batch-check");
+      const qtyInput = row.querySelector(".stock-dispose-qty-input");
+      if (check && check.checked && qtyInput) {
+        selectedBatchCount++;
+        const remaining = Number(check.dataset.remaining) || 0;
+        const qty = Number(qtyInput.value) || 0;
+        if (qty <= 0 || qty > remaining || !Number.isInteger(qty)) {
+          hasInvalidQty = true;
+        }
+        totalDisposeQty += qty;
+        row.classList.add("stock-dispose-batch-row--selected");
+      } else {
+        row.classList.remove("stock-dispose-batch-row--selected");
+      }
+    });
+
+    const currentStock = numeric(medicine.stockOnHand);
+    const stockAfter = Math.max(0, currentStock - totalDisposeQty);
+
+    if (refs.stockDisposeTotalCount) {
+      refs.stockDisposeTotalCount.textContent = formatNumber(totalDisposeQty);
+    }
+    if (refs.stockDisposeTotalUnit) {
+      refs.stockDisposeTotalUnit.textContent = medicine.unit || "units";
+    }
+    if (refs.stockDisposeBatchCountBadge) {
+      refs.stockDisposeBatchCountBadge.textContent = `${formatNumber(selectedBatchCount)} batch${selectedBatchCount === 1 ? "" : "es"}`;
+    }
+    if (refs.stockDisposeRemainingStock) {
+      refs.stockDisposeRemainingStock.textContent = `${formatNumber(stockAfter)} ${medicine.unit || "units"}`;
+    }
+
+    if (refs.stockActionSubmitBtn) {
+      const hasReason = text(refs.stockActionNote?.value).trim().length > 0;
+      const hasValidSelection = selectedBatchCount > 0 && !hasInvalidQty && totalDisposeQty > 0 && totalDisposeQty <= currentStock;
+      refs.stockActionSubmitBtn.disabled = !(hasValidSelection && hasReason);
+    }
+  };
+
+  const renderDisposeBatchList = (medicine) => {
+    if (!refs.stockDisposeBatchTableBody || !medicine) return;
+
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+
+    const activeBatches = medBatches
+      .filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0)
+      .sort((a, b) => (new Date(a.expiryDate).getTime() || 0) - (new Date(b.expiryDate).getTime() || 0));
+
+    if (refs.stockDisposeSelectAllCheck) {
+      refs.stockDisposeSelectAllCheck.checked = false;
+    }
+
+    if (activeBatches.length === 0) {
+      refs.stockDisposeBatchTableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="text-center text-muted py-3">
+            No active batches recorded for this medicine.
+          </td>
+        </tr>
+      `;
+      updateDisposeSummary(medicine);
+      return;
+    }
+
+    refs.stockDisposeBatchTableBody.innerHTML = activeBatches.map((batch) => {
+      const remaining = numeric(batch.quantityRemaining);
+      const days = daysUntil(batch.expiryDate);
+      const isExpired = days < 0;
+      const isNearExpiry = !isExpired && days <= 60;
+
+      let badgeHtml = "";
+      if (isExpired) {
+        badgeHtml = `<span class="batch-status-badge batch-status-badge--expired"><i class="bi bi-x-circle me-1"></i>Expired (${Math.abs(days)}d ago)</span>`;
+      } else if (isNearExpiry) {
+        badgeHtml = `<span class="batch-status-badge batch-status-badge--near-expiry"><i class="bi bi-exclamation-circle me-1"></i>${days}d left</span>`;
+      } else {
+        badgeHtml = `<span class="batch-status-badge batch-status-badge--active"><i class="bi bi-check2 me-1"></i>Active</span>`;
+      }
+
+      const rowClass = isExpired ? "stock-dispose-batch-row--expired" : "";
+
+      return `
+        <tr class="${rowClass}" data-batch-id="${esc(batch.id)}">
+          <td class="text-center">
+            <input
+              type="checkbox"
+              class="form-check-input stock-dispose-batch-check"
+              data-batch-id="${esc(batch.id)}"
+              data-is-expired="${isExpired ? '1' : '0'}"
+              data-remaining="${remaining}"
+            >
+          </td>
+          <td>
+            <div class="fw-bold">${esc(batch.batchNumber || "-")}</div>
+            <small class="text-muted">${formatDate(batch.receivedDate || "")}</small>
+          </td>
+          <td>
+            ${badgeHtml}
+            <div class="small text-muted">${esc(batch.expiryDate)}</div>
+          </td>
+          <td class="text-end">
+            <span class="fw-bold">${formatNumber(remaining)}</span>
+            <small class="text-muted d-block">${esc(medicine.unit)}</small>
+          </td>
+          <td class="text-end">
+            <input
+              type="number"
+              class="form-control form-control-sm stock-dispose-qty-input ms-auto"
+              data-batch-id="${esc(batch.id)}"
+              min="1"
+              max="${remaining}"
+              step="1"
+              value=""
+              placeholder="0"
+              disabled
+            >
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    updateDisposeSummary(medicine);
+  };
+
   const updateStockActionInterface = ({ autofillRequest = false } = {}) => {
     const actionType = text(refs.stockActionType?.value).toLowerCase();
     const isDispose = actionType === "dispose";
     const isRestock = actionType === "restock";
     const medicine = findMedicine(text(refs.stockMedicineId?.value));
     const requestRows = medicine ? linkedRequestRowsForMedicine(medicine) : [];
+
+    const medBatches = (medicine?.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine?.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    const hasBatches = activeBatches.length > 0;
 
     if (refs.stockActionTypeIcon) {
       refs.stockActionTypeIcon.className = `bi ${isDispose ? "bi-trash3" : "bi-box-arrow-in-down"} stock-action-type-icon${isDispose ? " stock-action-type-icon--dispose" : ""}`;
@@ -1392,9 +1804,24 @@
     const isManualRestock = isRestock && source === "manual";
 
     refs.stockRestockFlow?.classList.toggle("d-none", !isRestock);
+    refs.stockActionBatchGroup?.classList.toggle("d-none", !isRestock);
+    if (refs.stockActionBatchNumber) refs.stockActionBatchNumber.required = false;
+    if (refs.stockActionExpiryDate) refs.stockActionExpiryDate.required = isRestock;
     refs.stockLinkedRequestGroup?.classList.toggle("d-none", !isChoDelivery);
     refs.stockActionNoteGroup?.classList.toggle("d-none", !(isDispose || isManualRestock));
     refs.stockLinkedRequestCard?.classList.toggle("d-none", !isChoDelivery || !text(refs.stockLinkedRequestId?.value));
+
+    // Multi-batch dispose view vs restock quantity
+    refs.stockDisposeBatchSection?.classList.toggle("d-none", !isDispose || !hasBatches);
+    refs.stockActionQuantityGroup?.classList.toggle("d-none", isDispose && hasBatches);
+    if (refs.stockActionQuantity) {
+      refs.stockActionQuantity.required = isRestock || (isDispose && !hasBatches);
+    }
+
+    if (isDispose && hasBatches) {
+      renderDisposeBatchList(medicine);
+      refs.stockActionPreview?.classList.add("d-none");
+    }
 
     if (refs.stockRestockSourceHint) {
       refs.stockRestockSourceHint.textContent = requestRows.length === 0
@@ -1416,7 +1843,7 @@
     if (refs.stockActionNote) {
       refs.stockActionNote.required = isDispose;
       refs.stockActionNote.placeholder = isDispose
-        ? "Reason for disposal or write-off"
+        ? "Reason for disposal (e.g. Expired stock segregation, damaged packaging, COA write-off)"
         : "Supplier, delivery reference, or optional note";
     }
 
@@ -1466,7 +1893,9 @@
       renderLinkedRequestDetails(medicine, { autofillQuantity: autofillRequest });
     }
 
-    updateStockActionPreview();
+    if (!isDispose || !hasBatches) {
+      updateStockActionPreview();
+    }
   };
 
   const createQuickResidentAccount = () => {
@@ -1528,7 +1957,16 @@
 
       const matchesQuery = !query || haystack.includes(query);
       const matchesCategory = uiState.category === "all" || medicine.category === uiState.category;
-      const matchesStatus = uiState.status === "all" || uiState.status === "archived" || status.key === uiState.status;
+      const hasExpiringBatch = () => {
+        const medBatches = (medicine.batches && medicine.batches.length)
+          ? medicine.batches
+          : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+        return medBatches.some((b) => b.status === "active" && numeric(b.quantityRemaining) > 0 && daysUntil(b.expiryDate) >= 0 && daysUntil(b.expiryDate) <= 90);
+      };
+      const matchesStatus = uiState.status === "all"
+        || uiState.status === "archived"
+        || status.key === uiState.status
+        || (uiState.status === "expiring-soon" && hasExpiringBatch());
       return matchesQuery && matchesCategory && matchesStatus;
     });
 
@@ -1568,6 +2006,386 @@
     if (refs.metricExpiringSoon) refs.metricExpiringSoon.textContent = formatNumber(expiringSoon);
   };
 
+  const renderBatchDetailsRows = (medicine, showExhausted = false) => {
+    if (!medicine || !refs.batchDetailsTableBody) return;
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+
+    const sortedBatches = [...medBatches].sort((a, b) => {
+      const timeA = new Date(a.expiryDate).getTime() || 0;
+      const timeB = new Date(b.expiryDate).getTime() || 0;
+      return timeA - timeB;
+    });
+
+    const exhaustedCount = sortedBatches.filter(
+      (b) => b.status === "exhausted" || numeric(b.quantityRemaining) <= 0
+    ).length;
+
+    batchDetailsViewingHistory = showExhausted;
+
+    if (refs.batchHistoryToggleBtn) {
+      refs.batchHistoryToggleBtn.classList.toggle("is-active", showExhausted);
+      refs.batchHistoryToggleBtn.disabled = (exhaustedCount === 0 && !showExhausted);
+      refs.batchHistoryToggleBtn.title = exhaustedCount === 0
+        ? "No batch history available for this medicine"
+        : (showExhausted ? "Switch back to active batches" : "View batch history");
+    }
+    if (refs.batchHistoryToggleIcon) {
+      refs.batchHistoryToggleIcon.className = showExhausted ? "bi bi-layers" : "bi bi-clock-history";
+    }
+    if (refs.batchHistoryToggleLabel) {
+      refs.batchHistoryToggleLabel.textContent = showExhausted ? "Active Batches" : "Batch History";
+    }
+
+    let displayBatches = [];
+    if (showExhausted) {
+      displayBatches = sortedBatches.filter(
+        (b) => b.status === "exhausted" || numeric(b.quantityRemaining) <= 0
+      );
+    } else {
+      displayBatches = sortedBatches.filter(
+        (b) => b.status !== "exhausted" && numeric(b.quantityRemaining) > 0
+      );
+    }
+
+    if (refs.batchDetailsCountHint) {
+      const recordWord = displayBatches.length === 1 ? "Record" : "Records";
+      refs.batchDetailsCountHint.innerHTML = showExhausted
+        ? `<i class="bi bi-clock-history me-1 text-primary"></i>${recordWord}: <strong>${displayBatches.length} (History)</strong>`
+        : `<i class="bi bi-layers me-1 text-success"></i>${recordWord}: <strong>${displayBatches.length} (Active)</strong>`;
+    }
+
+    if (!displayBatches.length) {
+      if (showExhausted) {
+        refs.batchDetailsTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              <i class="bi bi-info-circle me-1 text-secondary"></i>No exhausted batches recorded for this medicine.
+            </td>
+          </tr>
+        `;
+      } else if (!sortedBatches.length) {
+        refs.batchDetailsTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              No batch records found for this medicine.
+            </td>
+          </tr>
+        `;
+      } else {
+        refs.batchDetailsTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center text-muted py-4">
+              <i class="bi bi-info-circle me-1 text-secondary"></i>No active batches with remaining stock. (${exhaustedCount} exhausted batch(es) available in history). Toggle the switch above to view history.
+            </td>
+          </tr>
+        `;
+      }
+      return;
+    }
+
+    const firstValidActiveIndex = displayBatches.findIndex((b) => b.status === "active" && numeric(b.quantityRemaining) > 0 && daysUntil(b.expiryDate) >= 0);
+    let activeOrderCounter = 0;
+    refs.batchDetailsTableBody.innerHTML = displayBatches.map((batch, idx) => {
+      const isExhausted = batch.status === "exhausted" || numeric(batch.quantityRemaining) <= 0;
+      const expiryDays = daysUntil(batch.expiryDate);
+      const isExpired = expiryDays < 0;
+      const isValidNextOut = !isExhausted && !isExpired && idx === firstValidActiveIndex;
+      if (!isExhausted && !isExpired) activeOrderCounter += 1;
+
+      let expiryClass = "text-muted";
+      let expiryText = `${expiryDays}d left`;
+      if (isExpired) {
+        expiryClass = "text-danger fw-semibold";
+        expiryText = `<i class="bi bi-x-circle me-1"></i>Expired`;
+      } else if (expiryDays <= 60) {
+        expiryClass = "text-warning-emphasis fw-medium";
+        expiryText = `<i class="bi bi-clock-history me-1"></i>${expiryDays}d left`;
+      }
+
+      let orderBadge = "";
+      if (isExpired && !isExhausted) {
+        orderBadge = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1 rounded-pill text-nowrap fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>For Disposal</span>';
+      } else if (isValidNextOut) {
+        orderBadge = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 rounded-pill text-nowrap fw-semibold"><i class="bi bi-clock-history me-1"></i>Next Out</span>';
+      } else if (!isExhausted) {
+        orderBadge = '<span class="badge bg-light text-secondary border px-2.5 py-1 rounded-pill text-nowrap fw-medium">Reserve</span>';
+      } else {
+        orderBadge = '<span class="badge bg-light text-muted border px-2.5 py-1 rounded-pill text-nowrap">Exhausted</span>';
+      }
+
+      const qtyRemaining = numeric(batch.quantityRemaining);
+      const qtyReceived = Math.max(1, numeric(batch.quantityReceived));
+      const percent = Math.min(100, Math.max(0, Math.round((qtyRemaining / qtyReceived) * 100)));
+      const fillClass = isExhausted
+        ? "batch-progress-fill--exhausted"
+        : (isExpired ? "batch-progress-fill--exhausted" : (isValidNextOut ? "batch-progress-fill--primary" : "batch-progress-fill--reserve"));
+
+      let sourceIcon = "bi-truck text-secondary";
+      let sourceName = "CHO Delivery";
+      if (batch.sourceType === "donation") {
+        sourceIcon = "bi-gift text-success";
+        sourceName = "Donation";
+      } else if (batch.sourceType === "manual_restock") {
+        sourceIcon = "bi-box-seam text-secondary";
+        sourceName = "Restock";
+      } else if (batch.sourceType !== "cho_delivery") {
+        sourceIcon = "bi-archive text-secondary";
+        sourceName = "Initial Stock";
+      }
+
+      const rowHighlightClass = isValidNextOut
+        ? "batch-row-active-dispense"
+        : (isExpired && !isExhausted ? "table-danger bg-opacity-10" : (isExhausted ? "text-muted opacity-75" : ""));
+
+      return `
+        <tr class="${rowHighlightClass}">
+          <td class="text-nowrap">
+            ${orderBadge}
+          </td>
+          <td class="text-nowrap">
+            <strong class="font-monospace text-dark text-nowrap">${esc(batch.batchNumber)}</strong>
+          </td>
+          <td class="text-nowrap">
+            <div class="fw-semibold text-dark">${esc(formatDate(batch.expiryDate))}</div>
+            <small class="${expiryClass}" style="font-size:0.75rem;">${expiryText}</small>
+          </td>
+          <td>
+            <div style="min-width: 130px;">
+              <div class="d-flex align-items-baseline justify-content-between gap-2">
+                <strong class="${isExhausted ? "text-muted" : "text-dark"}" style="font-size:0.92rem;">${formatNumber(batch.quantityRemaining)}</strong>
+                <span class="text-muted text-nowrap" style="font-size: 0.74rem;">/ ${formatNumber(batch.quantityReceived)} ${esc(medicine.unit)}</span>
+              </div>
+              <div class="batch-progress-bar" title="${percent}% remaining">
+                <div class="batch-progress-fill ${fillClass}" style="width: ${percent}%;"></div>
+              </div>
+            </div>
+          </td>
+          <td class="text-nowrap">
+            <div class="fw-medium text-dark" style="font-size: 0.82rem;"><i class="bi ${sourceIcon} me-1"></i>${sourceName}</div>
+            <small class="text-muted" style="font-size: 0.74rem;">${formatDate(batch.receivedDate)}</small>
+          </td>
+          <td class="text-nowrap">
+            ${isExhausted
+              ? '<span class="text-muted small"><i class="bi bi-dash-circle me-1"></i>Exhausted</span>'
+              : (isExpired
+                ? '<span class="text-danger small fw-semibold"><i class="bi bi-exclamation-circle-fill me-1"></i>Expired</span>'
+                : '<span class="text-success small fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Active</span>')
+            }
+          </td>
+          <td class="text-nowrap text-end">
+            ${isExhausted
+              ? `<button type="button" class="btn btn-sm btn-light border px-2.5 py-1 text-muted rounded-pill opacity-50" disabled style="cursor: not-allowed;" title="Exhausted batches cannot be edited">
+                  <i class="bi bi-pencil me-1"></i>Edit
+                </button>`
+              : `<button type="button" class="btn btn-sm btn-light border px-2.5 py-1 text-secondary rounded-pill batch-edit-btn" data-action="edit-batch" data-batch-id="${esc(batch.id)}" title="Edit batch number or expiration date">
+                  <i class="bi bi-pencil me-1"></i>Edit
+                </button>`
+            }
+          </td>
+        </tr>
+      `;
+    }).join("");
+  };
+
+  const openBatchDetailsModal = (medicine) => {
+    if (!medicine || !refs.batchDetailsModal) return;
+    currentBatchDetailsMedicine = medicine;
+
+    if (refs.batchDetailsMedicineName) {
+      refs.batchDetailsMedicineName.textContent = medicineLabel(medicine);
+    }
+    if (refs.batchDetailsMedicineMeta) {
+      refs.batchDetailsMedicineMeta.textContent = `${medicine.genericName || ""} | Form: ${medicine.form} | Alert Level: ${formatNumber(medicine.reorderLevel)} ${medicine.unit}`;
+    }
+    if (refs.batchDetailsTotalStock) {
+      refs.batchDetailsTotalStock.textContent = `${formatNumber(medicine.stockOnHand)} ${medicine.unit}`;
+    }
+
+    batchDetailsViewingHistory = false;
+    renderBatchDetailsRows(medicine, false);
+    batchDetailsModal?.show();
+  };
+
+  const openEditBatchModal = (batch, medicine) => {
+    if (!batch || !medicine || !refs.editBatchModal) return;
+    const isExhausted = batch.status === "exhausted" || numeric(batch.quantityRemaining) <= 0;
+    if (isExhausted) {
+      showNotice("Exhausted batch records are locked for audit integrity and cannot be edited.", "warning");
+      return;
+    }
+    currentEditingBatch = batch;
+    batchEditSaved = false;
+
+    if (refs.editBatchFeedback) {
+      refs.editBatchFeedback.classList.add("d-none");
+      refs.editBatchFeedback.textContent = "";
+    }
+
+    if (refs.editBatchMedicineId) refs.editBatchMedicineId.value = medicine.id;
+    if (refs.editBatchId) refs.editBatchId.value = batch.id;
+    if (refs.editBatchMedicineName) refs.editBatchMedicineName.textContent = medicineLabel(medicine);
+    if (refs.editBatchQuantity) refs.editBatchQuantity.textContent = `${formatNumber(batch.quantityRemaining)} / ${formatNumber(batch.quantityReceived)} ${medicine.unit}`;
+
+    const sourceLabel = batch.sourceType === "cho_delivery"
+      ? "CHO Delivery"
+      : (batch.sourceType === "donation"
+        ? "Donation"
+        : (batch.sourceType === "manual_restock" ? "Manual Restock" : "Initial Stock"));
+    if (refs.editBatchSource) refs.editBatchSource.textContent = `${sourceLabel} (${formatDate(batch.receivedDate)})`;
+
+    if (refs.editBatchNumber) refs.editBatchNumber.value = batch.batchNumber || "";
+    if (refs.editBatchExpiryDate) {
+      refs.editBatchExpiryDate.value = batch.expiryDate ? batch.expiryDate.slice(0, 10) : "";
+    }
+
+    // Hide batchDetailsModal first, then show editBatchModal once fully hidden
+    const detailsModalEl = byId("batchDetailsModal");
+    if (detailsModalEl && detailsModalEl.classList.contains("show")) {
+      detailsModalEl.addEventListener("hidden.bs.modal", () => {
+        editBatchModal?.show();
+      }, { once: true });
+      batchDetailsModal?.hide();
+    } else {
+      batchDetailsModal?.hide();
+      editBatchModal?.show();
+    }
+  };
+
+  const handleEditBatchSubmit = async (event) => {
+    event.preventDefault();
+    if (!currentEditingBatch || !currentBatchDetailsMedicine) return;
+
+    const isExhausted = currentEditingBatch.status === "exhausted" || numeric(currentEditingBatch.quantityRemaining) <= 0;
+    if (isExhausted) {
+      if (refs.editBatchFeedback) {
+        refs.editBatchFeedback.textContent = "Exhausted batches cannot be edited.";
+        refs.editBatchFeedback.classList.remove("d-none");
+      }
+      return;
+    }
+
+    const newBatchNumber = text(refs.editBatchNumber?.value);
+    const newExpiryDate = text(refs.editBatchExpiryDate?.value);
+
+    if (!newBatchNumber) {
+      if (refs.editBatchFeedback) {
+        refs.editBatchFeedback.textContent = "Please enter a valid batch number.";
+        refs.editBatchFeedback.classList.remove("d-none");
+      }
+      refs.editBatchNumber?.focus();
+      return;
+    }
+
+    if (!newExpiryDate) {
+      if (refs.editBatchFeedback) {
+        refs.editBatchFeedback.textContent = "Please select a valid expiration date.";
+        refs.editBatchFeedback.classList.remove("d-none");
+      }
+      refs.editBatchExpiryDate?.focus();
+      return;
+    }
+
+    const oldBatchNumber = currentEditingBatch.batchNumber;
+    const oldExpiryDate = currentEditingBatch.expiryDate;
+
+    if (newBatchNumber === oldBatchNumber && newExpiryDate === oldExpiryDate) {
+      batchEditSaved = true;
+      editBatchModal?.hide();
+      return;
+    }
+
+    if (refs.editBatchSubmitBtn) {
+      refs.editBatchSubmitBtn.disabled = true;
+      refs.editBatchSubmitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Saving...`;
+    }
+
+    const snapshot = createStateSnapshot();
+
+    try {
+      currentEditingBatch.batchNumber = newBatchNumber;
+      currentEditingBatch.expiryDate = newExpiryDate;
+      currentEditingBatch.updatedAt = nowIso();
+
+      const globalBatch = (state.inventoryBatches || []).find((b) => String(b.id) === String(currentEditingBatch.id));
+      if (globalBatch) {
+        globalBatch.batchNumber = newBatchNumber;
+        globalBatch.expiryDate = newExpiryDate;
+        globalBatch.updatedAt = nowIso();
+      }
+
+      if (Array.isArray(currentBatchDetailsMedicine.batches)) {
+        const medBatch = currentBatchDetailsMedicine.batches.find((b) => String(b.id) === String(currentEditingBatch.id));
+        if (medBatch) {
+          medBatch.batchNumber = newBatchNumber;
+          medBatch.expiryDate = newExpiryDate;
+          medBatch.updatedAt = nowIso();
+        }
+      }
+
+      const allMedBatches = (currentBatchDetailsMedicine.batches && currentBatchDetailsMedicine.batches.length)
+        ? currentBatchDetailsMedicine.batches
+        : (state.inventoryBatches || []).filter((b) => b.medicineId === currentBatchDetailsMedicine.id);
+
+      const activeBatches = allMedBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+      if (activeBatches.length > 0) {
+        const validActiveBatches = activeBatches
+          .filter((b) => daysUntil(b.expiryDate) >= 0)
+          .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+        const primaryBatch = validActiveBatches.length > 0
+          ? validActiveBatches[0]
+          : [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
+        currentBatchDetailsMedicine.batchNumber = primaryBatch.batchNumber;
+        currentBatchDetailsMedicine.expiryDate = primaryBatch.expiryDate;
+      }
+      currentBatchDetailsMedicine.lastUpdatedAt = nowIso();
+      currentBatchDetailsMedicine.updatedBy = actorName();
+
+      const invMed = findMedicine(currentBatchDetailsMedicine.id);
+      if (invMed && invMed !== currentBatchDetailsMedicine) {
+        invMed.batchNumber = currentBatchDetailsMedicine.batchNumber;
+        invMed.expiryDate = currentBatchDetailsMedicine.expiryDate;
+        invMed.lastUpdatedAt = currentBatchDetailsMedicine.lastUpdatedAt;
+        invMed.updatedBy = currentBatchDetailsMedicine.updatedBy;
+      }
+
+      const changes = [];
+      if (newBatchNumber !== oldBatchNumber) changes.push(`Batch: "${oldBatchNumber}" → "${newBatchNumber}"`);
+      if (newExpiryDate !== oldExpiryDate) changes.push(`Expiry: "${formatDate(oldExpiryDate)}" → "${formatDate(newExpiryDate)}"`);
+
+      logMovement({
+        medicine: currentBatchDetailsMedicine,
+        actionType: "adjusted",
+        quantity: 0,
+        stockBefore: currentBatchDetailsMedicine.stockOnHand,
+        stockAfter: currentBatchDetailsMedicine.stockOnHand,
+        note: `Batch details updated (${changes.join(", ")}).`,
+        createdAt: nowIso()
+      });
+
+      await persistInventoryState();
+
+      batchEditSaved = true;
+      editBatchModal?.hide();
+      renderAll();
+      showNotice("Batch details updated successfully.", "success");
+    } catch (error) {
+      restoreStateSnapshot(snapshot);
+      renderAll();
+      if (refs.editBatchFeedback) {
+        refs.editBatchFeedback.textContent = error.message || "Failed to update batch details. Please try again.";
+        refs.editBatchFeedback.classList.remove("d-none");
+      }
+      showNotice(error.message || "Failed to update batch details.", "danger");
+    } finally {
+      if (refs.editBatchSubmitBtn) {
+        refs.editBatchSubmitBtn.disabled = false;
+        refs.editBatchSubmitBtn.innerHTML = `<i class="bi bi-check2-circle me-1"></i>Save Batch Changes`;
+      }
+    }
+  };
+
   const renderInventoryTable = () => {
     if (!refs.inventoryTableBody) return;
     const medicines = sortedInventory();
@@ -1585,8 +2403,24 @@
     }
 
     refs.inventoryTableBody.innerHTML = medicines.map((medicine, index) => {
+      const medBatches = (medicine.batches && medicine.batches.length)
+        ? medicine.batches
+        : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+      const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+      const validActiveBatches = activeBatches
+        .filter((b) => daysUntil(b.expiryDate) >= 0)
+        .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+      const expiredActiveBatches = activeBatches.filter((b) => daysUntil(b.expiryDate) < 0);
+
+      const effectiveBatch = validActiveBatches.length > 0
+        ? validActiveBatches[0]
+        : (activeBatches.length > 0 ? [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0] : null);
+
+      const displayBatchNumber = effectiveBatch ? effectiveBatch.batchNumber : medicine.batchNumber;
+      const displayExpiryDate = effectiveBatch ? effectiveBatch.expiryDate : medicine.expiryDate;
+
       const status = getStatus(medicine);
-      const expiryDays = daysUntil(medicine.expiryDate);
+      const expiryDays = daysUntil(displayExpiryDate);
       const expiryNote = expiryDays < 0 ? `${Math.abs(expiryDays)} days overdue` : `${expiryDays} days left`;
       const medicineMeta = [text(medicine.strength)].filter(Boolean).join(" | ");
       const shouldOpenUp = medicines.length === 1 || index >= medicines.length - 2;
@@ -1594,6 +2428,9 @@
       const stockHelper = isArchivedMedicine(medicine)
         ? "Restore this record to return it to active workflows."
         : `Alert at ${formatNumber(medicine.reorderLevel)} ${medicine.unit}`;
+
+      const activeBatchCount = activeBatches.length || (numeric(medicine.stockOnHand) > 0 ? 1 : 0);
+
       const actionItems = isArchivedMedicine(medicine)
         ? `
                   <button type="button" class="dropdown-item inventory-action-item" data-action="restore" data-id="${esc(medicine.id)}">
@@ -1602,12 +2439,39 @@
                 `
         : `
                   <button type="button" class="dropdown-item inventory-action-item" data-action="adjust" data-id="${esc(medicine.id)}">
-                    <i class="bi bi-arrow-left-right"></i> Adjust
+                    <i class="bi bi-arrow-down-up"></i> Adjust Stock
                   </button>
                   <button type="button" class="dropdown-item inventory-action-item" data-action="archive" data-id="${esc(medicine.id)}">
                     <i class="bi bi-archive"></i> Archive
                   </button>
                 `;
+
+      const reserveBatches = validActiveBatches.slice(1);
+      const hasReserve = reserveBatches.length > 0;
+      const latestReserveBatch = hasReserve ? reserveBatches[reserveBatches.length - 1] : null;
+      const reserveTotalQty = reserveBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+
+      let reserveMarkup = "";
+      if (hasReserve && latestReserveBatch) {
+        const reserveDateLabel = reserveBatches.length > 1
+          ? `to ${formatDate(latestReserveBatch.expiryDate)}`
+          : formatDate(latestReserveBatch.expiryDate);
+        reserveMarkup = `
+          <div class="inventory-expiry-reserve text-muted" style="font-size:0.75rem; margin-top:2px;">
+            <span class="badge bg-light text-secondary border me-1" style="font-size:0.62rem;">Reserve</span>${esc(reserveDateLabel)} <span class="text-secondary">(${formatNumber(reserveTotalQty)} ${esc(medicine.unit)})</span>
+          </div>
+        `;
+      }
+
+      let expiryBadgeMarkup = "";
+      if (expiryDays < 0) {
+        expiryBadgeMarkup = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1" style="font-size:0.65rem;" title="Batch has expired"><i class="bi bi-exclamation-triangle me-0.5"></i>Expired</span>`;
+      } else if (expiryDays <= 90) {
+        const batchQtyNote = (activeBatchCount > 1 && effectiveBatch) ? ` (${formatNumber(effectiveBatch.quantityRemaining)} ${medicine.unit})` : "";
+        expiryBadgeMarkup = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1" style="font-size:0.65rem;" title="Batch expiring soon in ${expiryDays} days${batchQtyNote}"><i class="bi bi-clock-history me-0.5"></i>Expiring Soon</span>`;
+      } else if (activeBatchCount > 1 && effectiveBatch) {
+        expiryBadgeMarkup = `<span class="badge bg-success-subtle text-success border border-success-subtle me-1" style="font-size:0.65rem;" title="Next batch to be dispensed: ${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)}">Next Out</span>`;
+      }
 
       return `
         <tr>
@@ -1629,8 +2493,19 @@
           </td>
           <td>
             <div class="inventory-expiry">
-              <strong>${esc(medicine.batchNumber)}</strong>
-              <small>${esc(batchHelper)}</small>
+              <strong>${esc(displayBatchNumber)}</strong>
+              <small>
+                ${activeBatchCount > 1
+                  ? `<button type="button" class="view-batches-btn" data-action="view-batches" data-id="${esc(medicine.id)}" title="View all batches for this medicine"><i class="bi bi-layers-fill me-1"></i>${activeBatchCount} batches</button>`
+                  : (medBatches.length > 0
+                    ? `<button type="button" class="btn btn-link p-0 text-decoration-none text-muted" data-action="view-batches" data-id="${esc(medicine.id)}" style="font-size:0.75rem;" title="View batch details"><i class="bi bi-layers me-1"></i>Batch details</button>`
+                    : esc(batchHelper))
+                }
+                ${expiredActiveBatches.length > 0 && validActiveBatches.length > 0
+                  ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size:0.65rem;" title="${expiredActiveBatches.length} batch(es) expired and queued for disposal"><i class="bi bi-exclamation-circle me-0.5"></i>${expiredActiveBatches.length} expired</span>`
+                  : ""
+                }
+              </small>
             </div>
           </td>
           <td>
@@ -1641,8 +2516,9 @@
           </td>
           <td>
             <div class="inventory-expiry">
-              <strong>${esc(formatDate(medicine.expiryDate))}</strong>
-              <small>${esc(expiryNote)}</small>
+              <strong>${esc(formatDate(displayExpiryDate))}</strong>
+              <small>${expiryBadgeMarkup}${esc(expiryNote)}${activeBatchCount > 1 && effectiveBatch ? ` <span class="text-muted" style="font-size:0.75rem;">(${formatNumber(effectiveBatch.quantityRemaining)} ${esc(medicine.unit)})</span>` : ""}</small>
+              ${reserveMarkup}
             </div>
           </td>
           <td><span class="inventory-status inventory-status--${esc(status.tone)}">${esc(status.label)}</span></td>
@@ -1870,14 +2746,62 @@ ${actionItems}
     refs.medicineFormType.value = medicine?.form || "";
     refs.medicineStrength.value = medicine?.strength || "";
     refs.medicineUnit.value = medicine?.unit || "";
-    refs.stockOnHand.value = medicine ? String(medicine.stockOnHand) : "";
+    refs.stockOnHand.value = "";
     refs.reorderLevel.value = medicine ? String(medicine.reorderLevel) : "";
     refs.batchNumber.value = medicine?.batchNumber === "-" ? "" : (medicine?.batchNumber || "");
     refs.expiryDate.value = medicine?.expiryDate || todayInputValue();
+
+    const medBatches = medicine
+      ? (medicine.batches && medicine.batches.length
+          ? medicine.batches
+          : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id))
+      : [];
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    const isMultiBatch = Boolean(medicine && activeBatches.length > 1);
+
+    const isEdit = Boolean(medicine);
+    const calculatedStock = medicine
+      ? (activeBatches.length > 0
+          ? activeBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0)
+          : numeric(medicine.stockOnHand))
+      : "";
+
+    if (refs.stockOnHand) {
+      refs.stockOnHand.classList.toggle("d-none", isEdit);
+      refs.stockOnHand.required = !isEdit;
+      refs.stockOnHand.value = isEdit ? String(calculatedStock) : "";
+    }
+
+    if (refs.stockOnHandDisplay) {
+      refs.stockOnHandDisplay.classList.toggle("d-none", !isEdit);
+      if (isEdit && refs.stockOnHandDisplayValue) {
+        refs.stockOnHandDisplayValue.textContent = `${formatNumber(calculatedStock)} ${medicine.unit || "units"}`;
+      }
+    }
+
+    if (refs.medicineModalMultiBatchBanner) {
+      refs.medicineModalMultiBatchBanner.classList.toggle("d-none", !isMultiBatch);
+      if (isMultiBatch && refs.medicineModalBatchCount) {
+        refs.medicineModalBatchCount.textContent = `${activeBatches.length} active batches`;
+      }
+    }
+    if (refs.medicineModalBatchNumberGroup) {
+      refs.medicineModalBatchNumberGroup.classList.toggle("d-none", isMultiBatch);
+    }
+    if (refs.medicineModalExpiryDateGroup) {
+      refs.medicineModalExpiryDateGroup.classList.toggle("d-none", isMultiBatch);
+    }
+    if (refs.batchNumber) {
+      refs.batchNumber.required = !isMultiBatch;
+    }
+    if (refs.expiryDate) {
+      refs.expiryDate.required = !isMultiBatch;
+    }
+
     medicineModal?.show();
   };
 
-  const openStockActionModal = (medicine) => {
+  const openStockActionModal = (medicine, defaultAction = "restock") => {
     if (!medicine || !refs.stockActionForm) return;
     if (stockActionSaving) return;
     if (isArchivedMedicine(medicine)) {
@@ -1890,8 +2814,15 @@ ${actionItems}
     refs.stockMedicineId.value = medicine.id;
     refs.stockActionMedicineLabel.textContent = medicineLabel(medicine);
     refs.stockCurrentStock.textContent = `${formatNumber(medicine.stockOnHand)} ${medicine.unit}`;
-    refs.stockActionType.value = "restock";
+    refs.stockActionType.value = defaultAction;
     refs.stockActionDate.value = todayInputValue();
+    if (refs.stockActionBatchNumber) refs.stockActionBatchNumber.value = "";
+    if (refs.stockActionExpiryDate) {
+      const defExp = new Date();
+      defExp.setFullYear(defExp.getFullYear() + 2);
+      refs.stockActionExpiryDate.value = defExp.toISOString().slice(0, 10);
+      refs.stockActionExpiryDate.min = todayInputValue();
+    }
     setStockActionFeedback();
 
     const requestRows = linkedRequestRowsForMedicine(medicine);
@@ -1902,7 +2833,7 @@ ${actionItems}
     }
 
     populateLinkedRequestOptions(medicine, { autoSelect: true });
-    updateStockActionInterface({ autofillRequest: requestRows.length === 1 });
+    updateStockActionInterface({ autofillRequest: requestRows.length === 1 && defaultAction === "restock" });
     stockActionModal?.show();
   };
 
@@ -1916,6 +2847,20 @@ ${actionItems}
       return;
     }
 
+    const medBatches = existing
+      ? (existing.batches && existing.batches.length
+          ? existing.batches
+          : (state.inventoryBatches || []).filter((b) => b.medicineId === existing.id))
+      : [];
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    const isMultiBatch = Boolean(existing && activeBatches.length > 1);
+
+    const calculatedExistingStock = existing
+      ? (activeBatches.length > 0
+          ? activeBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0)
+          : numeric(existing.stockOnHand))
+      : numeric(refs.stockOnHand.value);
+
     const payload = normalizeMedicine({
       id: existing?.id || uid(),
       name: refs.medicineName.value,
@@ -1923,18 +2868,18 @@ ${actionItems}
       category: refs.medicineCategory.value,
       form: refs.medicineFormType.value,
       strength: refs.medicineStrength.value,
-      stockOnHand: refs.stockOnHand.value,
+      stockOnHand: existing ? calculatedExistingStock : refs.stockOnHand.value,
       reorderLevel: refs.reorderLevel.value,
       unit: refs.medicineUnit.value,
-      batchNumber: refs.batchNumber.value,
-      expiryDate: refs.expiryDate.value,
+      batchNumber: isMultiBatch ? existing.batchNumber : refs.batchNumber.value,
+      expiryDate: isMultiBatch ? existing.expiryDate : refs.expiryDate.value,
       unitCost: existing?.unitCost || 0,
       recordStatus: existing?.recordStatus || "active",
       updatedBy: actorName(),
       lastUpdatedAt: nowIso()
     });
 
-    if (!payload.name || !payload.genericName || !payload.category || !payload.form || !payload.unit || payload.batchNumber === "-") {
+    if (!payload.name || !payload.genericName || !payload.category || !payload.form || !payload.unit || (!isMultiBatch && (payload.batchNumber === "-" || !payload.batchNumber))) {
       showNotice("Please complete the medicine name, category, dosage form, unit, and batch number.", "danger");
       return;
     }
@@ -1953,6 +2898,24 @@ ${actionItems}
     if (existing) {
       const previousStock = existing.stockOnHand;
       Object.assign(existing, payload);
+
+      if (!isMultiBatch) {
+        const matchingBatches = (existing.batches && existing.batches.length)
+          ? existing.batches
+          : (state.inventoryBatches || []).filter((b) => b.medicineId === existing.id);
+        const singleActiveBatch = matchingBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+        if (singleActiveBatch.length === 1) {
+          singleActiveBatch[0].batchNumber = payload.batchNumber;
+          singleActiveBatch[0].expiryDate = payload.expiryDate;
+          singleActiveBatch[0].updatedAt = payload.lastUpdatedAt;
+          const globalBatch = (state.inventoryBatches || []).find((b) => b.id === singleActiveBatch[0].id);
+          if (globalBatch) {
+            globalBatch.batchNumber = payload.batchNumber;
+            globalBatch.expiryDate = payload.expiryDate;
+            globalBatch.updatedAt = payload.lastUpdatedAt;
+          }
+        }
+      }
 
       if (previousStock !== payload.stockOnHand) {
         logMovement({
@@ -2089,17 +3052,62 @@ ${actionItems}
 
     const actionType = text(refs.stockActionType.value) || "restock";
     const source = actionType === "restock" ? stockRestockSource() : "";
-    const quantity = Number(text(refs.stockActionQuantity.value));
-    const note = text(refs.stockActionNote.value);
+    const note = text(refs.stockActionNote.value).trim();
     const actionDate = text(refs.stockActionDate.value) || todayInputValue();
     const linkedRequest = actionType === "restock" && source === "cho"
       ? selectedLinkedRequestForMedicine(medicine)
       : null;
 
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      setStockActionFeedback("Enter a whole-number quantity greater than zero.");
-      refs.stockActionQuantity?.focus();
-      return;
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    const hasBatches = activeBatches.length > 0;
+
+    const batchesToDispose = [];
+    let quantity = 0;
+
+    if (actionType === "dispose" && hasBatches) {
+      const rows = refs.stockDisposeBatchTableBody?.querySelectorAll("tr[data-batch-id]") || [];
+      let totalQty = 0;
+      for (const row of rows) {
+        const check = row.querySelector(".stock-dispose-batch-check");
+        const qtyInput = row.querySelector(".stock-dispose-qty-input");
+        if (check && check.checked) {
+          const batchId = row.dataset.batchId;
+          const batchObj = activeBatches.find((b) => b.id === batchId);
+          const disposeQty = Number(qtyInput?.value);
+          if (!Number.isInteger(disposeQty) || disposeQty <= 0) {
+            setStockActionFeedback(`Enter a whole-number quantity to dispose for batch ${batchObj?.batchNumber || ""}.`);
+            qtyInput?.focus();
+            return;
+          }
+          const remaining = numeric(batchObj?.quantityRemaining);
+          if (disposeQty > remaining) {
+            setStockActionFeedback(`Disposal quantity for batch ${batchObj?.batchNumber} cannot exceed available stock (${formatNumber(remaining)}).`);
+            qtyInput?.focus();
+            return;
+          }
+          batchesToDispose.push({
+            batch: batchObj,
+            quantity: disposeQty
+          });
+          totalQty += disposeQty;
+        }
+      }
+
+      if (batchesToDispose.length === 0) {
+        setStockActionFeedback("Please select at least one batch to dispose.");
+        return;
+      }
+      quantity = totalQty;
+    } else {
+      quantity = Number(text(refs.stockActionQuantity.value));
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        setStockActionFeedback("Enter a whole-number quantity greater than zero.");
+        refs.stockActionQuantity?.focus();
+        return;
+      }
     }
 
     if (actionType === "dispose" && !note) {
@@ -2133,6 +3141,28 @@ ${actionItems}
       return;
     }
 
+    let batchNumber = text(refs.stockActionBatchNumber?.value);
+    const expiryDate = text(refs.stockActionExpiryDate?.value);
+    if (actionType === "restock" && !expiryDate) {
+      setStockActionFeedback("Please provide the expiration date.");
+      refs.stockActionExpiryDate?.focus();
+      return;
+    }
+
+    if (actionType === "restock" && !batchNumber) {
+      const dateCode = (actionDate || nowIso().slice(0, 10)).replace(/-/g, "");
+      const isDonation = !note || /donat|regalo|bigay|ngo|mission|rotary|lions/i.test(note);
+      const prefix = isDonation ? "DON" : "RESTOCK";
+      const existingBatches = (medicine.batches || []).map((b) => b.batchNumber);
+      let candidate = `${prefix}-${dateCode}`;
+      let seq = 1;
+      while (existingBatches.includes(candidate)) {
+        seq++;
+        candidate = `${prefix}-${dateCode}-${String(seq).padStart(2, "0")}`;
+      }
+      batchNumber = candidate;
+    }
+
     if (linkedRequest) {
       const deliveryDraft = {
         requestGroupId: linkedRequest.requestGroupId,
@@ -2156,6 +3186,8 @@ ${actionItems}
         action: "receive_cho_delivery",
         operationId,
         ...deliveryDraft,
+        batchNumber,
+        expiryDate,
         note: ""
       };
       stockActionOperationId = operationId;
@@ -2198,27 +3230,120 @@ ${actionItems}
       renderAll();
       emitInventoryNotificationRefresh();
       stockActionModal?.hide();
-      showNotice(`${formatNumber(quantity)} ${medicine.unit} received from ${linkedRequest.requestCode}.`);
+      showNotice(`${formatNumber(quantity)} ${medicine.unit} received from ${linkedRequest.requestCode} (Batch: ${batchNumber}).`);
       return;
+    }
+
+    if (actionType === "dispose") {
+      const currentStock = numeric(medicine.stockOnHand);
+      if (quantity > currentStock) {
+        setStockActionFeedback(`Only ${formatNumber(currentStock)} ${medicine.unit} are available to dispose.`);
+        return;
+      }
+      const targetStockAfter = Math.max(0, currentStock - quantity);
+
+      const confirmed = await confirmDisposalAction({
+        medicine,
+        totalQty: quantity,
+        batchItems: batchesToDispose,
+        reason: note,
+        stockBefore: currentStock,
+        stockAfter: targetStockAfter
+      });
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     const snapshot = createStateSnapshot();
     const stockBefore = medicine.stockOnHand;
     let stockAfter = stockBefore;
+    const recordedAt = nowIso();
+    let affectedBatchId = "";
 
     if (actionType === "restock") {
       stockAfter += quantity;
+      affectedBatchId = `batch_${uid()}`;
+      const isDonationBatch = batchNumber.startsWith("DON-") || /donat|regalo|bigay|ngo|mission|rotary|lions/i.test(note || "");
+      const newBatch = normalizeBatch({
+        id: affectedBatchId,
+        medicineId: medicine.id,
+        batchNumber: batchNumber,
+        expiryDate: expiryDate,
+        quantityReceived: quantity,
+        quantityRemaining: quantity,
+        receivedDate: actionDate,
+        sourceType: isDonationBatch ? "donation" : "manual_restock",
+        sourceReference: note || (isDonationBatch ? "Donated medicine" : "Manual stock replenishment"),
+        status: "active",
+        createdAt: recordedAt,
+        updatedAt: recordedAt
+      });
+      if (!Array.isArray(state.inventoryBatches)) state.inventoryBatches = [];
+      state.inventoryBatches.push(newBatch);
+      if (!Array.isArray(medicine.batches)) medicine.batches = [];
+      medicine.batches.push(newBatch);
     } else {
       if (quantity > stockBefore) {
         setStockActionFeedback(`Only ${formatNumber(stockBefore)} ${medicine.unit} are available to dispose.`);
-        refs.stockActionQuantity?.focus();
         return;
       }
       stockAfter -= quantity;
+
+      if (batchesToDispose.length > 0) {
+        for (const item of batchesToDispose) {
+          const b = item.batch;
+          const deduct = item.quantity;
+          b.quantityRemaining = Math.max(0, numeric(b.quantityRemaining) - deduct);
+          if (b.quantityRemaining <= 0) {
+            b.status = "exhausted";
+          }
+          b.updatedAt = recordedAt;
+          affectedBatchId = b.id;
+
+          const matchingGlobal = (state.inventoryBatches || []).find((gb) => gb.id === b.id);
+          if (matchingGlobal) {
+            matchingGlobal.quantityRemaining = b.quantityRemaining;
+            matchingGlobal.status = b.status;
+            matchingGlobal.updatedAt = recordedAt;
+          }
+        }
+      } else {
+        let remainingToDispose = quantity;
+        const activeBatchesToDeduct = (medicine.batches || [])
+          .filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0)
+          .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+        for (const b of activeBatchesToDeduct) {
+          if (remainingToDispose <= 0) break;
+          const deduct = Math.min(remainingToDispose, b.quantityRemaining);
+          b.quantityRemaining -= deduct;
+          if (b.quantityRemaining <= 0) b.status = "exhausted";
+          b.updatedAt = recordedAt;
+          remainingToDispose -= deduct;
+          affectedBatchId = b.id;
+          const matchingGlobal = (state.inventoryBatches || []).find((gb) => gb.id === b.id);
+          if (matchingGlobal) {
+            matchingGlobal.quantityRemaining = b.quantityRemaining;
+            matchingGlobal.status = b.status;
+            matchingGlobal.updatedAt = recordedAt;
+          }
+        }
+      }
     }
 
+    const activeBatchesAfter = (medicine.batches || [])
+      .filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0)
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+    if (activeBatchesAfter.length > 0) {
+      const validActiveBatches = activeBatchesAfter.filter((b) => daysUntil(b.expiryDate) >= 0);
+      const primaryBatch = validActiveBatches.length > 0 ? validActiveBatches[0] : activeBatchesAfter[0];
+      medicine.batchNumber = primaryBatch.batchNumber;
+      medicine.expiryDate = primaryBatch.expiryDate;
+    }
+    medicine.activeBatchesCount = activeBatchesAfter.length;
+
     const movementCreatedAt = `${actionDate}T08:00:00`;
-    const recordedAt = nowIso();
     medicine.stockOnHand = stockAfter;
     medicine.lastUpdatedAt = recordedAt;
     medicine.updatedBy = actorName();
@@ -2226,60 +3351,109 @@ ${actionItems}
     const projectedRequestResult = linkedRequest
       ? projectedChoRequestText(linkedRequest, quantity, text(linkedRequest.unit) || text(medicine.unit) || "units")
       : "";
+    const isDonatedRestock = actionType === "restock" && !linkedRequest && (batchNumber.startsWith("DON-") || /donat|regalo|bigay|ngo|mission|rotary|lions/i.test(note || ""));
     const defaultNote = actionType === "restock"
       ? (linkedRequest
         ? `CHO delivery received and linked to ${linkedRequest.requestCode}.`
-        : "Manual stock replenishment recorded.")
+        : (isDonatedRestock ? `Donated stock recorded (Batch: ${batchNumber}).` : "Manual stock replenishment recorded."))
       : "Damaged or expired stock written off.";
     const movementNote = linkedRequest ? defaultNote : (note || defaultNote);
 
-    logMovement({
-      medicine,
-      actionType,
-      quantity,
-      stockBefore,
-      stockAfter,
-      note: movementNote,
-      createdAt: movementCreatedAt,
-      linkedRequestId: linkedRequest?.id || "",
-      linkedRequestItemId: linkedRequest?.id || "",
-      linkedRequestGroupId: linkedRequest?.requestGroupId || "",
-      linkedRequestCode: linkedRequest?.requestCode || ""
-    });
+    if (actionType === "dispose" && batchesToDispose.length > 0) {
+      let runningStock = stockBefore;
+      const batchSummaries = [];
 
-    const actionLabel = actionType === "restock"
-      ? (linkedRequest ? "Received CHO delivery" : "Restocked medicine")
-      : "Disposed medicine";
-    const detailParts = [
-      `${formatNumber(quantity)} ${medicine.unit} ${linkedRequest ? "received" : "processed"} for ${medicineLabel(medicine)}.`,
-      `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
-    ];
+      for (const item of batchesToDispose) {
+        const b = item.batch;
+        const batchQty = item.quantity;
+        const nextStock = runningStock - batchQty;
 
-    if (linkedRequest) {
-      detailParts.push(`Linked to ${linkedRequest.requestCode}. ${projectedRequestResult}`);
+        const batchDays = daysUntil(b.expiryDate);
+        const expiryTag = batchDays < 0 ? ` [Expired ${Math.abs(batchDays)}d ago]` : ` [Exp: ${b.expiryDate}]`;
+        const itemNote = `${movementNote} (Batch: ${b.batchNumber}${expiryTag})`;
+
+        logMovement({
+          medicine,
+          actionType: "dispose",
+          quantity: batchQty,
+          stockBefore: runningStock,
+          stockAfter: nextStock,
+          batchId: b.id,
+          batchNumber: b.batchNumber,
+          batchExpiry: b.expiryDate,
+          note: itemNote,
+          createdAt: movementCreatedAt
+        });
+
+        batchSummaries.push(`${b.batchNumber}: ${formatNumber(batchQty)}`);
+        runningStock = nextStock;
+      }
+
+      appendActivityLog({
+        actor: actorName(),
+        username: actorUsername(),
+        action: "Disposed medicine",
+        actionType: "deleted",
+        target: medicineLabel(medicine),
+        details: `${formatNumber(quantity)} ${medicine.unit} disposed across ${batchesToDispose.length} batch(es) [${batchSummaries.join(", ")}] for ${medicineLabel(medicine)}. Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}. Reason: ${movementNote}`,
+        category: "Inventory",
+        resultLabel: "Disposed",
+        resultTone: "neutral",
+        createdAt: recordedAt,
+        ipAddress: currentActorIp()
+      });
+    } else {
+      logMovement({
+        medicine,
+        actionType,
+        quantity,
+        stockBefore,
+        stockAfter,
+        batchId: affectedBatchId,
+        batchNumber: actionType === "restock" ? batchNumber : (medicine.batchNumber || ""),
+        batchExpiry: actionType === "restock" ? expiryDate : (medicine.expiryDate || ""),
+        note: movementNote,
+        createdAt: movementCreatedAt,
+        linkedRequestId: linkedRequest?.id || "",
+        linkedRequestItemId: linkedRequest?.id || "",
+        linkedRequestGroupId: linkedRequest?.requestGroupId || "",
+        linkedRequestCode: linkedRequest?.requestCode || ""
+      });
+
+      const actionLabel = actionType === "restock"
+        ? (linkedRequest ? "Received CHO delivery" : "Restocked medicine")
+        : "Disposed medicine";
+      const detailParts = [
+        `${formatNumber(quantity)} ${medicine.unit} ${linkedRequest ? "received" : "processed"} for ${medicineLabel(medicine)}.`,
+        `Stock updated from ${formatNumber(stockBefore)} to ${formatNumber(stockAfter)} ${medicine.unit}.`
+      ];
+
+      if (linkedRequest) {
+        detailParts.push(`Linked to ${linkedRequest.requestCode}. ${projectedRequestResult}`);
+      }
+
+      if (actionType === "restock" && !linkedRequest && note) {
+        detailParts.push(`Note: ${note}`);
+      }
+
+      if (actionType === "dispose") {
+        detailParts.push(`Reason: ${movementNote}`);
+      }
+
+      appendActivityLog({
+        actor: actorName(),
+        username: actorUsername(),
+        action: actionLabel,
+        actionType: actionType === "restock" ? "updated" : "deleted",
+        target: medicineLabel(medicine),
+        details: detailParts.join(" "),
+        category: "Inventory",
+        resultLabel: actionType === "restock" ? "Updated" : "Disposed",
+        resultTone: actionType === "restock" ? "success" : "neutral",
+        createdAt: recordedAt,
+        ipAddress: currentActorIp()
+      });
     }
-
-    if (actionType === "restock" && !linkedRequest && note) {
-      detailParts.push(`Note: ${note}`);
-    }
-
-    if (actionType === "dispose") {
-      detailParts.push(`Reason: ${note || defaultNote}`);
-    }
-
-    appendActivityLog({
-      actor: actorName(),
-      username: actorUsername(),
-      action: actionLabel,
-      actionType: actionType === "restock" ? "updated" : "deleted",
-      target: medicineLabel(medicine),
-      details: detailParts.join(" "),
-      category: "Inventory",
-      resultLabel: actionType === "restock" ? "Updated" : "Disposed",
-      resultTone: actionType === "restock" ? "success" : "neutral",
-      createdAt: recordedAt,
-      ipAddress: currentActorIp()
-    });
 
     setStockActionSavingState(true);
     if (refs.stockActionSubmitLabel) {
@@ -2304,6 +3478,7 @@ ${actionItems}
       renderAll();
       setStockActionSavingState(false);
       setStockActionFeedback(error.message || "Unable to save the stock action right now.");
+      if (actionType === "dispose") stockActionModal?.show();
       return;
     }
 
@@ -2315,7 +3490,9 @@ ${actionItems}
       ? `${formatNumber(quantity)} ${medicine.unit} received from ${linkedRequest.requestCode}.`
       : actionType === "restock"
         ? `${formatNumber(quantity)} ${medicine.unit} added to stock.`
-        : `${formatNumber(quantity)} ${medicine.unit} disposed from stock.`);
+        : (batchesToDispose.length > 0
+          ? `${formatNumber(quantity)} ${medicine.unit} disposed across ${batchesToDispose.length} batch(es).`
+          : `${formatNumber(quantity)} ${medicine.unit} disposed from stock.`));
   };
 
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
@@ -2387,6 +3564,85 @@ ${actionItems}
     setStockActionFeedback();
     updateStockActionPreview();
   });
+
+  refs.stockDisposeBatchTableBody?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target.classList.contains("stock-dispose-batch-check")) {
+      const row = target.closest("tr");
+      const qtyInput = row?.querySelector(".stock-dispose-qty-input");
+      if (target.checked) {
+        if (qtyInput) {
+          qtyInput.disabled = false;
+          const remaining = Number(target.dataset.remaining) || 0;
+          if (!qtyInput.value || Number(qtyInput.value) <= 0) {
+            qtyInput.value = String(remaining);
+          }
+          qtyInput.focus();
+        }
+      } else {
+        if (qtyInput) {
+          qtyInput.disabled = true;
+          qtyInput.value = "";
+        }
+      }
+      setStockActionFeedback();
+      updateDisposeSummary();
+    }
+  });
+
+  refs.stockDisposeBatchTableBody?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (target.classList.contains("stock-dispose-qty-input")) {
+      const remaining = Number(target.max) || 0;
+      let val = Number(target.value) || 0;
+      if (val > remaining) {
+        target.value = String(remaining);
+      }
+      setStockActionFeedback();
+      updateDisposeSummary();
+    }
+  });
+
+  refs.stockDisposeSelectExpiredBtn?.addEventListener("click", () => {
+    let expiredCount = 0;
+    const rows = refs.stockDisposeBatchTableBody?.querySelectorAll("tr[data-batch-id]") || [];
+    rows.forEach((row) => {
+      const check = row.querySelector(".stock-dispose-batch-check");
+      const qtyInput = row.querySelector(".stock-dispose-qty-input");
+      if (check && check.dataset.isExpired === "1") {
+        check.checked = true;
+        if (qtyInput) {
+          qtyInput.disabled = false;
+          qtyInput.value = String(Number(check.dataset.remaining) || 0);
+        }
+        expiredCount++;
+      }
+    });
+    setStockActionFeedback();
+    updateDisposeSummary();
+    if (expiredCount === 0) {
+      setStockActionFeedback("No expired batches found for this medicine.", "info");
+    }
+  });
+
+  refs.stockDisposeSelectAllCheck?.addEventListener("change", (event) => {
+    const isChecked = event.target.checked;
+    const rows = refs.stockDisposeBatchTableBody?.querySelectorAll("tr[data-batch-id]") || [];
+    rows.forEach((row) => {
+      const check = row.querySelector(".stock-dispose-batch-check");
+      const qtyInput = row.querySelector(".stock-dispose-qty-input");
+      if (check) {
+        check.checked = isChecked;
+        if (qtyInput) {
+          qtyInput.disabled = !isChecked;
+          qtyInput.value = isChecked ? String(Number(check.dataset.remaining) || 0) : "";
+        }
+      }
+    });
+    setStockActionFeedback();
+    updateDisposeSummary();
+  });
+
   byId("stockActionModal")?.addEventListener("hidden.bs.modal", () => setStockActionFeedback());
 
   refs.residentLookupInput?.addEventListener("input", (event) => {
@@ -2434,7 +3690,67 @@ ${actionItems}
     renderAll();
   });
 
+  refs.medicineModalManageBatchesBtn?.addEventListener("click", () => {
+    const existingId = text(refs.medicineId?.value);
+    const medicine = existingId ? findMedicine(existingId) : null;
+    if (!medicine) return;
+
+    const medModalEl = byId("medicineModal");
+    if (medModalEl && medModalEl.classList.contains("show")) {
+      medModalEl.addEventListener("hidden.bs.modal", () => {
+        openBatchDetailsModal(medicine);
+      }, { once: true });
+      medicineModal?.hide();
+    } else {
+      medicineModal?.hide();
+      openBatchDetailsModal(medicine);
+    }
+  });
+
+  refs.editBatchForm?.addEventListener("submit", handleEditBatchSubmit);
+
+  refs.editBatchModal?.addEventListener("hidden.bs.modal", () => {
+    if (currentBatchDetailsMedicine) {
+      setTimeout(() => {
+        if (batchEditSaved) {
+          batchEditSaved = false;
+          openBatchDetailsModal(currentBatchDetailsMedicine);
+        } else {
+          batchDetailsModal?.show();
+        }
+      }, 50);
+    } else {
+      batchEditSaved = false;
+    }
+  });
+
+  refs.batchHistoryToggleBtn?.addEventListener("click", () => {
+    if (currentBatchDetailsMedicine) {
+      renderBatchDetailsRows(currentBatchDetailsMedicine, !batchDetailsViewingHistory);
+    }
+  });
+
   document.addEventListener("click", (event) => {
+    const editBatchBtn = event.target.closest("[data-action='edit-batch'][data-batch-id]");
+    if (editBatchBtn) {
+      const batchId = text(editBatchBtn.getAttribute("data-batch-id"));
+      const medicine = currentBatchDetailsMedicine;
+      if (!medicine || !batchId) return;
+      const medBatches = (medicine.batches && medicine.batches.length)
+        ? medicine.batches
+        : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+      const batch = medBatches.find((b) => String(b.id) === batchId);
+      if (batch) {
+        const isExhausted = batch.status === "exhausted" || numeric(batch.quantityRemaining) <= 0;
+        if (isExhausted) {
+          showNotice("Exhausted batch records are locked for audit integrity and cannot be edited.", "warning");
+          return;
+        }
+        openEditBatchModal(batch, medicine);
+      }
+      return;
+    }
+
     const actionButton = event.target.closest("[data-action][data-id]");
     if (!actionButton) return;
 
@@ -2445,7 +3761,11 @@ ${actionItems}
     if (action === "edit") {
       openMedicineModal(medicine);
     } else if (action === "adjust") {
-      openStockActionModal(medicine);
+      openStockActionModal(medicine, "restock");
+    } else if (action === "dispose") {
+      openStockActionModal(medicine, "dispose");
+    } else if (action === "view-batches") {
+      openBatchDetailsModal(medicine);
     } else if (action === "archive") {
       void handleMedicineRecordStatusChange(medicine, "archived");
     } else if (action === "restore") {

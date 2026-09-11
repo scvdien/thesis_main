@@ -45,7 +45,24 @@
     requestSummaryText: byId("requestSummaryText"),
     requestSubmitBtnLabel: byId("requestSubmitBtnLabel"),
     requestDate: byId("requestDate"),
-    requestExpectedDate: byId("requestExpectedDate")
+    requestExpectedDate: byId("requestExpectedDate"),
+    requestFilterTabs: byId("requestFilterTabs"),
+    pickerFilterAllCount: byId("pickerFilterAllCount"),
+    pickerFilterLowCount: byId("pickerFilterLowCount"),
+    pickerFilterExpCount: byId("pickerFilterExpCount"),
+    requestWizardStepper: byId("requestWizardStepper"),
+    requestWizardPrevBtn: byId("requestWizardPrevBtn"),
+    requestWizardNextBtn: byId("requestWizardNextBtn"),
+    requestWizardNextBtnLabel: byId("requestWizardNextBtnLabel"),
+    requestChipsContainer: byId("requestChipsContainer"),
+    requestChipsCount: byId("requestChipsCount"),
+    requestChipsEmpty: byId("requestChipsEmpty"),
+    requestReviewSummary: byId("requestReviewSummary"),
+    requestReviewItemBadge: byId("requestReviewItemBadge"),
+    requestReviewCount: byId("requestReviewCount"),
+    requestReviewTotalQty: byId("requestReviewTotalQty"),
+    requestReviewDateText: byId("requestReviewDateText"),
+    requestReviewList: byId("requestReviewList")
   };
 
   const requestModal = byId("requestModal") && window.bootstrap ? new window.bootstrap.Modal(byId("requestModal")) : null;
@@ -63,7 +80,9 @@
     status: "all",
     requestModalMode: "create",
     medicinePickerIndex: -1,
-    pendingDeleteGroupId: ""
+    pendingDeleteGroupId: "",
+    medicinePickerFilter: "all",
+    wizardStep: 1
   };
 
   let alertTimer = 0;
@@ -156,7 +175,7 @@
     const stock = Math.max(0, Math.round(numeric(medicine.stockOnHand)));
     const reorderLevel = Math.max(0, Math.round(numeric(medicine.reorderLevel)));
     const unit = text(medicine.unit) || "units";
-    const detail = `${formatNumber(stock)} ${unit} on hand${reorderLevel ? ` | Reorder level ${formatNumber(reorderLevel)}` : ""}`;
+    const detail = `${formatNumber(stock)} ${unit} on hand${reorderLevel ? ` • Reorder level ${formatNumber(reorderLevel)}` : ""}`;
 
     if (stock === 0) return { label: "Out of stock", tone: "danger", detail };
     if (stock <= reorderLevel) return { label: "Low stock", tone: "warning", detail };
@@ -170,7 +189,7 @@
       genericName && genericName.toLowerCase() !== name ? genericName : "",
       text(medicine.form),
       text(medicine.category)
-    ].filter(Boolean).join(" | ");
+    ].filter(Boolean).join(" • ");
   };
 
   const selectedRequestMedicineIds = () => new Set(
@@ -179,100 +198,161 @@
       .filter(Boolean)
   );
 
-  const closeMedicineResults = () => {
-    if (!refs.requestMedicineResults || !refs.requestMedicineSearch) return;
-    refs.requestMedicineResults.classList.add("d-none");
-    refs.requestMedicineSearch.setAttribute("aria-expanded", "false");
-    refs.requestMedicineSearch.removeAttribute("aria-activedescendant");
-    uiState.medicinePickerIndex = -1;
+  const daysUntilDate = (dateStr) => {
+    if (!dateStr) return Infinity;
+    const target = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(target.getTime())) return Infinity;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86400000);
   };
 
-  const availableMedicineOptions = () => Array.from(
-    refs.requestMedicineResults?.querySelectorAll(".request-medicine-option:not(:disabled)") || []
-  );
+  const isMedicineLowStock = (medicine) => {
+    const stock = Math.max(0, Math.round(numeric(medicine?.stockOnHand)));
+    const reorder = Math.max(0, Math.round(numeric(medicine?.reorderLevel)));
+    return stock <= reorder;
+  };
 
-  const setActiveMedicineOption = (nextIndex) => {
-    const options = availableMedicineOptions();
-    if (!options.length || !refs.requestMedicineSearch) return;
+  const getMedicineExpiringBatches = (medicine) => {
+    const batches = Array.isArray(medicine?.batches) ? medicine.batches : [];
+    return batches.filter((b) => {
+      const isAct = text(b.status || "active").toLowerCase() === "active";
+      const rem = numeric(b.quantityRemaining);
+      return isAct && rem > 0 && daysUntilDate(b.expiryDate) <= 90;
+    });
+  };
 
-    const normalizedIndex = ((nextIndex % options.length) + options.length) % options.length;
-    uiState.medicinePickerIndex = normalizedIndex;
-    options.forEach((option, index) => option.classList.toggle("is-active", index === normalizedIndex));
+  const isMedicineExpiringOrExpired = (medicine) => {
+    const expiringBatches = getMedicineExpiringBatches(medicine);
+    if (expiringBatches.length > 0) return true;
+    const stock = Math.max(0, Math.round(numeric(medicine?.stockOnHand)));
+    return stock > 0 && daysUntilDate(medicine?.expiryDate) <= 90;
+  };
 
-    const activeOption = options[normalizedIndex];
-    refs.requestMedicineSearch.setAttribute("aria-activedescendant", activeOption.id);
-    activeOption.scrollIntoView?.({ block: "nearest" });
+  const updateFilterTabCounts = () => {
+    const allActive = activeInventoryMedicines();
+    const lowCount = allActive.filter(isMedicineLowStock).length;
+    const expCount = allActive.filter(isMedicineExpiringOrExpired).length;
+
+    if (refs.pickerFilterAllCount) refs.pickerFilterAllCount.textContent = String(allActive.length);
+    if (refs.pickerFilterLowCount) refs.pickerFilterLowCount.textContent = String(lowCount);
+    if (refs.pickerFilterExpCount) refs.pickerFilterExpCount.textContent = String(expCount);
+
+    const currentFilter = uiState.medicinePickerFilter || "all";
+    refs.requestFilterTabs?.querySelectorAll(".request-filter-tab").forEach((tab) => {
+      const tabFilter = tab.getAttribute("data-picker-filter") || "all";
+      const isActive = tabFilter === currentFilter;
+      tab.classList.toggle("is-active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  };
+
+  const closeMedicineResults = () => {
+    // Persistent inline checklist — no hiding needed
   };
 
   const renderMedicineResults = () => {
     if (!refs.requestMedicineResults || !refs.requestMedicineSearch || uiState.requestModalMode === "view") return;
+    updateFilterTabCounts();
+
     const query = text(refs.requestMedicineSearch.value).toLowerCase();
     const selectedIds = selectedRequestMedicineIds();
-    const medicines = activeInventoryMedicines()
-      .filter((medicine) => {
-        if (!query) return true;
-        return [
-          medicine.name,
-          medicine.genericName,
-          medicine.strength,
-          medicine.form,
-          medicine.category,
-          medicine.batchNumber
-        ].join(" ").toLowerCase().includes(query);
-      })
-      .sort((left, right) => {
-        const selectedDifference = Number(selectedIds.has(text(left.id))) - Number(selectedIds.has(text(right.id)));
-        if (selectedDifference !== 0) return selectedDifference;
+    const allActive = activeInventoryMedicines();
+    const currentFilter = uiState.medicinePickerFilter || "all";
 
-        if (!query) {
-          const leftLow = numeric(left.stockOnHand) <= numeric(left.reorderLevel);
-          const rightLow = numeric(right.stockOnHand) <= numeric(right.reorderLevel);
-          if (leftLow !== rightLow) return Number(rightLow) - Number(leftLow);
-        }
+    const filteredMedicines = allActive.filter((medicine) => {
+      if (currentFilter === "low" && !isMedicineLowStock(medicine)) return false;
+      if (currentFilter === "expiring" && !isMedicineExpiringOrExpired(medicine)) return false;
 
-        return medicineLabel(left).localeCompare(medicineLabel(right));
-      })
-      .slice(0, 8);
+      if (!query) return true;
+      return [
+        medicine.name,
+        medicine.genericName,
+        medicine.strength,
+        medicine.form,
+        medicine.category,
+        medicine.batchNumber
+      ].join(" ").toLowerCase().includes(query);
+    });
 
-    if (!medicines.length) {
+    const sortedMedicines = filteredMedicines.sort((left, right) => {
+      if (!query && currentFilter === "all") {
+        const leftLow = isMedicineLowStock(left);
+        const rightLow = isMedicineLowStock(right);
+        if (leftLow !== rightLow) return Number(rightLow) - Number(leftLow);
+      }
+
+      return medicineLabel(left).localeCompare(medicineLabel(right));
+    });
+
+    const prevScroll = refs.requestMedicineResults.scrollTop;
+
+    if (!sortedMedicines.length) {
+      const filterLabel = currentFilter === "low" ? "low stock" : currentFilter === "expiring" ? "expiring or expired" : "active";
       refs.requestMedicineResults.innerHTML = `
         <div class="request-medicine-results__empty">
           <i class="bi bi-search" aria-hidden="true"></i>
-          <span>No active medicines match${query ? ` "${esc(text(refs.requestMedicineSearch.value))}"` : " your search"}.</span>
+          <span>No ${filterLabel} medicines match${query ? ` "${esc(text(refs.requestMedicineSearch.value))}"` : " the selected filter"}.</span>
         </div>
       `;
     } else {
-      refs.requestMedicineResults.innerHTML = medicines.map((medicine, index) => {
+      refs.requestMedicineResults.innerHTML = sortedMedicines.map((medicine, index) => {
         const stockInfo = requestStockInfo(medicine);
         const isSelected = selectedIds.has(text(medicine.id));
+        const expiringBatches = getMedicineExpiringBatches(medicine);
+        const isExp = isMedicineExpiringOrExpired(medicine);
+
+        let statusPillsHtml = "";
+        if (isExp) {
+          const sortedBatches = [...expiringBatches].sort((a, b) => daysUntilDate(a.expiryDate) - daysUntilDate(b.expiryDate));
+          const earliest = sortedBatches[0];
+          const days = earliest ? daysUntilDate(earliest.expiryDate) : daysUntilDate(medicine.expiryDate);
+          const isCriticalExpiry = days <= 30;
+          const expLabel = days < 0 ? "Expired" : `${days}d left`;
+          const expTone = isCriticalExpiry ? "danger" : "warning";
+
+          statusPillsHtml = `
+            <div class="d-flex flex-column align-items-end gap-1">
+              ${stockInfo.label !== "In stock" ? `<span class="request-stock-pill request-stock-pill--${esc(stockInfo.tone)}">${esc(stockInfo.label)}</span>` : ""}
+              <span class="request-stock-pill request-stock-pill--${expTone}"><i class="bi bi-clock-history"></i> ${esc(expLabel)}</span>
+            </div>
+          `;
+        } else {
+          statusPillsHtml = `<span class="request-stock-pill request-stock-pill--${esc(stockInfo.tone)}">${esc(stockInfo.label)}</span>`;
+        }
+
         return `
-          <button
-            type="button"
-            id="requestMedicineOption-${index}"
-            class="request-medicine-option"
+          <label
+            for="medCheck_${index}"
+            class="request-checklist-item ${isSelected ? "is-selected" : ""}"
             data-medicine-id="${esc(medicine.id)}"
-            role="option"
-            aria-selected="${isSelected ? "true" : "false"}"
-            ${isSelected ? "disabled" : ""}
           >
-            <span class="request-medicine-option__icon"><i class="bi bi-capsule-pill" aria-hidden="true"></i></span>
-            <span class="request-medicine-option__copy">
-              <strong>${esc(medicineLabel(medicine))}</strong>
-              <small>${esc(requestMedicineMeta(medicine) || "Inventory medicine")}</small>
-              <small class="request-medicine-option__stock">${esc(stockInfo.detail)}</small>
-            </span>
-            <span class="request-stock-pill request-stock-pill--${esc(isSelected ? "selected" : stockInfo.tone)}">
-              ${esc(isSelected ? "Added" : stockInfo.label)}
-            </span>
-          </button>
+            <div class="request-checklist-item__check">
+              <input
+                type="checkbox"
+                id="medCheck_${index}"
+                class="form-check-input request-medicine-checkbox"
+                data-medicine-id="${esc(medicine.id)}"
+                ${isSelected ? "checked" : ""}
+              >
+            </div>
+            <div class="request-checklist-item__icon">
+              <i class="bi bi-capsule-pill" aria-hidden="true"></i>
+            </div>
+            <div class="request-checklist-item__details">
+              <strong class="request-checklist-item__name">${esc(medicineLabel(medicine))}</strong>
+              <span class="request-checklist-item__meta">${esc(requestMedicineMeta(medicine) || "Inventory medicine")}</span>
+              <span class="request-checklist-item__stock">${esc(stockInfo.detail)}</span>
+            </div>
+            <div class="request-checklist-item__status">
+              ${statusPillsHtml}
+            </div>
+          </label>
         `;
       }).join("");
     }
 
-    refs.requestMedicineResults.classList.remove("d-none");
-    refs.requestMedicineSearch.setAttribute("aria-expanded", "true");
-    refs.requestMedicineSearch.removeAttribute("aria-activedescendant");
-    uiState.medicinePickerIndex = -1;
+    refs.requestMedicineResults.scrollTop = prevScroll;
   };
 
   const setRequestFormFeedback = (message = "", tone = "danger") => {
@@ -348,85 +428,6 @@
     return Number.isInteger(value) && value > 0;
   };
 
-  const updateRequestBuilderState = () => {
-    const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
-    const incompleteCount = rows.filter((row) => !hasValidRequestQuantity(row.querySelector(".request-item-quantity"))).length;
-    const unavailableCount = rows.filter((row) => !findInventoryMedicine(row.querySelector(".request-item-medicine")?.value)).length;
-    const countLabel = `${formatNumber(rows.length)} selected`;
-    const medicineLabelText = `${rows.length} medicine${rows.length === 1 ? "" : "s"}`;
-
-    refs.requestItemsEmpty?.classList.toggle("d-none", rows.length > 0);
-    if (refs.requestItemCount) refs.requestItemCount.textContent = countLabel;
-
-    if (refs.requestItemsStatus) {
-      refs.requestItemsStatus.textContent = rows.length === 0
-        ? "Add at least one medicine to continue."
-        : unavailableCount > 0
-          ? `${unavailableCount} ${unavailableCount === 1 ? "medicine is" : "medicines are"} unavailable. Remove before submitting.`
-        : incompleteCount > 0
-          ? `${incompleteCount} ${incompleteCount === 1 ? "medicine needs" : "medicines need"} a quantity.`
-          : "All medicine quantities are complete.";
-    }
-
-    if (refs.requestSummaryTitle) {
-      refs.requestSummaryTitle.textContent = rows.length ? `${medicineLabelText} selected` : "No medicines selected";
-    }
-    if (refs.requestSummaryText) {
-      refs.requestSummaryText.textContent = rows.length === 0
-        ? "Search and add medicine details to continue."
-        : unavailableCount > 0
-          ? "Remove unavailable medicine records before submitting."
-        : incompleteCount > 0
-          ? `Enter the missing ${incompleteCount === 1 ? "quantity" : "quantities"} before submitting.`
-          : `${medicineLabelText} ready to submit.`;
-    }
-
-    rows.forEach((row) => {
-      const quantityInput = row.querySelector(".request-item-quantity");
-      const quantity = Number(text(quantityInput?.value));
-      const decreaseButton = row.querySelector('.request-quantity-step[data-step="-1"]');
-      if (decreaseButton) decreaseButton.disabled = !Number.isInteger(quantity) || quantity <= 1;
-    });
-
-    if (refs.requestSubmitBtn) {
-      refs.requestSubmitBtn.disabled = uiState.requestModalMode === "view" || rows.length === 0 || unavailableCount > 0 || incompleteCount > 0;
-    }
-  };
-
-  const renderRequestItems = (items = []) => {
-    if (!refs.requestItemsContainer) return;
-    refs.requestItemsContainer.innerHTML = items
-      .map((item) => createRequestItemRowMarkup(item))
-      .join("");
-    updateRequestBuilderState();
-  };
-
-  const addMedicineToRequest = (medicineId) => {
-    if (!refs.requestItemsContainer) return;
-    const medicine = findInventoryMedicine(medicineId);
-    if (!medicine || !isActiveInventoryMedicine(medicine)) {
-      setRequestFormFeedback("This medicine is no longer available in the active inventory.");
-      return;
-    }
-
-    const existingRow = Array.from(refs.requestItemsContainer.querySelectorAll(".request-item-row"))
-      .find((row) => text(row.querySelector(".request-item-medicine")?.value) === text(medicineId));
-    if (existingRow) {
-      setRequestFormFeedback(`${medicineLabel(medicine)} is already included in this request.`, "warning");
-      existingRow.querySelector(".request-item-quantity")?.focus();
-      return;
-    }
-
-    refs.requestItemsContainer.insertAdjacentHTML("beforeend", createRequestItemRowMarkup({ medicineId }));
-    if (refs.requestMedicineSearch) refs.requestMedicineSearch.value = "";
-    closeMedicineResults();
-    setRequestFormFeedback();
-    updateRequestBuilderState();
-
-    const addedRows = refs.requestItemsContainer.querySelectorAll(".request-item-row");
-    addedRows[addedRows.length - 1]?.querySelector(".request-item-quantity")?.focus();
-  };
-
   const collectRequestItems = () => {
     const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
     const seenMedicines = new Set();
@@ -467,6 +468,283 @@
     }
 
     return { items };
+  };
+
+  const getWizardStepPanes = () => Array.from(refs.requestForm?.querySelectorAll(".request-wizard-pane") || []);
+  const getWizardStepButtons = () => Array.from(refs.requestWizardStepper?.querySelectorAll(".request-wizard-step") || []);
+  const getWizardStepConnectors = () => Array.from(refs.requestWizardStepper?.querySelectorAll(".request-wizard-step__connector") || []);
+
+  const renderRequestChips = () => {
+    if (!refs.requestChipsContainer) return;
+    const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
+    const count = rows.length;
+
+    if (refs.requestChipsCount) {
+      refs.requestChipsCount.textContent = count === 0
+        ? "0 selected"
+        : `${count} ${count === 1 ? "medicine" : "medicines"} selected`;
+    }
+
+    refs.requestChipsEmpty?.classList.toggle("d-none", count > 0);
+
+    refs.requestChipsContainer.innerHTML = rows.map((row) => {
+      const medicineId = text(row.querySelector(".request-item-medicine")?.value);
+      const medicine = findInventoryMedicine(medicineId);
+      const displayName = medicine ? medicineLabel(medicine) : "Unavailable medicine";
+      const meta = medicine ? [medicine.strength, medicine.form].filter(Boolean).join(" • ") : "";
+
+      return `
+        <div class="request-chip" data-medicine-id="${esc(medicineId)}">
+          <i class="bi bi-capsule-pill request-chip__icon" aria-hidden="true"></i>
+          <div class="request-chip__content">
+            <strong class="request-chip__name">${esc(displayName)}</strong>
+            ${meta ? `<span class="request-chip__meta">${esc(meta)}</span>` : ""}
+          </div>
+          <button
+            type="button"
+            class="request-chip__remove"
+            data-medicine-id="${esc(medicineId)}"
+            aria-label="Remove ${esc(displayName)}"
+            title="Remove ${esc(displayName)}"
+          >
+            <i class="bi bi-x" aria-hidden="true"></i>
+          </button>
+        </div>
+      `;
+    }).join("");
+  };
+
+  const renderRequestReviewSummary = () => {
+    const collected = collectRequestItems();
+    const items = collected.items || [];
+    const totalQty = items.reduce((sum, it) => sum + (Number(it.quantityRequested) || 0), 0);
+    const expectedDateVal = refs.requestExpectedDate?.value;
+    const dateFormatted = expectedDateVal ? formatDate(expectedDateVal) : "-";
+
+    if (refs.requestReviewCount) {
+      refs.requestReviewCount.textContent = `${items.length} ${items.length === 1 ? "medicine" : "medicines"}`;
+    }
+    if (refs.requestReviewTotalQty) {
+      refs.requestReviewTotalQty.textContent = `${formatNumber(totalQty)} units`;
+    }
+    if (refs.requestReviewDateText) {
+      refs.requestReviewDateText.textContent = dateFormatted || "Not set";
+    }
+    if (refs.requestReviewItemBadge) {
+      refs.requestReviewItemBadge.textContent = `${items.length} ${items.length === 1 ? "Medicine" : "Medicines"}`;
+    }
+
+    if (refs.requestReviewList) {
+      if (!items.length) {
+        refs.requestReviewList.innerHTML = `<tr><td colspan="2" class="text-muted text-center py-3">No medicines selected.</td></tr>`;
+      } else {
+        refs.requestReviewList.innerHTML = items.map((item) => `
+          <tr>
+            <td>
+              <div class="request-review-item-identity">
+                <span class="request-item-icon sm"><i class="bi bi-capsule-pill" aria-hidden="true"></i></span>
+                <div>
+                  <strong>${esc(item.medicineName)}</strong>
+                  <small class="d-block text-muted">${esc([item.genericName, item.strength].filter(Boolean).join(" • "))}</small>
+                </div>
+              </div>
+            </td>
+            <td class="text-end">
+              <span class="request-review-qty-badge">${formatNumber(item.quantityRequested)} ${esc(item.unit)}</span>
+            </td>
+          </tr>
+        `).join("");
+      }
+    }
+  };
+
+  const setWizardStep = (step) => {
+    const targetStep = Math.max(1, Math.min(3, step));
+    uiState.wizardStep = targetStep;
+
+    const panes = getWizardStepPanes();
+    panes.forEach((pane) => {
+      const paneIndex = Number(pane.getAttribute("data-wizard-pane"));
+      pane.classList.toggle("d-none", paneIndex !== targetStep);
+      pane.classList.toggle("is-active", paneIndex === targetStep);
+    });
+
+    const stepButtons = getWizardStepButtons();
+    stepButtons.forEach((btn) => {
+      const btnStep = Number(btn.getAttribute("data-wizard-step"));
+      btn.classList.toggle("is-active", btnStep === targetStep);
+      btn.classList.toggle("is-completed", btnStep < targetStep);
+      btn.setAttribute("aria-selected", btnStep === targetStep ? "true" : "false");
+    });
+
+    const connectors = getWizardStepConnectors();
+    connectors.forEach((conn, index) => {
+      conn.classList.toggle("is-completed", index < targetStep - 1);
+    });
+
+    if (refs.requestModalSubtitle) {
+      if (uiState.requestModalMode === "view") {
+        refs.requestModalSubtitle.textContent = "Review the request summary and listed medicines.";
+      } else if (targetStep === 1) {
+        refs.requestModalSubtitle.textContent = "Step 1 of 3: Select medicines to include in this request.";
+      } else if (targetStep === 2) {
+        refs.requestModalSubtitle.textContent = "Step 2 of 3: Set the requested quantity for each selected medicine.";
+      } else {
+        refs.requestModalSubtitle.textContent = "Step 3 of 3: Confirm delivery schedule and review request summary.";
+      }
+    }
+
+    if (refs.requestWizardPrevBtn) {
+      if (targetStep === 1) {
+        refs.requestWizardPrevBtn.textContent = "Cancel";
+      } else if (targetStep === 2) {
+        refs.requestWizardPrevBtn.textContent = "← Back: Medicines";
+      } else {
+        refs.requestWizardPrevBtn.textContent = "← Back: Quantities";
+      }
+    }
+
+    if (refs.requestWizardNextBtn && refs.requestSubmitBtn) {
+      if (targetStep === 1) {
+        refs.requestWizardNextBtn.classList.remove("d-none");
+        refs.requestSubmitBtn.classList.add("d-none");
+        if (refs.requestWizardNextBtnLabel) refs.requestWizardNextBtnLabel.textContent = "Next: Set Quantities";
+      } else if (targetStep === 2) {
+        refs.requestWizardNextBtn.classList.remove("d-none");
+        refs.requestSubmitBtn.classList.add("d-none");
+        if (refs.requestWizardNextBtnLabel) refs.requestWizardNextBtnLabel.textContent = "Next: Review & Schedule";
+      } else {
+        refs.requestWizardNextBtn.classList.add("d-none");
+        refs.requestSubmitBtn.classList.remove("d-none");
+        renderRequestReviewSummary();
+      }
+    }
+
+    updateRequestBuilderState();
+    setRequestFormFeedback();
+
+    if (targetStep === 1) {
+      renderMedicineResults();
+      setTimeout(() => refs.requestMedicineSearch?.focus({ preventScroll: true }), 50);
+    } else {
+      closeMedicineResults();
+      if (targetStep === 2) {
+        setTimeout(() => {
+          refs.requestItemsContainer?.querySelector(".request-item-quantity")?.focus({ preventScroll: true });
+        }, 50);
+      }
+    }
+  };
+
+  const removeMedicineFromRequest = (medicineId) => {
+    if (!refs.requestItemsContainer || !medicineId) return;
+    const existingRow = Array.from(refs.requestItemsContainer.querySelectorAll(".request-item-row"))
+      .find((row) => text(row.querySelector(".request-item-medicine")?.value) === text(medicineId));
+    if (existingRow) {
+      existingRow.remove();
+      renderRequestChips();
+      updateRequestBuilderState();
+
+      const checkEl = refs.requestMedicineResults?.querySelector(`.request-medicine-checkbox[data-medicine-id="${medicineId}"]`);
+      if (checkEl) {
+        checkEl.checked = false;
+        checkEl.closest(".request-checklist-item")?.classList.remove("is-selected");
+      }
+    }
+  };
+
+  const updateRequestBuilderState = () => {
+    const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
+    const incompleteCount = rows.filter((row) => !hasValidRequestQuantity(row.querySelector(".request-item-quantity"))).length;
+    const unavailableCount = rows.filter((row) => !findInventoryMedicine(row.querySelector(".request-item-medicine")?.value)).length;
+    const countLabel = `${formatNumber(rows.length)} selected`;
+    const medicineLabelText = `${rows.length} medicine${rows.length === 1 ? "" : "s"}`;
+
+    refs.requestItemsEmpty?.classList.toggle("d-none", rows.length > 0);
+    if (refs.requestItemCount) refs.requestItemCount.textContent = countLabel;
+
+    if (refs.requestChipsCount) {
+      refs.requestChipsCount.textContent = rows.length === 0
+        ? "0 selected"
+        : `${rows.length} ${rows.length === 1 ? "medicine" : "medicines"} selected`;
+    }
+    refs.requestChipsEmpty?.classList.toggle("d-none", rows.length > 0);
+
+    if (refs.requestItemsStatus) {
+      refs.requestItemsStatus.textContent = rows.length === 0
+        ? "Add at least one medicine to continue."
+        : unavailableCount > 0
+          ? `${unavailableCount} ${unavailableCount === 1 ? "medicine is" : "medicines are"} unavailable. Remove before submitting.`
+        : incompleteCount > 0
+          ? `${incompleteCount} ${incompleteCount === 1 ? "medicine needs" : "medicines need"} a quantity.`
+          : "All medicine quantities are complete.";
+    }
+
+    if (refs.requestSummaryTitle) {
+      refs.requestSummaryTitle.textContent = rows.length ? `${medicineLabelText} selected` : "No medicines selected";
+    }
+    if (refs.requestSummaryText) {
+      refs.requestSummaryText.textContent = rows.length === 0
+        ? "Search and add medicine details to continue."
+        : unavailableCount > 0
+          ? "Remove unavailable medicine records before submitting."
+        : incompleteCount > 0
+          ? `Enter the missing ${incompleteCount === 1 ? "quantity" : "quantities"} before submitting.`
+          : `${medicineLabelText} ready to submit.`;
+    }
+
+    rows.forEach((row) => {
+      const quantityInput = row.querySelector(".request-item-quantity");
+      const quantity = Number(text(quantityInput?.value));
+      const decreaseButton = row.querySelector('.request-quantity-step[data-step="-1"]');
+      if (decreaseButton) decreaseButton.disabled = !Number.isInteger(quantity) || quantity <= 1;
+    });
+
+    if (refs.requestWizardNextBtn) {
+      if (uiState.wizardStep === 1) {
+        refs.requestWizardNextBtn.disabled = rows.length === 0 || unavailableCount > 0;
+      } else if (uiState.wizardStep === 2) {
+        refs.requestWizardNextBtn.disabled = rows.length === 0 || unavailableCount > 0 || incompleteCount > 0;
+      }
+    }
+
+    if (refs.requestSubmitBtn) {
+      refs.requestSubmitBtn.disabled = uiState.requestModalMode === "view" || rows.length === 0 || unavailableCount > 0 || incompleteCount > 0;
+    }
+  };
+
+  const renderRequestItems = (items = []) => {
+    if (!refs.requestItemsContainer) return;
+    refs.requestItemsContainer.innerHTML = items
+      .map((item) => createRequestItemRowMarkup(item))
+      .join("");
+    renderRequestChips();
+    updateRequestBuilderState();
+  };
+
+  const addMedicineToRequest = (medicineId) => {
+    if (!refs.requestItemsContainer) return;
+    const medicine = findInventoryMedicine(medicineId);
+    if (!medicine || !isActiveInventoryMedicine(medicine)) {
+      setRequestFormFeedback("This medicine is no longer available in the active inventory.");
+      return;
+    }
+
+    const existingRow = Array.from(refs.requestItemsContainer.querySelectorAll(".request-item-row"))
+      .find((row) => text(row.querySelector(".request-item-medicine")?.value) === text(medicineId));
+    if (!existingRow) {
+      refs.requestItemsContainer.insertAdjacentHTML("beforeend", createRequestItemRowMarkup({ medicineId }));
+    }
+
+    setRequestFormFeedback();
+    renderRequestChips();
+    updateRequestBuilderState();
+
+    const checkEl = refs.requestMedicineResults?.querySelector(`.request-medicine-checkbox[data-medicine-id="${medicineId}"]`);
+    if (checkEl) {
+      checkEl.checked = true;
+      checkEl.closest(".request-checklist-item")?.classList.add("is-selected");
+    }
   };
 
   const filteredRows = () => {
@@ -850,21 +1128,33 @@
     });
 
     refs.requestMedicinePicker?.classList.toggle("d-none", readOnly);
+    refs.requestFilterTabs?.classList.toggle("d-none", readOnly);
+    refs.requestWizardStepper?.classList.toggle("d-none", readOnly);
+    refs.requestWizardPrevBtn?.classList.toggle("d-none", readOnly);
     if (refs.requestMedicineSearch) refs.requestMedicineSearch.disabled = readOnly;
-    refs.requestSubmitBtn?.classList.toggle("d-none", readOnly);
+
+    if (readOnly) {
+      refs.requestWizardNextBtn?.classList.add("d-none");
+      refs.requestSubmitBtn?.classList.add("d-none");
+    }
 
     const rowFields = refs.requestItemsContainer?.querySelectorAll(".request-item-quantity, .request-item-remove, .request-quantity-step") || [];
     rowFields.forEach((field) => {
       field.disabled = readOnly;
     });
 
-    if (!readOnly) updateRequestBuilderState();
+    if (!readOnly) {
+      setWizardStep(uiState.wizardStep || 1);
+      updateRequestBuilderState();
+    }
   };
 
   const openRequestModal = (requestGroup = null, mode = "edit") => {
     if (!refs.requestForm) return;
     closeActionMenu();
     uiState.requestModalMode = mode;
+    uiState.medicinePickerFilter = "all";
+    updateFilterTabCounts();
     refs.requestForm.reset();
     refs.requestId.value = requestGroup?.requestGroupId || "";
     if (refs.requestMedicineSearch) refs.requestMedicineSearch.value = "";
@@ -878,10 +1168,10 @@
         ? "CHO Request Details"
         : "Edit CHO Request";
     refs.requestModalSubtitle.textContent = !requestGroup
-      ? "Select medicines, enter quantities, then set the delivery date."
+      ? "Step 1 of 3: Select medicines to include in this request."
       : mode === "view"
         ? "Review the request summary and listed medicines."
-        : "Review the medicines and quantities before updating this request.";
+        : "Step 1 of 3: Update or add medicines before saving.";
     if (refs.requestSubmitBtnLabel) {
       refs.requestSubmitBtnLabel.textContent = requestGroup ? "Update Request" : "Submit Request";
     }
@@ -893,6 +1183,7 @@
       refs.requestExpectedDate.value = requestGroup?.expectedDate || supplyMonitoring.addDays(refs.requestDate.value, 5);
       renderRequestItems(requestGroup?.items || []);
       setRequestFormReadOnly(false);
+      setWizardStep(1);
     }
 
     requestModal?.show();
@@ -1094,43 +1385,35 @@
       return;
     }
 
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (refs.requestMedicineResults?.classList.contains("d-none")) renderMedicineResults();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      const startIndex = uiState.medicinePickerIndex < 0
-        ? (direction > 0 ? 0 : availableMedicineOptions().length - 1)
-        : uiState.medicinePickerIndex + direction;
-      setActiveMedicineOption(startIndex);
-      return;
-    }
-
     if (event.key === "Enter") {
       event.preventDefault();
-      if (refs.requestMedicineResults?.classList.contains("d-none")) {
-        renderMedicineResults();
-        return;
+      const firstCheck = refs.requestMedicineResults?.querySelector(".request-medicine-checkbox");
+      if (firstCheck) {
+        firstCheck.checked = !firstCheck.checked;
+        firstCheck.dispatchEvent(new Event("change", { bubbles: true }));
       }
-      const options = availableMedicineOptions();
-      const selectedOption = options[uiState.medicinePickerIndex >= 0 ? uiState.medicinePickerIndex : 0];
-      if (!selectedOption) {
-        setRequestFormFeedback("No available medicine matches your search.", "warning");
-        return;
-      }
-      addMedicineToRequest(selectedOption.getAttribute("data-medicine-id"));
     }
   });
 
-  refs.requestMedicineResults?.addEventListener("mouseover", (event) => {
-    const option = event.target.closest(".request-medicine-option:not(:disabled)");
-    if (!option) return;
-    const optionIndex = availableMedicineOptions().indexOf(option);
-    if (optionIndex >= 0) setActiveMedicineOption(optionIndex);
+  refs.requestFilterTabs?.addEventListener("click", (event) => {
+    const tab = event.target.closest(".request-filter-tab[data-picker-filter]");
+    if (!tab) return;
+    event.preventDefault();
+    uiState.medicinePickerFilter = tab.getAttribute("data-picker-filter") || "all";
+    updateFilterTabCounts();
+    renderMedicineResults();
+    refs.requestMedicineSearch?.focus({ preventScroll: true });
   });
-  refs.requestMedicineResults?.addEventListener("click", (event) => {
-    const option = event.target.closest(".request-medicine-option[data-medicine-id]:not(:disabled)");
-    if (!option) return;
-    addMedicineToRequest(option.getAttribute("data-medicine-id"));
+
+  refs.requestMedicineResults?.addEventListener("change", (event) => {
+    const checkbox = event.target.closest(".request-medicine-checkbox");
+    if (!checkbox) return;
+    const medicineId = checkbox.getAttribute("data-medicine-id");
+    if (checkbox.checked) {
+      addMedicineToRequest(medicineId);
+    } else {
+      removeMedicineFromRequest(medicineId);
+    }
   });
 
   refs.requestItemsContainer?.addEventListener("click", (event) => {
@@ -1152,6 +1435,7 @@
     if (!removeButton || uiState.requestModalMode === "view") return;
     removeButton.closest(".request-item-row")?.remove();
     setRequestFormFeedback();
+    renderRequestChips();
     updateRequestBuilderState();
     if (!refs.requestMedicineResults?.classList.contains("d-none")) renderMedicineResults();
   });
@@ -1160,6 +1444,86 @@
     if (!event.target.matches(".request-item-quantity")) return;
     setRequestFormFeedback();
     updateRequestBuilderState();
+  });
+
+  refs.requestWizardStepper?.addEventListener("click", (event) => {
+    const stepBtn = event.target.closest(".request-wizard-step[data-wizard-step]");
+    if (!stepBtn || uiState.requestModalMode === "view") return;
+    const target = Number(stepBtn.getAttribute("data-wizard-step"));
+    if (target === uiState.wizardStep) return;
+
+    const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
+    if (target === 1) {
+      setWizardStep(1);
+    } else if (target === 2) {
+      if (!rows.length) {
+        setRequestFormFeedback("Please select at least one medicine in Step 1 first.", "warning");
+        return;
+      }
+      setWizardStep(2);
+    } else if (target === 3) {
+      if (!rows.length) {
+        setRequestFormFeedback("Please select medicines before proceeding to Step 3.", "warning");
+        return;
+      }
+      const collected = collectRequestItems();
+      if (collected.error) {
+        setRequestFormFeedback("Please complete the medicine quantities in Step 2 first.", "warning");
+        setWizardStep(2);
+        collected.focusEl?.focus();
+        return;
+      }
+      setWizardStep(3);
+    }
+  });
+
+  refs.requestChipsContainer?.addEventListener("click", (event) => {
+    const removeBtn = event.target.closest(".request-chip__remove[data-medicine-id]");
+    if (!removeBtn || uiState.requestModalMode === "view") return;
+    removeMedicineFromRequest(removeBtn.getAttribute("data-medicine-id"));
+  });
+
+  refs.requestWizardPrevBtn?.addEventListener("click", () => {
+    if (uiState.wizardStep === 1) {
+      requestModal?.hide();
+    } else {
+      setWizardStep(uiState.wizardStep - 1);
+    }
+  });
+
+  refs.requestWizardNextBtn?.addEventListener("click", () => {
+    const rows = Array.from(refs.requestItemsContainer?.querySelectorAll(".request-item-row") || []);
+    if (uiState.wizardStep === 1) {
+      if (!rows.length) {
+        setRequestFormFeedback("Please select at least one medicine before proceeding.", "warning");
+        refs.requestMedicineSearch?.focus({ preventScroll: true });
+        return;
+      }
+      setWizardStep(2);
+    } else if (uiState.wizardStep === 2) {
+      const collected = collectRequestItems();
+      if (collected.error) {
+        setRequestFormFeedback(collected.error, "warning");
+        collected.focusEl?.focus({ preventScroll: true });
+        return;
+      }
+      setWizardStep(3);
+    }
+  });
+
+  refs.requestDate?.addEventListener("change", () => {
+    if (uiState.wizardStep === 3) renderRequestReviewSummary();
+  });
+  refs.requestExpectedDate?.addEventListener("change", () => {
+    if (uiState.wizardStep === 3) renderRequestReviewSummary();
+  });
+
+  refs.requestForm?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches("input:not([type=submit])")) {
+      if (uiState.wizardStep < 3) {
+        event.preventDefault();
+      }
+    }
   });
 
   refs.requestSearch?.addEventListener("input", (event) => {
@@ -1247,7 +1611,11 @@
     setRequestFormFeedback();
   });
   byId("requestModal")?.addEventListener("shown.bs.modal", () => {
-    if (uiState.requestModalMode !== "view") refs.requestMedicineSearch?.focus();
+    const modalBody = byId("requestModal")?.querySelector(".modal-body");
+    if (modalBody) modalBody.scrollTop = 0;
+    if (uiState.requestModalMode !== "view") {
+      refs.requestMedicineSearch?.focus({ preventScroll: true });
+    }
   });
 
   const initializeRequestLog = async () => {

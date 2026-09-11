@@ -222,6 +222,15 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
             <div>
               <label for="stockOnHand" class="form-label">Stock On Hand</label>
               <input type="number" id="stockOnHand" class="form-control" min="0" step="1" required>
+              <div id="stockOnHandDisplay" class="stock-stat-card d-none">
+                <div class="d-flex align-items-center justify-content-between w-100">
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-box-seam text-primary"></i>
+                    <strong class="text-dark" id="stockOnHandDisplayValue">-</strong>
+                  </div>
+                  <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">Active Total</span>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -229,15 +238,29 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <input type="number" id="reorderLevel" class="form-control" min="1" step="1" required>
             </div>
 
-            <div>
+            <div id="medicineModalBatchNumberGroup">
               <label for="batchNumber" class="form-label">Batch Number</label>
               <input type="text" id="batchNumber" class="form-control" placeholder="BATCH-2026-001" required>
             </div>
 
-            <div>
+            <div id="medicineModalExpiryDateGroup">
               <label for="expiryDate" class="form-label">Expiry Date</label>
-                <input type="date" id="expiryDate" class="form-control" required>
+              <input type="date" id="expiryDate" class="form-control" required>
+            </div>
+
+            <div id="medicineModalMultiBatchBanner" class="col-span-2 d-none">
+              <div class="multi-batch-inline-note">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-info-circle-fill text-primary flex-shrink-0"></i>
+                  <span class="small text-secondary">
+                    Tracked across <strong id="medicineModalBatchCount" class="text-dark fw-semibold">2 active batches</strong> with separate expiry dates.
+                  </span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary multi-batch-manage-btn" id="medicineModalManageBatchesBtn">
+                  <i class="bi bi-layers me-1"></i>Manage Batches
+                </button>
               </div>
+            </div>
 
             <div class="col-span-2 inventory-form-actions">
               <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
@@ -262,7 +285,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           <button type="button" class="btn-close" id="stockActionCloseBtn" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="stockActionForm" class="inventory-form-grid inventory-form-grid--single">
+          <form id="stockActionForm" class="inventory-form-grid inventory-form-grid--single" novalidate>
             <input type="hidden" id="stockMedicineId">
 
             <div class="stock-action-overview">
@@ -343,13 +366,61 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               </div>
             </section>
 
-            <div>
+            <div id="stockActionQuantityGroup">
               <label for="stockActionQuantity" class="form-label" id="stockActionQuantityLabel">Restock quantity</label>
               <div class="stock-action-quantity-field">
                 <input type="number" id="stockActionQuantity" class="form-control" min="1" step="1" inputmode="numeric" placeholder="Enter quantity" required>
                 <span id="stockActionQuantityUnit">units</span>
               </div>
             </div>
+
+            <section id="stockDisposeBatchSection" class="stock-dispose-section d-none">
+              <div class="stock-dispose-head d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div>
+                  <span class="form-label d-block mb-0">Select Batches to Dispose</span>
+                  <small class="text-muted">Choose which batches to write off and specify quantity.</small>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="stockDisposeSelectExpiredBtn">
+                  <i class="bi bi-clock-history me-1"></i>Select Expired Batches
+                </button>
+              </div>
+
+              <div class="table-responsive stock-dispose-table-wrap mb-2">
+                <table class="table align-middle stock-dispose-table mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col" class="text-center" style="width: 38px;">
+                        <input type="checkbox" class="form-check-input" id="stockDisposeSelectAllCheck" title="Select all batches">
+                      </th>
+                      <th scope="col">Batch No.</th>
+                      <th scope="col">Expiry</th>
+                      <th scope="col" class="text-end">Available</th>
+                      <th scope="col" style="width: 130px;" class="text-end">Dispose Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockDisposeBatchTableBody">
+                    <tr>
+                      <td colspan="5" class="text-center text-muted py-3">No active batches available.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div id="stockDisposeSummary" class="stock-dispose-summary mb-1">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <div>
+                    <span class="text-muted small">Total to dispose:</span>
+                    <strong class="text-danger ms-1 fs-6" id="stockDisposeTotalCount">0</strong>
+                    <span class="text-muted small ms-1" id="stockDisposeTotalUnit">units</span>
+                    <span class="badge bg-light text-secondary border ms-2" id="stockDisposeBatchCountBadge">0 batches</span>
+                  </div>
+                  <div>
+                    <span class="text-muted small">Stock after disposal:</span>
+                    <strong class="text-primary ms-1 fs-6" id="stockDisposeRemainingStock">0</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <div id="stockActionPreview" class="stock-action-preview d-none" aria-live="polite">
               <span class="stock-action-preview__icon"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></span>
@@ -364,6 +435,21 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <input type="date" id="stockActionDate" class="form-control" required>
             </div>
 
+            <div id="stockActionBatchGroup">
+              <div class="row g-2">
+                <div class="col-sm-6">
+                  <label for="stockActionBatchNumber" class="form-label" id="stockActionBatchNumberLabel">Batch / Lot Number</label>
+                  <input type="text" id="stockActionBatchNumber" class="form-control" placeholder="e.g. BATCH-2026-002">
+                  <small class="inventory-field-hint" id="stockActionBatchHint">Lot/batch number (Leave blank to auto-generate for donations)</small>
+                </div>
+                <div class="col-sm-6">
+                  <label for="stockActionExpiryDate" class="form-label" id="stockActionExpiryDateLabel">Expiration Date</label>
+                  <input type="date" id="stockActionExpiryDate" class="form-control">
+                  <small class="inventory-field-hint">Expiry date of this delivery</small>
+                </div>
+              </div>
+            </div>
+
             <div class="d-none" id="stockActionNoteGroup">
               <label for="stockActionNote" class="form-label" id="stockActionNoteLabel">Source / notes (optional)</label>
               <textarea id="stockActionNote" class="form-control" rows="2" placeholder="Supplier, delivery reference, or optional note"></textarea>
@@ -375,6 +461,168 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <button type="button" class="btn btn-light" id="stockActionCancelBtn" data-bs-dismiss="modal">Cancel</button>
               <button type="submit" class="btn btn-primary" id="stockActionSubmitBtn">
                 <i class="bi bi-check2-circle"></i><span id="stockActionSubmitLabel">Add Stock</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-labelledby="batchDetailsModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content modern-modal">
+        <div class="modal-header border-0 pb-0">
+          <div>
+            <h5 class="modal-title mb-1" id="batchDetailsModalTitle">Batch Details</h5>
+            <p class="inventory-modal-subtitle mb-0" id="batchDetailsModalSubtitle">Active batches sorted by earliest expiration date.</p>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="batch-modal-summary mb-3 p-3 rounded bg-light border d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+              <h6 class="mb-0 fw-bold" id="batchDetailsMedicineName">-</h6>
+              <span class="text-muted small" id="batchDetailsMedicineMeta">-</span>
+            </div>
+            <div class="text-end">
+              <span class="text-muted small d-block">Total Stock</span>
+              <strong class="batch-modal-total-stock" id="batchDetailsTotalStock">0</strong>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 px-1 gap-2" id="batchDetailsExhaustedToggleContainer">
+            <span class="text-muted small" id="batchDetailsCountHint">Record: 0</span>
+            <button type="button" class="btn btn-batch-action btn-batch-action--outline" id="batchHistoryToggleBtn">
+              <i class="bi bi-clock-history" id="batchHistoryToggleIcon"></i>
+              <span id="batchHistoryToggleLabel">Batch History</span>
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table align-middle batch-details-table mb-0">
+              <thead>
+                <tr>
+                  <th scope="col" class="text-nowrap">Priority</th>
+                  <th scope="col" class="text-nowrap">Batch No.</th>
+                  <th scope="col" class="text-nowrap">Expiration</th>
+                  <th scope="col" class="text-nowrap">Remaining</th>
+                  <th scope="col" class="text-nowrap">Source</th>
+                  <th scope="col" class="text-nowrap">Status</th>
+                  <th scope="col" class="text-nowrap text-end" style="width: 80px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="batchDetailsTableBody">
+                <tr>
+                  <td colspan="7" class="text-center text-muted py-3">Loading batch details...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <small class="text-muted"><i class="bi bi-info-circle text-success me-1"></i>Earliest expiring batch is dispensed first.</small>
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="disposeConfirmModal" tabindex="-1" aria-labelledby="disposeConfirmModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal inventory-confirm-modal">
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-icon mb-3">
+          <div class="inventory-confirm-modal__icon inventory-confirm-modal__icon--danger" id="disposeConfirmModalIcon" aria-hidden="true">
+            <i class="bi bi-trash3-fill"></i>
+          </div>
+        </div>
+        <h5 class="modal-title mb-2 text-center" id="disposeConfirmModalTitle">Confirm Stock Disposal?</h5>
+        <p class="inventory-confirm-modal__copy mb-3 text-center" id="disposeConfirmModalMessage">
+          Review the medicine and batches to be written off. This action cannot be undone.
+        </p>
+
+        <div class="dispose-confirm-card mb-3 p-3 rounded-3 text-start border bg-light" id="disposeConfirmDetails">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">Medicine:</span>
+            <strong id="disposeConfirmMedicineName">-</strong>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">Total to Dispose:</span>
+            <strong class="text-danger fs-6" id="disposeConfirmTotalQty">-</strong>
+          </div>
+          <div class="mb-2">
+            <span class="text-muted small d-block mb-1">Batches to be written off:</span>
+            <div class="dispose-confirm-batch-list small p-2 bg-white border rounded" id="disposeConfirmBatchList">
+              <!-- Injected batch rows -->
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">Disposal Reason:</span>
+            <span class="fw-semibold text-dark text-break small" id="disposeConfirmReason">-</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+            <span class="text-muted small">Stock Adjustment:</span>
+            <span class="small fw-bold" id="disposeConfirmStockAdjustment">0 → 0</span>
+          </div>
+        </div>
+
+        <div class="inventory-confirm-modal__actions">
+          <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-modern" id="disposeConfirmSubmitBtn">
+            <i class="bi bi-trash3-fill me-1"></i>Confirm Disposal
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="editBatchModal" tabindex="-1" aria-labelledby="editBatchModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal">
+        <div class="modal-header border-0 pb-0">
+          <div>
+            <h5 class="modal-title mb-1" id="editBatchModalTitle">Edit Batch Details</h5>
+            <p class="inventory-modal-subtitle mb-0" id="editBatchModalSubtitle">Update batch number and expiration date.</p>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editBatchForm" novalidate>
+            <input type="hidden" id="editBatchMedicineId">
+            <input type="hidden" id="editBatchId">
+
+            <div class="p-3 mb-3 rounded-3 bg-light border">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="text-muted small">Medicine:</span>
+                <strong id="editBatchMedicineName">-</strong>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="text-muted small">Remaining in Batch:</span>
+                <strong class="text-primary" id="editBatchQuantity">-</strong>
+              </div>
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted small">Batch Source:</span>
+                <span class="small text-muted" id="editBatchSource">-</span>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="editBatchNumber" class="form-label">Batch / Lot Number</label>
+              <input type="text" id="editBatchNumber" class="form-control" placeholder="e.g. BATCH-2026-001" required>
+            </div>
+
+            <div class="mb-3">
+              <label for="editBatchExpiryDate" class="form-label">Expiration Date</label>
+              <input type="date" id="editBatchExpiryDate" class="form-control" required>
+            </div>
+
+            <div id="editBatchFeedback" class="alert alert-danger d-none py-2 mb-3 small" role="alert"></div>
+
+            <div class="inventory-form-actions">
+              <button type="button" class="btn btn-light" id="editBatchCancelBtn" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="editBatchSubmitBtn">
+                <i class="bi bi-save2 me-1"></i>Save Changes
               </button>
             </div>
           </form>

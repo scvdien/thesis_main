@@ -738,6 +738,85 @@
   color:#2f8f24;
 }
 
+.inventory-confirm-modal__icon--danger{
+  background:rgba(220, 38, 38, 0.12);
+  color:#dc2626;
+}
+
+#disposeConfirmModal,
+#editBatchModal {
+  z-index: 1065 !important;
+}
+
+.modal-backdrop + .modal-backdrop {
+  z-index: 1060 !important;
+}
+
+.batch-edit-btn {
+  padding: 3px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+
+.multi-batch-inline-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-height: 44px;
+}
+
+.multi-batch-inline-note .bi-info-circle-fill {
+  font-size: 1rem;
+}
+
+.multi-batch-manage-btn {
+  padding: 0.28rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.stock-stat-card {
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-height: 40px;
+}
+
+.dispose-confirm-card{
+  border-color:#fed7aa !important;
+  background:#fffbf5 !important;
+}
+
+.dispose-confirm-batch-list{
+  max-height:140px;
+  overflow-y:auto;
+}
+
+.dispose-confirm-batch-item{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:4px 0;
+  border-bottom:1px dashed #f1f5f9;
+}
+
+.dispose-confirm-batch-item:last-child{
+  border-bottom:none;
+}
+
 .inventory-confirm-modal__copy{
   margin:0;
   color:#50604a;
@@ -1646,3 +1725,240 @@
     width:min(320px, calc(100vw - 20px));
   }
 }
+
+.view-batches-btn{
+  cursor:pointer;
+  transition:all 0.15s ease-in-out;
+  display:inline-flex;
+  align-items:center;
+  background:rgba(58,154,69,0.1);
+  color:#24722e !important;
+  padding:2px 7px;
+  border-radius:12px;
+  border:none;
+}
+.view-batches-btn:hover{
+  background:rgba(58,154,69,0.22);
+  text-decoration:none;
+}
+
+.batch-modal-summary{
+  background:#f8faf6;
+  border:1px solid #e1e8dc !important;
+  border-radius:14px;
+  padding:14px 18px !important;
+}
+
+.batch-modal-total-stock{
+  color:#1b4332;
+  font-size:1.3rem;
+  font-weight:800;
+  letter-spacing:-0.02em;
+}
+
+#batchDetailsModal .modal-dialog{
+  max-width:1160px;
+  width:95%;
+}
+
+.batch-details-table th{
+  background:#f6f8f4;
+  color:#4a5d48;
+  font-size:0.73rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+  padding:11px 16px;
+  border-bottom:1px solid #e2ebd8;
+  white-space:nowrap;
+}
+
+.batch-details-table td{
+  padding:14px 16px;
+  font-size:0.85rem;
+  border-bottom:1px solid #f1f5ee;
+  white-space:nowrap;
+  vertical-align:middle;
+}
+
+.batch-details-table tr:hover td{
+  background-color:#fafcf8;
+}
+
+.batch-row-active-dispense{
+  background-color:rgba(46, 125, 50, 0.035) !important;
+}
+.batch-row-active-dispense td:first-child{
+  border-left:3px solid #2e7d32;
+}
+
+.batch-progress-bar{
+  height:5px;
+  border-radius:999px;
+  background:#edf2f7;
+  overflow:hidden;
+  margin-top:5px;
+}
+
+.batch-progress-fill{
+  height:100%;
+  border-radius:999px;
+  transition:width 0.3s ease;
+}
+.batch-progress-fill--primary{
+  background:#2e7d32;
+}
+.batch-progress-fill--reserve{
+  background:#64748b;
+}
+.batch-progress-fill--exhausted{
+  background:#cbd5e1;
+}
+
+.batch-status-badge{
+  display:inline-block;
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:0.75rem;
+  font-weight:700;
+}
+.batch-status-badge--active{
+  background:#e8f5e9;
+  color:#2e7d32;
+}
+.batch-status-badge--exhausted{
+  background:#f5f5f5;
+  color:#757575;
+}
+.batch-status-badge--near-expiry{
+  background:#fff8e1;
+  color:#f57f17;
+}
+.batch-status-badge--expired{
+  background:#ffebee;
+  color:#c62828;
+}
+
+.stock-dispose-section {
+  padding: 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 16px;
+  background: #fffbf5;
+}
+
+.stock-dispose-head .form-label {
+  color: #9a3412 !important;
+}
+
+.stock-dispose-head .btn-outline-danger {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.stock-dispose-table-wrap {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #ffedd5;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.stock-dispose-table {
+  font-size: 0.84rem;
+  margin-bottom: 0;
+}
+
+.stock-dispose-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 9px 10px;
+  border-bottom: 1px solid #fed7aa;
+}
+
+.stock-dispose-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.stock-dispose-batch-row--expired {
+  background-color: #fef2f2 !important;
+}
+
+.stock-dispose-batch-row--selected {
+  background-color: #fff7ed !important;
+}
+
+.stock-dispose-qty-input {
+  width: 90px;
+  min-height: 34px !important;
+  padding: 4px 8px !important;
+  font-size: 0.85rem !important;
+  font-weight: 700;
+  text-align: right;
+  border-radius: 8px;
+}
+
+.stock-dispose-summary {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px dashed #fdba74;
+}
+
+.btn-batch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+  box-shadow: none;
+  white-space: nowrap;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.btn-batch-action i {
+  font-size: 1rem;
+}
+
+.btn-batch-action--outline {
+  background: #f7fbf3;
+  color: #2d5d27;
+  border-color: #cfe1c6;
+}
+
+.btn-batch-action--outline:hover,
+.btn-batch-action--outline:focus {
+  background: #f1f8ea;
+  color: #244b1f;
+  border-color: #a8ca98;
+}
+
+.btn-batch-action--outline.is-active {
+  background: #edf5e7;
+  color: #244b1f;
+  border-color: #a8ca98;
+}
+
+.btn-batch-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+
+

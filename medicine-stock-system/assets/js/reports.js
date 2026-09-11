@@ -404,7 +404,23 @@
   const detailColumn = (label, key, subKey, className = "report-stock-cell") => ({
     label,
     render: (row) => renderDetailCell(row[key], row[subKey], className),
-    export: (row) => [safeExport(row[key]), text(row[subKey])].filter(Boolean).join(" | ")
+    export: (row) => {
+      const main = safeExport(row[key]);
+      const sub = text(row[subKey]);
+      if (!sub) return main;
+      if (key === "stockOnHand" || key === "quantity" || key === "balanceAfter" || key === "quantityReleased" || key === "quantityReceived" || key === "quantityRemoved") {
+        const cleanUnit = sub.replace(/\s*on\s*hand$/i, "").trim();
+        return `${main} ${cleanUnit}`.trim();
+      }
+      if (key === "expiryDate") {
+        return main;
+      }
+      if (key === "dispenseDate" || key === "movementDate" || key === "receivedDate" || key === "recordedDate") {
+        return `${main} (${sub})`;
+      }
+      if (main.toLowerCase().includes(sub.toLowerCase())) return main;
+      return `${main} (${sub})`;
+    }
   });
   const statusColumn = (label, key = "statusLabel", toneKey = "statusTone") => ({
     label,
@@ -1038,135 +1054,98 @@
     const centerX = pageWidth / 2;
     const [leftLogo, rightLogo] = logos;
 
-    if (leftLogo) doc.addImage(leftLogo, "PNG", margin, 28, 50, 50, undefined, "FAST");
-    if (rightLogo) doc.addImage(rightLogo, "PNG", pageWidth - margin - 50, 28, 50, 50, undefined, "FAST");
+    if (leftLogo) doc.addImage(leftLogo, "PNG", margin, 24, 46, 46, undefined, "FAST");
+    if (rightLogo) doc.addImage(rightLogo, "PNG", pageWidth - margin - 46, 24, 46, 46, undefined, "FAST");
 
-    let cursorY = 42;
+    let cursorY = 32;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(92, 103, 88);
+    doc.setFontSize(8.5);
+    doc.setTextColor(110, 125, 105);
     doc.text("Republic of the Philippines", centerX, cursorY, { align: "center" });
 
-    cursorY += 14;
+    cursorY += 12;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text("Ligao City Coastal Rural Health Unit", centerX, cursorY, { align: "center" });
+    doc.setFontSize(9);
+    doc.setTextColor(70, 85, 65);
+    doc.text("City Health Office — Ligao City", centerX, cursorY, { align: "center" });
+
+    cursorY += 14;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(27, 67, 50);
+    doc.text("LIGAO CITY COASTAL RURAL HEALTH UNIT", centerX, cursorY, { align: "center" });
+
+    cursorY += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(110, 125, 105);
+    doc.text("Cabarian, Ligao City, Albay", centerX, cursorY, { align: "center" });
+
+    cursorY += 14;
+    doc.setDrawColor(27, 67, 50);
+    doc.setLineWidth(1.0);
+    doc.line(margin, cursorY, pageWidth - margin, cursorY);
+    doc.setDrawColor(185, 205, 180);
+    doc.setLineWidth(0.35);
+    doc.line(margin, cursorY + 2, pageWidth - margin, cursorY + 2);
 
     cursorY += 16;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(29, 47, 29);
-    doc.text("MEDICINE STOCK MONITORING SYSTEM", centerX, cursorY, { align: "center" });
-
-    cursorY += 14;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(92, 103, 88);
-    doc.text("Cabarian, Ligao City", centerX, cursorY, { align: "center" });
-
-    cursorY += 24;
-    doc.setDrawColor(112, 131, 109);
-    doc.setLineWidth(0.8);
-    doc.line(margin, cursorY, pageWidth - margin, cursorY);
-
-    cursorY += 24;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(23, 48, 26);
+    doc.setFontSize(12.5);
+    doc.setTextColor(27, 67, 50);
     doc.text(String(snapshot.reportDefinition.title || "").toUpperCase(), centerX, cursorY, { align: "center" });
 
-    return cursorY + 22;
-  };
-
-  const drawPdfMetadataBlock = (doc, pageWidth, margin, startY, snapshot) => {
-    const blockWidth = pageWidth - (margin * 2);
-    const halfWidth = (blockWidth - 16) / 2;
-    const leftX = margin;
-    const rightX = margin + halfWidth + 16;
-    const blockTop = startY;
-    const leftLines = [
-      `Generated On: ${formatDate(snapshot.generatedAt)}`,
-      `Generated At: ${formatTime(snapshot.generatedAt)}`,
-      `Total Records: ${countLabelForReport(snapshot.reportDefinition, snapshot.rowCount)}`
-    ];
-    const rightLines = [
-      `Prepared By: ${snapshot.preparedBy}`,
-      `Submission: ${snapshot.reportDefinition.submission}`,
-      `Data Source: ${snapshot.reportDefinition.dataSource}`
-    ];
-    const lineHeight = 12;
-    const measureColumnHeight = (lines) => lines.reduce((total, line) => {
-      const wrapped = doc.splitTextToSize(line, halfWidth - 28);
-      return total + (wrapped.length * lineHeight) + 2;
-    }, 0);
-    const contentHeight = Math.max(measureColumnHeight(leftLines), measureColumnHeight(rightLines));
-    const blockHeight = Math.max(76, 42 + contentHeight);
-
-    doc.setDrawColor(210, 220, 205);
-    doc.setFillColor(252, 253, 251);
-    doc.roundedRect(leftX, blockTop, halfWidth, blockHeight, 10, 10, "FD");
-    doc.roundedRect(rightX, blockTop, halfWidth, blockHeight, 10, 10, "FD");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(97, 112, 91);
-    doc.text("REPORT DETAILS", leftX + 14, blockTop + 18);
-    doc.text("ADMINISTRATIVE DETAILS", rightX + 14, blockTop + 18);
-
+    cursorY += 11;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
-    doc.setTextColor(41, 57, 35);
-    let leftY = blockTop + 36;
-    let rightY = blockTop + 36;
-    leftLines.forEach((line) => {
-      const wrapped = doc.splitTextToSize(line, halfWidth - 28);
-      doc.text(wrapped, leftX + 14, leftY);
-      leftY += (wrapped.length * lineHeight) + 2;
-    });
-    rightLines.forEach((line) => {
-      const wrapped = doc.splitTextToSize(line, halfWidth - 28);
-      doc.text(wrapped, rightX + 14, rightY);
-      rightY += (wrapped.length * lineHeight) + 2;
-    });
+    doc.setFontSize(8.5);
+    doc.setTextColor(95, 110, 90);
+    const subtitle = snapshot.reportDefinition.submission || "Internal RHU Monitoring";
+    doc.text(subtitle, centerX, cursorY, { align: "center" });
 
-    return blockTop + blockHeight + 18;
+    return cursorY + 12;
   };
 
   const drawPdfSignatureSection = (doc, pageWidth, pageHeight, margin, logos, snapshot) => {
-    const sectionWidth = pageWidth - (margin * 2);
-    const signatureWidth = Math.min(240, sectionWidth * 0.48);
-    let currentY = (doc.lastAutoTable?.finalY || 0) + 44;
+    const signatureWidth = 190;
+    const lineX = (pageWidth - signatureWidth) / 2;
+    const centerX = pageWidth / 2;
 
-    if (currentY > pageHeight - 110) {
+    let currentY = (doc.lastAutoTable?.finalY || 0) + 26;
+
+    if (currentY > pageHeight - 90) {
       doc.addPage();
       const freshPageWidth = doc.internal.pageSize.getWidth();
       drawPdfPageHeader(doc, freshPageWidth, margin, logos, snapshot);
-      currentY = 160;
+      currentY = 130;
     }
 
-    currentY = Math.max(currentY, 140);
-    const labels = [
-      { role: "Prepared by", name: snapshot.preparedBy }
-    ];
+    const lineY = currentY + 36;
+    doc.setDrawColor(120, 135, 115);
+    doc.setLineWidth(0.65);
 
-    labels.forEach((item) => {
-      const x = (pageWidth - signatureWidth) / 2;
-      const lineY = currentY + 20;
-      doc.setDrawColor(125, 137, 119);
-      doc.setLineWidth(0.7);
-      doc.line(x, lineY, x + signatureWidth, lineY);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.setTextColor(35, 54, 31);
-      if (item.name) doc.text(item.name, x + (signatureWidth / 2), lineY - 6, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(99, 111, 94);
-      doc.text(item.role, x + (signatureWidth / 2), lineY + 14, { align: "center" });
-    });
+    // Centered "Prepared by:"
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(85, 100, 80);
+    doc.text("Prepared by:", centerX, currentY + 8, { align: "center" });
+
+    // Centered Signature Line
+    doc.line(lineX, lineY, lineX + signatureWidth, lineY);
+
+    // Name
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(25, 45, 25);
+    doc.text(snapshot.preparedBy || "Nurse-in-Charge", centerX, lineY - 4, { align: "center" });
+
+    // Role / Title
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 115, 95);
+    doc.text("RHU Nurse-in-Charge", centerX, lineY + 10, { align: "center" });
   };
 
-  const drawPdfPageNumbers = (doc, margin) => {
+  const drawPdfPageNumbers = (doc, margin, snapshot) => {
     const pageCount = doc.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
       doc.setPage(page);
@@ -1176,7 +1155,8 @@
       doc.setFontSize(8);
       doc.setTextColor(112, 124, 106);
       doc.text(`Page ${page} of ${pageCount}`, pageWidth - margin, pageHeight - 18, { align: "right" });
-      doc.text("System-generated RHU report", margin, pageHeight - 18);
+      const genStamp = snapshot ? ` • Generated on: ${formatDate(snapshot.generatedAt)}, ${formatTime(snapshot.generatedAt)}` : "";
+      doc.text(`System-generated RHU report${genStamp}`, margin, pageHeight - 18);
     }
   };
 
@@ -1184,7 +1164,7 @@
     const jsPDFCtor = window.jspdf?.jsPDF;
     if (!jsPDFCtor) return false;
 
-    const orientation = snapshot.reportDefinition.columns.length > 6 ? "landscape" : "portrait";
+    const orientation = snapshot.reportDefinition.columns.length > 7 ? "landscape" : "portrait";
     const doc = new jsPDFCtor({ orientation, unit: "pt", format: "a4" });
     if (typeof doc.autoTable !== "function") return false;
 
@@ -1193,26 +1173,107 @@
     const margin = 36;
     const logos = await loadPdfHeaderLogos();
     const headerBottomY = drawPdfPageHeader(doc, pageWidth, margin, logos, snapshot);
-    let cursorY = drawPdfMetadataBlock(doc, pageWidth, margin, headerBottomY, snapshot);
+    let cursorY = headerBottomY;
+
+    const isSevenColPortrait = orientation === "portrait" && snapshot.reportDefinition.columns.length === 7;
+    const columnStyles = isSevenColPortrait ? {
+      0: { cellWidth: 115 },
+      1: { cellWidth: 68 },
+      2: { cellWidth: 46 },
+      3: { cellWidth: 66 },
+      4: { cellWidth: 68 },
+      5: { cellWidth: 84 },
+      6: { cellWidth: 70 }
+    } : {};
+
+    const totalLabel = countLabelForReport(snapshot.reportDefinition, snapshot.rowCount);
+    const stockColIdx = snapshot.reportDefinition.columns.findIndex((c) =>
+      /stock\s*on\s*hand|quantity|balance/i.test(c.label)
+    );
+
+    let footRow = [];
+    if (stockColIdx >= 0) {
+      const sum = snapshot.tableRows.reduce((acc, row) => {
+        const cell = String(row[stockColIdx] || "").replace(/,/g, "");
+        const match = cell.match(/\d+(\.\d+)?/);
+        return acc + (match ? parseFloat(match[0]) : 0);
+      }, 0);
+
+      footRow = snapshot.reportDefinition.columns.map((col, idx) => {
+        if (idx === 0) {
+          return {
+            content: `Total: ${totalLabel}`,
+            styles: {
+              fontStyle: "bold",
+              fontSize: 8,
+              textColor: [27, 67, 50],
+              fillColor: [244, 248, 243],
+              halign: "center"
+            }
+          };
+        }
+        if (idx === stockColIdx) {
+          return {
+            content: `${formatNumber(sum)} units`,
+            styles: {
+              fontStyle: "bold",
+              fontSize: 8,
+              textColor: [27, 67, 50],
+              fillColor: [244, 248, 243],
+              halign: "center"
+            }
+          };
+        }
+        return {
+          content: "",
+          styles: {
+            fillColor: [244, 248, 243]
+          }
+        };
+      });
+    } else {
+      footRow = [
+        {
+          content: `Total: ${totalLabel}`,
+          colSpan: snapshot.reportDefinition.columns.length,
+          styles: {
+            fontStyle: "bold",
+            fontSize: 8.5,
+            textColor: [27, 67, 50],
+            fillColor: [244, 248, 243],
+            halign: "center"
+          }
+        }
+      ];
+    }
 
     doc.autoTable({
       startY: cursorY,
       head: [snapshot.reportDefinition.columns.map((column) => safeExport(column.label))],
       body: snapshot.tableRows,
-      margin: { top: 150, right: margin, bottom: 52, left: margin },
+      foot: [footRow],
+      margin: { top: 120, right: margin, bottom: 48, left: margin },
+      columnStyles,
       styles: {
         font: "helvetica",
-        fontSize: 8.2,
-        cellPadding: 5.5,
-        lineColor: [210, 220, 205],
+        fontSize: isSevenColPortrait ? 7.8 : 8,
+        cellPadding: { top: 5, right: 5, bottom: 5, left: 5 },
+        lineColor: [215, 225, 210],
         lineWidth: 0.45,
-        textColor: [29, 47, 29],
-        valign: "top"
+        textColor: [25, 45, 25],
+        valign: "middle"
       },
       headStyles: {
-        fillColor: [242, 245, 240],
-        textColor: [73, 88, 68],
-        fontStyle: "bold"
+        fillColor: [27, 67, 50],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 8.5
+      },
+      footStyles: {
+        fillColor: [244, 248, 243],
+        textColor: [27, 67, 50],
+        fontStyle: "bold",
+        fontSize: 8.5
       },
       bodyStyles: {
         fillColor: [255, 255, 255]
@@ -1226,7 +1287,7 @@
     });
 
     drawPdfSignatureSection(doc, pageWidth, pageHeight, margin, logos, snapshot);
-    drawPdfPageNumbers(doc, margin);
+    drawPdfPageNumbers(doc, margin, snapshot);
     doc.save(`${reportFileStem(snapshot.reportDefinition, snapshot.generatedAt)}.pdf`);
     return true;
   };

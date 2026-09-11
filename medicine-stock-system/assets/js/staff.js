@@ -7,6 +7,7 @@
   const AUTH_ENDPOINT = "auth-api.php";
   const STORAGE = {
     inventory: "mss_inventory_records_v1",
+    inventoryBatches: "mss_inventory_batches_v1",
     movements: "mss_inventory_movements_v1",
     residents: "mss_resident_accounts_v1"
   };
@@ -196,6 +197,7 @@
 
   const state = {
     inventory: [],
+    inventoryBatches: [],
     movements: [],
     residentAccounts: [],
     householdResidents: [],
@@ -598,6 +600,7 @@
 
   const createStaffPersistSnapshot = () => ({
     inventory: cloneEntries(state.inventory),
+    inventoryBatches: cloneEntries(state.inventoryBatches),
     inventoryExpectedVersions: { ...inventoryExpectedVersions },
     movements: cloneEntries(state.movements),
     residentAccounts: cloneEntries(state.residentAccounts),
@@ -1470,14 +1473,34 @@
       unitCost: Number(numeric(entry.unitCost).toFixed(2)),
       recordStatus,
       updatedBy: text(entry.updatedBy) || "Nurse-in-Charge",
-      lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso()
+      lastUpdatedAt: text(entry.lastUpdatedAt) || nowIso(),
+      batches: Array.isArray(entry.batches) ? entry.batches.map(normalizeBatch) : [],
+      activeBatchesCount: typeof entry.activeBatchesCount === "number" ? entry.activeBatchesCount : 0
     };
   };
+
+  const normalizeBatch = (entry = {}) => ({
+    id: text(entry.id) || `batch_${uid()}`,
+    medicineId: text(entry.medicineId || entry.medicine_id),
+    batchNumber: text(entry.batchNumber || entry.batch_number).toUpperCase() || "-",
+    expiryDate: text(entry.expiryDate || entry.expiry_date),
+    quantityReceived: Math.max(0, Math.round(numeric(entry.quantityReceived || entry.quantity_received))),
+    quantityRemaining: Math.max(0, Math.round(numeric(entry.quantityRemaining || entry.quantity_remaining))),
+    receivedDate: text(entry.receivedDate || entry.received_date),
+    sourceType: text(entry.sourceType || entry.source_type) || "initial",
+    sourceReference: text(entry.sourceReference || entry.source_reference),
+    status: text(entry.status) || "active",
+    createdAt: text(entry.createdAt || entry.created_at) || nowIso(),
+    updatedAt: text(entry.updatedAt || entry.updated_at) || nowIso()
+  });
 
   const normalizeMovement = (entry = {}) => ({
     id: text(entry.id) || uid(),
     medicineId: text(entry.medicineId || entry.medicine_id),
     medicineName: text(entry.medicineName || entry.medicine_name),
+    batchId: text(entry.batchId || entry.batch_id),
+    batchNumber: text(entry.batchNumber || entry.batch_number),
+    batchExpiry: text(entry.batchExpiry || entry.batch_expiry),
     actionType: text(entry.actionType || entry.action_type) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
     diseaseCategory: text(entry.diseaseCategory || entry.disease_category),
@@ -1516,6 +1539,7 @@
 
   const loadCachedState = () => ({
     inventory: readList(STORAGE.inventory).map(normalizeMedicine),
+    inventoryBatches: readList(STORAGE.inventoryBatches).map(normalizeBatch),
     movements: readList(STORAGE.movements).map(normalizeMovement),
     residentAccounts: readList(STORAGE.residents).map(normalizeResidentAccount),
     users: getStoredUsers(),
@@ -1526,11 +1550,32 @@
   });
 
   const syncStateFromServer = (serverState = {}) => {
+    if (Array.isArray(serverState.inventoryBatches)) {
+      state.inventoryBatches = serverState.inventoryBatches.map(normalizeBatch);
+    }
     if (Array.isArray(serverState.inventory)) {
       inventoryExpectedVersions = Object.fromEntries(serverState.inventory
         .map((entry) => [text(entry.id), text(entry.lastUpdatedAt || entry.last_updated_at)])
         .filter(([id, version]) => id && version));
-      state.inventory = serverState.inventory.map(normalizeMedicine);
+      state.inventory = serverState.inventory.map((entry) => {
+        const med = normalizeMedicine(entry);
+        const medBatches = (med.batches && med.batches.length)
+          ? med.batches
+          : (state.inventoryBatches || []).filter((b) => b.medicineId === med.id);
+        med.batches = medBatches;
+        const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+        if (activeBatches.length > 0) {
+          const validActiveBatches = activeBatches
+            .filter((b) => daysUntil(b.expiryDate) >= 0)
+            .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+          const primaryBatch = validActiveBatches.length > 0
+            ? validActiveBatches[0]
+            : [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
+          med.batchNumber = primaryBatch.batchNumber;
+          med.expiryDate = primaryBatch.expiryDate;
+        }
+        return med;
+      });
     }
     if (Array.isArray(serverState.movements)) {
       state.movements = serverState.movements.map(normalizeMovement);
@@ -1543,6 +1588,7 @@
 
   const createStaffStateSnapshot = () => ({
     inventory: cloneEntries(state.inventory),
+    inventoryBatches: cloneEntries(state.inventoryBatches),
     movements: cloneEntries(state.movements),
     residentAccounts: cloneEntries(state.residentAccounts),
     users: cloneEntries(state.users),
@@ -1555,6 +1601,7 @@
 
   const restoreStaffStateSnapshot = (snapshot) => {
     if (!snapshot) return;
+    state.inventoryBatches = Array.isArray(snapshot.inventoryBatches) ? snapshot.inventoryBatches.map(normalizeBatch) : [];
     state.inventory = snapshot.inventory.map(normalizeMedicine);
     state.movements = snapshot.movements.map(normalizeMovement);
     state.residentAccounts = snapshot.residentAccounts.map(normalizeResidentAccount);
@@ -1639,6 +1686,7 @@
           || cachedState.sessions.length > 0
           || cachedState.notifications.length > 0;
         if (hasCachedData) {
+          state.inventoryBatches = cachedState.inventoryBatches || [];
           state.inventory = cachedState.inventory;
           state.movements = cachedState.movements;
           state.residentAccounts = cachedState.residentAccounts;
@@ -1685,7 +1733,43 @@
     text(medicine.unit)
   ].join(" ").toLowerCase();
   const isActiveMedicine = (medicine) => text(medicine?.recordStatus).toLowerCase() !== "archived";
-  const isExpiredMedicine = (medicine) => daysUntil(medicine?.expiryDate) < 0;
+
+  const getDispensableBatches = (medicine) => {
+    if (!medicine) return [];
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    return medBatches
+      .filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0 && daysUntil(b.expiryDate) >= 0)
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+  };
+
+  const getDispensableStock = (medicine) => {
+    if (!medicine) return 0;
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    if (activeBatches.length > 0) {
+      return activeBatches
+        .filter((b) => daysUntil(b.expiryDate) >= 0)
+        .reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+    }
+    return daysUntil(medicine.expiryDate) >= 0 ? Math.max(0, numeric(medicine.stockOnHand)) : 0;
+  };
+
+  const isExpiredMedicine = (medicine) => {
+    if (!medicine) return true;
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+    if (activeBatches.length > 0) {
+      return !activeBatches.some((b) => daysUntil(b.expiryDate) >= 0);
+    }
+    return daysUntil(medicine.expiryDate) < 0;
+  };
+
   const getActiveMedicines = () => state.inventory.filter(isActiveMedicine);
   const getSortedMedicines = ({ includeExpired = true } = {}) => [...getActiveMedicines()]
     .filter((medicine) => includeExpired || !isExpiredMedicine(medicine))
@@ -2180,11 +2264,48 @@
   };
 
   const getStatus = (medicine) => {
-    const stock = numeric(medicine.stockOnHand);
-    const reorderLevel = Math.max(1, numeric(medicine.reorderLevel));
-    const expiryDays = daysUntil(medicine.expiryDate);
+    if (!medicine) {
+      return { key: "out-of-stock", label: "Out of Stock", tone: "danger", note: "No medicine record" };
+    }
 
-    if (stock <= 0) {
+    const medBatches = (medicine.batches && medicine.batches.length)
+      ? medicine.batches
+      : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+    const activeBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+
+    let effectiveExpiryDate = medicine.expiryDate;
+    let effectiveStock = numeric(medicine.stockOnHand);
+    let safeReserveStock = 0;
+
+    if (activeBatches.length > 0) {
+      const validBatches = activeBatches
+        .filter((b) => daysUntil(b.expiryDate) >= 0)
+        .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+      if (validBatches.length > 0) {
+        effectiveExpiryDate = validBatches[0].expiryDate;
+        effectiveStock = validBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+        safeReserveStock = validBatches
+          .filter((b) => daysUntil(b.expiryDate) > 90)
+          .reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+      } else {
+        const sortedActive = [...activeBatches].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+        effectiveExpiryDate = sortedActive[0].expiryDate;
+        effectiveStock = 0;
+      }
+    } else {
+      if (daysUntil(medicine.expiryDate) > 90) {
+        safeReserveStock = effectiveStock;
+      }
+    }
+
+    const reorderLevel = Math.max(1, numeric(medicine.reorderLevel));
+    const expiryDays = daysUntil(effectiveExpiryDate);
+
+    if (effectiveStock <= 0 && expiryDays < 0) {
+      return { key: "expired", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
+    }
+
+    if (effectiveStock <= 0) {
       return { key: "out-of-stock", label: "Out of Stock", tone: "danger", note: "No units on hand" };
     }
 
@@ -2192,15 +2313,18 @@
       return { key: "expired", label: "Expired", tone: "danger", note: `${Math.abs(expiryDays)} days overdue` };
     }
 
-    if (expiryDays <= 90) {
+    // Option A: If safe reserve stock is at or below reorder level and earliest batch expires in <= 90 days,
+    // the medicine will soon drop below alert level upon expiry -> Expiring Soon.
+    // If safe reserve stock is well above reorder level (> reorderLevel), overall status remains Healthy!
+    if (expiryDays <= 90 && safeReserveStock <= reorderLevel) {
       return { key: "expiring-soon", label: "Expiring Soon", tone: "warning", note: `${expiryDays} days remaining` };
     }
 
-    if (stock <= Math.max(5, Math.round(reorderLevel * 0.5))) {
+    if (effectiveStock <= Math.max(5, Math.round(reorderLevel * 0.5))) {
       return { key: "critical", label: "Critical", tone: "danger", note: "Below half of reorder level" };
     }
 
-    if (stock <= reorderLevel) {
+    if (effectiveStock <= reorderLevel) {
       return { key: "low-stock", label: "Low Stock", tone: "warning", note: "At or below reorder level" };
     }
 
@@ -3261,7 +3385,8 @@
     const hasResident = Boolean(findResidentAccount(state.selectedResidentId));
     const itemsValid = state.dispenseItems.length > 0 && state.dispenseItems.every((item) => {
       const medicine = findMedicine(item.medicineId);
-      return medicine && item.quantity > 0 && item.quantity <= medicine.stockOnHand && !isExpiredMedicine(medicine);
+      const availableStock = getDispensableStock(medicine);
+      return medicine && item.quantity > 0 && item.quantity <= availableStock && !isExpiredMedicine(medicine);
     });
     const hasDetails = Boolean(text(getDispenseDiseaseCategoryValue())
       && text(getDispenseIllnessValue()));
@@ -3531,7 +3656,27 @@
     refs.dispenseMedicineResults.innerHTML = matches.map((medicine) => {
       const status = getStatus(medicine);
       const iconClass = getMedicineFormIconClass(medicine.form);
-      const batchLabel = text(medicine.batchNumber) && medicine.batchNumber !== "-" ? `Batch ${esc(medicine.batchNumber)}` : "";
+      const dispensableStock = getDispensableStock(medicine);
+      const dispensableBatches = getDispensableBatches(medicine);
+      const primaryDispenseBatch = dispensableBatches.length > 0 ? dispensableBatches[0] : null;
+      const batchLabel = primaryDispenseBatch
+        ? `Batch ${esc(primaryDispenseBatch.batchNumber)}`
+        : (text(medicine.batchNumber) && medicine.batchNumber !== "-" ? `Batch ${esc(medicine.batchNumber)}` : "");
+
+      const primaryDays = primaryDispenseBatch ? daysUntil(primaryDispenseBatch.expiryDate) : Number.POSITIVE_INFINITY;
+      const expiringNotice = (primaryDays >= 0 && primaryDays <= 90)
+        ? `<span class="staff-med-chip staff-med-chip--expiring-soon" title="Batch ${esc(primaryDispenseBatch?.batchNumber)} expires in ${primaryDays} days"><i class="bi bi-clock-history me-1"></i>Expiring Soon (${primaryDays}d left)</span>`
+        : "";
+
+      const medBatches = (medicine.batches && medicine.batches.length)
+        ? medicine.batches
+        : (state.inventoryBatches || []).filter((b) => b.medicineId === medicine.id);
+      const expiredBatches = medBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0 && daysUntil(b.expiryDate) < 0);
+      const expiredQty = expiredBatches.reduce((sum, b) => sum + numeric(b.quantityRemaining), 0);
+      const expiredNotice = expiredQty > 0 && dispensableStock > 0
+        ? `<span class="staff-med-chip staff-med-chip--expired-notice" title="${formatNumber(expiredQty)} ${esc(medicine.unit)} expired in another batch; quarantined from dispensing"><i class="bi bi-exclamation-triangle me-1"></i>${formatNumber(expiredQty)} expired (quarantined)</span>`
+        : "";
+
       return `
         <button type="button" class="staff-medicine-result" data-dispense-medicine-id="${esc(medicine.id)}">
           <div class="staff-medicine-result__main">
@@ -3543,12 +3688,14 @@
                 ${medicine.form ? `<span class="staff-med-chip staff-med-chip--form">${esc(medicine.form)}</span>` : ""}
                 ${medicine.genericName ? `<span class="staff-med-generic">${esc(medicine.genericName)}</span>` : ""}
                 ${batchLabel ? `<span class="staff-med-batch">${batchLabel}</span>` : ""}
+                ${expiringNotice}
+                ${expiredNotice}
               </div>
             </div>
           </div>
           <div class="staff-medicine-result__tail">
             <div class="staff-medicine-stock-block">
-              <strong class="staff-medicine-stock-num">${esc(formatNumber(medicine.stockOnHand))}</strong>
+              <strong class="staff-medicine-stock-num">${esc(formatNumber(dispensableStock))}</strong>
               <small class="staff-medicine-stock-unit">${esc(medicine.unit)}</small>
             </div>
             <span class="${esc(stockStatusChipClass(status.tone))}">${esc(status.label)}</span>
@@ -4070,24 +4217,72 @@
       medicine.stockOnHand = stockAfter;
       medicine.lastUpdatedAt = createdAt;
       medicine.updatedBy = `${releasedByRole}: ${releasedByName}`;
+
+      let remainingToDeduct = quantity;
+      let primaryBatchId = "";
+      let primaryBatchNumber = medicine.batchNumber || "";
+      let primaryBatchExpiry = medicine.expiryDate || "";
+      const affectedBatchesDesc = [];
+
+      const activeBatches = getDispensableBatches(medicine);
+
+      if (activeBatches.length > 0) {
+        primaryBatchId = activeBatches[0].id;
+        primaryBatchNumber = activeBatches[0].batchNumber;
+        primaryBatchExpiry = activeBatches[0].expiryDate;
+      }
+
+      for (const batch of activeBatches) {
+        if (remainingToDeduct <= 0) break;
+        const deduct = Math.min(remainingToDeduct, batch.quantityRemaining);
+        batch.quantityRemaining -= deduct;
+        if (batch.quantityRemaining <= 0) {
+          batch.status = "exhausted";
+        }
+        batch.updatedAt = createdAt;
+        remainingToDeduct -= deduct;
+        affectedBatchesDesc.push(`${batch.batchNumber} (${formatNumber(deduct)} ${medicine.unit})`);
+
+        const matchingGlobal = (state.inventoryBatches || []).find((gb) => gb.id === batch.id);
+        if (matchingGlobal) {
+          matchingGlobal.quantityRemaining = batch.quantityRemaining;
+          matchingGlobal.status = batch.status;
+          matchingGlobal.updatedAt = createdAt;
+        }
+      }
+
+      const activeBatchesAfter = activeBatches.filter((b) => b.status === "active" && numeric(b.quantityRemaining) > 0);
+      if (activeBatchesAfter.length > 0) {
+        medicine.batchNumber = activeBatchesAfter[0].batchNumber;
+        medicine.expiryDate = activeBatchesAfter[0].expiryDate;
+      }
+      medicine.activeBatchesCount = activeBatchesAfter.length;
+
+      const batchSummaryNote = affectedBatchesDesc.length > 1
+        ? ` [Batches: ${affectedBatchesDesc.join(", ")}]`
+        : (primaryBatchNumber ? ` [Batch: ${primaryBatchNumber}]` : "");
+
       state.movements.unshift(normalizeMovement({
-      medicineId: medicine.id,
-      medicineName: medicineLabel(medicine),
-      actionType: "dispense",
-      quantity,
-      diseaseCategory,
-      illness,
-      stockBefore,
-      stockAfter,
-      note: `Dispensed for ${illness} to ${resident.fullName}${resident.residentId ? ` (${resident.residentId})` : ""}.`,
-      createdAt,
-      user: releasedByName,
-      recipientId: resident.residentId,
-      recipientName: resident.fullName,
-      recipientBarangay: resident.barangay,
-      releasedByRole,
-      releasedByName,
-      releasedByUserId: dispenseActor.user.id
+        medicineId: medicine.id,
+        medicineName: medicineLabel(medicine),
+        batchId: primaryBatchId,
+        batchNumber: primaryBatchNumber,
+        batchExpiry: primaryBatchExpiry,
+        actionType: "dispense",
+        quantity,
+        diseaseCategory,
+        illness,
+        stockBefore,
+        stockAfter,
+        note: `Dispensed for ${illness} to ${resident.fullName}${resident.residentId ? ` (${resident.residentId})` : ""}.${batchSummaryNote}`,
+        createdAt,
+        user: releasedByName,
+        recipientId: resident.residentId,
+        recipientName: resident.fullName,
+        recipientBarangay: resident.barangay,
+        releasedByRole,
+        releasedByName,
+        releasedByUserId: dispenseActor.user.id
       }));
     });
 

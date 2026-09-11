@@ -547,13 +547,57 @@ function mss_state_fetch_logs(PDO $pdo, ?array $viewer = null): array
 /**
  * @return array<int, array<string, mixed>>
  */
-function mss_state_fetch_inventory(PDO $pdo): array
+function mss_state_fetch_inventory_batches(PDO $pdo): array
 {
-    $rows = $pdo->query('SELECT * FROM `mss_inventory_records` ORDER BY `last_updated_at` DESC, `name` ASC')->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $pdo->query('SELECT * FROM `mss_inventory_batches` ORDER BY `expiry_date` ASC, `created_at` ASC');
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     return array_map(static function (array $row): array {
         return [
             'id' => mss_state_text($row['id'] ?? ''),
+            'medicineId' => mss_state_text($row['medicine_id'] ?? ''),
+            'batchNumber' => mss_state_text($row['batch_number'] ?? ''),
+            'expiryDate' => mss_state_text($row['expiry_date'] ?? ''),
+            'quantityReceived' => mss_state_int($row['quantity_received'] ?? 0),
+            'quantityRemaining' => mss_state_int($row['quantity_remaining'] ?? 0),
+            'receivedDate' => mss_state_text($row['received_date'] ?? ''),
+            'sourceType' => mss_state_text($row['source_type'] ?? 'initial'),
+            'sourceReference' => mss_state_text($row['source_reference'] ?? ''),
+            'status' => mss_state_text($row['status'] ?? 'active'),
+            'createdAt' => str_replace(' ', 'T', mss_state_text($row['created_at'] ?? '')),
+            'updatedAt' => str_replace(' ', 'T', mss_state_text($row['updated_at'] ?? '')),
+        ];
+    }, $rows);
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function mss_state_fetch_inventory(PDO $pdo): array
+{
+    $rows = $pdo->query('SELECT * FROM `mss_inventory_records` ORDER BY `last_updated_at` DESC, `name` ASC')->fetchAll(PDO::FETCH_ASSOC);
+    $allBatches = mss_state_fetch_inventory_batches($pdo);
+    $batchesByMed = [];
+    foreach ($allBatches as $b) {
+        $batchesByMed[$b['medicineId']][] = $b;
+    }
+
+    return array_map(static function (array $row) use ($batchesByMed): array {
+        $medId = mss_state_text($row['id'] ?? '');
+        $medBatches = $batchesByMed[$medId] ?? [];
+        $activeBatches = array_values(array_filter($medBatches, static function (array $b): bool {
+            return ($b['status'] ?? '') === 'active' && ($b['quantityRemaining'] ?? 0) > 0;
+        }));
+
+        $effectiveBatchNumber = mss_state_text($row['batch_number'] ?? '');
+        $effectiveExpiryDate = mss_state_text($row['expiry_date'] ?? '');
+        if (!empty($activeBatches)) {
+            $effectiveBatchNumber = $activeBatches[0]['batchNumber'] ?: $effectiveBatchNumber;
+            $effectiveExpiryDate = $activeBatches[0]['expiryDate'] ?: $effectiveExpiryDate;
+        }
+
+        return [
+            'id' => $medId,
             'name' => mss_state_text($row['name'] ?? ''),
             'genericName' => mss_state_text($row['generic_name'] ?? ''),
             'category' => mss_state_text($row['category'] ?? ''),
@@ -562,12 +606,14 @@ function mss_state_fetch_inventory(PDO $pdo): array
             'stockOnHand' => mss_state_int($row['stock_on_hand'] ?? 0),
             'reorderLevel' => mss_state_int($row['reorder_level'] ?? 1, 1),
             'unit' => mss_state_text($row['unit'] ?? ''),
-            'batchNumber' => mss_state_text($row['batch_number'] ?? ''),
-            'expiryDate' => mss_state_text($row['expiry_date'] ?? ''),
+            'batchNumber' => $effectiveBatchNumber,
+            'expiryDate' => $effectiveExpiryDate,
             'recordStatus' => mss_state_inventory_record_status($row['record_status'] ?? 'active'),
             'unitCost' => (float) ($row['unit_cost'] ?? 0),
             'updatedBy' => mss_state_text($row['updated_by'] ?? ''),
             'lastUpdatedAt' => str_replace(' ', 'T', mss_state_text($row['last_updated_at'] ?? '')),
+            'batches' => $medBatches,
+            'activeBatchesCount' => count($activeBatches),
         ];
     }, $rows);
 }
@@ -596,6 +642,9 @@ function mss_state_fetch_movements(PDO $pdo, ?array $viewer = null): array
             'id' => mss_state_text($row['id'] ?? ''),
             'medicineId' => mss_state_text($row['medicine_id'] ?? ''),
             'medicineName' => mss_state_text($row['medicine_name'] ?? ''),
+            'batchId' => mss_state_text($row['batch_id'] ?? ''),
+            'batchNumber' => mss_state_text($row['batch_number'] ?? ''),
+            'batchExpiry' => mss_state_text($row['batch_expiry'] ?? ''),
             'actionType' => mss_state_text($row['action_type'] ?? ''),
             'quantity' => mss_state_int($row['quantity'] ?? 0),
             'diseaseCategory' => mss_state_text($row['disease_category'] ?? ''),
@@ -1349,6 +1398,86 @@ function mss_state_replace_inventory(PDO $pdo, array $rows): void
             ':last_updated_at' => mss_state_datetime($row['lastUpdatedAt'] ?? $row['last_updated_at'] ?? '', date('Y-m-d H:i:s')),
         ]);
     }
+
+    $pdo->exec(
+        "INSERT INTO `mss_inventory_batches`
+           (`id`, `medicine_id`, `batch_number`, `expiry_date`, `quantity_received`, `quantity_remaining`, `received_date`, `source_type`, `source_reference`, `status`, `created_at`, `updated_at`)
+         SELECT
+           CONCAT('batch_init_', MD5(CONCAT(m.`id`, '_', COALESCE(m.`batch_number`, 'init')))) AS `id`,
+           m.`id` AS `medicine_id`,
+           CASE WHEN TRIM(COALESCE(m.`batch_number`, '')) IN ('', '-') THEN 'INITIAL-BATCH' ELSE TRIM(m.`batch_number`) END AS `batch_number`,
+           COALESCE(m.`expiry_date`, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR)) AS `expiry_date`,
+           m.`stock_on_hand` AS `quantity_received`,
+           m.`stock_on_hand` AS `quantity_remaining`,
+           COALESCE(DATE(m.`last_updated_at`), CURRENT_DATE) AS `received_date`,
+           'initial' AS `source_type`,
+           'Initial stock creation' AS `source_reference`,
+           CASE WHEN m.`stock_on_hand` <= 0 THEN 'exhausted' ELSE 'active' END AS `status`,
+           COALESCE(m.`last_updated_at`, NOW()) AS `created_at`,
+           COALESCE(m.`last_updated_at`, NOW()) AS `updated_at`
+         FROM `mss_inventory_records` m
+         WHERE NOT EXISTS (
+           SELECT 1 FROM `mss_inventory_batches` b WHERE b.`medicine_id` = m.`id`
+         )"
+    );
+}
+
+function mss_state_replace_inventory_batches(PDO $pdo, array $rows): void
+{
+    if ($rows === []) {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO `mss_inventory_batches`
+            (`id`, `medicine_id`, `batch_number`, `expiry_date`, `quantity_received`, `quantity_remaining`, `received_date`, `source_type`, `source_reference`, `status`, `created_at`, `updated_at`)
+         VALUES
+            (:id, :medicine_id, :batch_number, :expiry_date, :quantity_received, :quantity_remaining, :received_date, :source_type, :source_reference, :status, :created_at, :updated_at)
+         ON DUPLICATE KEY UPDATE
+            `batch_number` = VALUES(`batch_number`),
+            `expiry_date` = VALUES(`expiry_date`),
+            `quantity_received` = VALUES(`quantity_received`),
+            `quantity_remaining` = VALUES(`quantity_remaining`),
+            `received_date` = VALUES(`received_date`),
+            `source_type` = VALUES(`source_type`),
+            `source_reference` = VALUES(`source_reference`),
+            `status` = VALUES(`status`),
+            `updated_at` = VALUES(`updated_at`)'
+    );
+
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $id = mss_state_text($row['id'] ?? '');
+        $medId = mss_state_text($row['medicineId'] ?? $row['medicine_id'] ?? '');
+        if ($id === '' || $medId === '') {
+            continue;
+        }
+
+        $qtyRec = mss_state_int($row['quantityReceived'] ?? $row['quantity_received'] ?? 0);
+        $qtyRem = mss_state_int($row['quantityRemaining'] ?? $row['quantity_remaining'] ?? 0);
+        $status = mss_state_text($row['status'] ?? 'active') ?: 'active';
+        if ($qtyRem <= 0 && $status === 'active') {
+            $status = 'exhausted';
+        }
+
+        $stmt->execute([
+            ':id' => $id,
+            ':medicine_id' => $medId,
+            ':batch_number' => mss_state_text($row['batchNumber'] ?? $row['batch_number'] ?? '-') ?: '-',
+            ':expiry_date' => mss_state_date($row['expiryDate'] ?? $row['expiry_date'] ?? '', date('Y-m-d', strtotime('+1 year'))),
+            ':quantity_received' => $qtyRec,
+            ':quantity_remaining' => max(0, $qtyRem),
+            ':received_date' => mss_state_date($row['receivedDate'] ?? $row['received_date'] ?? '', date('Y-m-d')),
+            ':source_type' => mss_state_text($row['sourceType'] ?? $row['source_type'] ?? 'initial') ?: 'initial',
+            ':source_reference' => mss_state_text($row['sourceReference'] ?? $row['source_reference'] ?? ''),
+            ':status' => $status,
+            ':created_at' => mss_state_datetime($row['createdAt'] ?? $row['created_at'] ?? '', date('Y-m-d H:i:s')),
+            ':updated_at' => mss_state_datetime($row['updatedAt'] ?? $row['updated_at'] ?? '', date('Y-m-d H:i:s')),
+        ]);
+    }
 }
 
 function mss_state_replace_movements(PDO $pdo, array $rows, array $actor): void
@@ -1362,9 +1491,9 @@ function mss_state_replace_movements(PDO $pdo, array $rows, array $actor): void
 
     $stmt = $pdo->prepare(
         'INSERT INTO `mss_inventory_movements`
-            (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `released_by_user_id`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
+            (`id`, `medicine_id`, `medicine_name`, `batch_id`, `batch_number`, `batch_expiry`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `released_by_user_id`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
          VALUES
-            (:id, :medicine_id, :medicine_name, :action_type, :quantity, :disease_category, :illness, :note, :stock_before, :stock_after, :created_at, :user_name, :recipient_id, :recipient_name, :recipient_barangay, :released_by_role, :released_by_name, :released_by_user_id, :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
+            (:id, :medicine_id, :medicine_name, :batch_id, :batch_number, :batch_expiry, :action_type, :quantity, :disease_category, :illness, :note, :stock_before, :stock_after, :created_at, :user_name, :recipient_id, :recipient_name, :recipient_barangay, :released_by_role, :released_by_name, :released_by_user_id, :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
     );
 
     foreach ($rows as $row) {
@@ -1404,6 +1533,9 @@ function mss_state_replace_movements(PDO $pdo, array $rows, array $actor): void
             ':id' => $id,
             ':medicine_id' => mss_state_text($row['medicineId'] ?? $row['medicine_id'] ?? ''),
             ':medicine_name' => mss_state_text($row['medicineName'] ?? $row['medicine_name'] ?? ''),
+            ':batch_id' => mss_state_text($row['batchId'] ?? $row['batch_id'] ?? ''),
+            ':batch_number' => mss_state_text($row['batchNumber'] ?? $row['batch_number'] ?? ''),
+            ':batch_expiry' => mss_state_date($row['batchExpiry'] ?? $row['batch_expiry'] ?? '', null),
             ':action_type' => $actionType,
             ':quantity' => mss_state_int($row['quantity'] ?? 0),
             ':disease_category' => mss_state_text($row['diseaseCategory'] ?? $row['disease_category'] ?? ''),
@@ -2169,15 +2301,62 @@ function mss_state_receive_cho_delivery(PDO $pdo, array $input, array $actor): a
     $actorUsername = mss_state_text($actor['username'] ?? '') ?: 'admin';
     $medicineLabel = trim(mss_state_text($medicine['name'] ?? '') . ' ' . mss_state_text($medicine['strength'] ?? ''));
 
+    $batchNumber = mss_state_text($input['batchNumber'] ?? $input['batch_number'] ?? '');
+    if ($batchNumber === '') {
+        $batchNumber = 'CHO-' . date('Y') . '-' . substr($operationId, -4);
+    }
+    $expiryDate = mss_state_date($input['expiryDate'] ?? $input['expiry_date'] ?? '', null);
+    if ($expiryDate === null) {
+        $expiryDate = date('Y-m-d', strtotime('+18 months'));
+    }
+
+    $batchId = 'batch_' . mss_state_uid('batch');
+    $insertBatch = $pdo->prepare(
+        'INSERT INTO `mss_inventory_batches`
+            (`id`, `medicine_id`, `batch_number`, `expiry_date`, `quantity_received`, `quantity_remaining`, `received_date`, `source_type`, `source_reference`, `status`, `created_at`, `updated_at`)
+         VALUES
+            (:id, :medicine_id, :batch_number, :expiry_date, :quantity_received, :quantity_remaining, :received_date, :source_type, :source_reference, :status, :created_at, :updated_at)'
+    );
+    $insertBatch->execute([
+        ':id' => $batchId,
+        ':medicine_id' => $medicineId,
+        ':batch_number' => $batchNumber,
+        ':expiry_date' => $expiryDate,
+        ':quantity_received' => $quantity,
+        ':quantity_remaining' => $quantity,
+        ':received_date' => $actionDate,
+        ':source_type' => 'cho_delivery',
+        ':source_reference' => $requestCode,
+        ':status' => 'active',
+        ':created_at' => $recordedAt,
+        ':updated_at' => $recordedAt,
+    ]);
+
+    $earliestBatchStmt = $pdo->prepare(
+        'SELECT `batch_number`, `expiry_date`
+         FROM `mss_inventory_batches`
+         WHERE `medicine_id` = :medicine_id AND `status` = "active" AND `quantity_remaining` > 0
+         ORDER BY `expiry_date` ASC, `created_at` ASC
+         LIMIT 1'
+    );
+    $earliestBatchStmt->execute([':medicine_id' => $medicineId]);
+    $earliestBatch = $earliestBatchStmt->fetch(PDO::FETCH_ASSOC);
+    $effectiveBatchNumber = (is_array($earliestBatch) && !empty($earliestBatch['batch_number'])) ? $earliestBatch['batch_number'] : $medicine['batch_number'];
+    $effectiveExpiryDate = (is_array($earliestBatch) && !empty($earliestBatch['expiry_date'])) ? $earliestBatch['expiry_date'] : $medicine['expiry_date'];
+
     $updateInventory = $pdo->prepare(
         'UPDATE `mss_inventory_records`
          SET `stock_on_hand` = :stock_after,
+             `batch_number` = :batch_number,
+             `expiry_date` = :expiry_date,
              `updated_by` = :updated_by,
              `last_updated_at` = :updated_at
          WHERE `id` = :medicine_id'
     );
     $updateInventory->execute([
         ':stock_after' => $stockAfter,
+        ':batch_number' => $effectiveBatchNumber,
+        ':expiry_date' => $effectiveExpiryDate,
         ':updated_by' => $actorName,
         ':updated_at' => $recordedAt,
         ':medicine_id' => $medicineId,
@@ -2185,14 +2364,17 @@ function mss_state_receive_cho_delivery(PDO $pdo, array $input, array $actor): a
 
     $insertMovement = $pdo->prepare(
         'INSERT INTO `mss_inventory_movements`
-            (`id`, `medicine_id`, `medicine_name`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
+            (`id`, `medicine_id`, `medicine_name`, `batch_id`, `batch_number`, `batch_expiry`, `action_type`, `quantity`, `disease_category`, `illness`, `note`, `stock_before`, `stock_after`, `created_at`, `user_name`, `recipient_id`, `recipient_name`, `recipient_barangay`, `released_by_role`, `released_by_name`, `linked_request_id`, `linked_request_item_id`, `linked_request_group_id`, `linked_request_code`)
          VALUES
-            (:id, :medicine_id, :medicine_name, \'restock\', :quantity, \'\', \'\', :note, :stock_before, :stock_after, :created_at, :user_name, \'\', \'\', \'\', \'\', \'\', :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
+            (:id, :medicine_id, :medicine_name, :batch_id, :batch_number, :batch_expiry, \'restock\', :quantity, \'\', \'\', :note, :stock_before, :stock_after, :created_at, :user_name, \'\', \'\', \'\', \'\', \'\', :linked_request_id, :linked_request_item_id, :linked_request_group_id, :linked_request_code)'
     );
     $insertMovement->execute([
         ':id' => $operationId,
         ':medicine_id' => $medicineId,
         ':medicine_name' => $medicineLabel,
+        ':batch_id' => $batchId,
+        ':batch_number' => $batchNumber,
+        ':batch_expiry' => $expiryDate,
         ':quantity' => $quantity,
         ':note' => $movementNote,
         ':stock_before' => $stockBefore,
@@ -2222,6 +2404,7 @@ function mss_state_receive_cho_delivery(PDO $pdo, array $input, array $actor): a
         ':username' => $actorUsername,
         ':target' => $medicineLabel,
         ':details' => $quantity . ' ' . $inventoryUnit . ' received for ' . $medicineLabel
+            . ' (Batch: ' . $batchNumber . ', Expiry: ' . $expiryDate . ')'
             . '. Stock updated from ' . $stockBefore . ' to ' . $stockAfter . ' ' . $inventoryUnit
             . '. Linked to ' . $requestCode . '. ' . $progressText,
         ':ip_address' => mss_api_client_ip(),
@@ -2237,6 +2420,9 @@ function mss_state_receive_cho_delivery(PDO $pdo, array $input, array $actor): a
             'requestCode' => $requestCode,
             'medicineId' => $medicineId,
             'medicineName' => $medicineLabel,
+            'batchId' => $batchId,
+            'batchNumber' => $batchNumber,
+            'expiryDate' => $expiryDate,
             'unit' => $inventoryUnit,
             'quantityReceived' => $quantity,
             'actionDate' => $actionDate,
@@ -2256,6 +2442,7 @@ function mss_state_receive_response_state(PDO $pdo): array
     return [
         'logs' => mss_state_fetch_logs($pdo),
         'inventory' => mss_state_fetch_inventory($pdo),
+        'inventoryBatches' => mss_state_fetch_inventory_batches($pdo),
         'movements' => mss_state_fetch_movements($pdo),
         'requests' => mss_state_fetch_requests($pdo),
     ];
@@ -2273,6 +2460,7 @@ function mss_state_client_state(PDO $pdo, array $viewer): array
         'sessions' => mss_state_fetch_sessions($pdo, $viewer),
         'logs' => $isStaff ? [] : mss_state_fetch_logs($pdo),
         'inventory' => mss_state_fetch_inventory($pdo),
+        'inventoryBatches' => mss_state_fetch_inventory_batches($pdo),
         'movements' => mss_state_fetch_movements($pdo, $viewer),
         'residentAccounts' => mss_state_fetch_residents($pdo, $viewer),
         'requests' => mss_state_fetch_requests($pdo),
@@ -2383,6 +2571,9 @@ try {
             mss_state_collection($payload, 'inventoryExpectedVersions', ['inventory_expected_versions'])
         );
         mss_state_replace_inventory($pdo, mss_state_collection($payload, 'inventory'));
+    }
+    if (mss_state_has_collection($payload, 'inventoryBatches', ['inventory_batches', 'batches'])) {
+        mss_state_replace_inventory_batches($pdo, mss_state_collection($payload, 'inventoryBatches', ['inventory_batches', 'batches']));
     }
     if (mss_state_has_collection($payload, 'movements')) {
         if ($currentUserRole === 'admin') {

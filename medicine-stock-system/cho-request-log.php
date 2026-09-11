@@ -153,91 +153,195 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="requestForm" class="inventory-form-grid">
+          <form id="requestForm" class="request-wizard-form">
             <input type="hidden" id="requestId">
 
-            <section class="col-span-2 request-form-section" aria-labelledby="requestMedicinesTitle">
-              <div class="request-section-heading">
-                <span class="request-step-number" aria-hidden="true">1</span>
+            <!-- WIZARD STEPPER -->
+            <div class="request-wizard-stepper" id="requestWizardStepper" role="tablist" aria-label="Request process steps">
+              <button type="button" class="request-wizard-step is-active" data-wizard-step="1" role="tab" aria-selected="true">
+                <span class="request-wizard-step__badge">1</span>
+                <span class="request-wizard-step__text">
+                  <span class="request-wizard-step__title">Select Medicines</span>
+                  <span class="request-wizard-step__sub">Step 1</span>
+                </span>
+              </button>
+              <div class="request-wizard-step__connector" aria-hidden="true"></div>
+              <button type="button" class="request-wizard-step" data-wizard-step="2" role="tab" aria-selected="false">
+                <span class="request-wizard-step__badge">2</span>
+                <span class="request-wizard-step__text">
+                  <span class="request-wizard-step__title">Set Quantities</span>
+                  <span class="request-wizard-step__sub">Step 2</span>
+                </span>
+              </button>
+              <div class="request-wizard-step__connector" aria-hidden="true"></div>
+              <button type="button" class="request-wizard-step" data-wizard-step="3" role="tab" aria-selected="false">
+                <span class="request-wizard-step__badge">3</span>
+                <span class="request-wizard-step__text">
+                  <span class="request-wizard-step__title">Schedule & Review</span>
+                  <span class="request-wizard-step__sub">Step 3</span>
+                </span>
+              </button>
+            </div>
+
+            <!-- STEP 1: SELECT MEDICINES -->
+            <section class="request-wizard-pane is-active" data-wizard-pane="1" aria-labelledby="requestStep1Title">
+              <div class="request-pane-header">
                 <div>
-                  <h6 id="requestMedicinesTitle">Add medicines</h6>
-                  <p>Search the inventory and add each medicine to this request.</p>
+                  <h6 id="requestStep1Title" class="request-pane-title">Select Medicines</h6>
+                  <p class="request-pane-desc">Check the medicines you want to request. Use search or filter tabs to quickly find items.</p>
                 </div>
               </div>
 
               <div class="request-medicine-picker" id="requestMedicinePicker">
-                <label for="requestMedicineSearch" class="form-label">Search medicine</label>
+                <div class="request-medicine-picker__header">
+                  <label for="requestMedicineSearch" class="form-label mb-0">Search &amp; Filter Medicines</label>
+                  <div class="request-filter-tabs" id="requestFilterTabs" role="tablist" aria-label="Filter inventory medicines">
+                    <button type="button" class="request-filter-tab is-active" data-picker-filter="all" role="tab" aria-selected="true">
+                      All (<span id="pickerFilterAllCount">0</span>)
+                    </button>
+                    <button type="button" class="request-filter-tab request-filter-tab--low" data-picker-filter="low" role="tab" aria-selected="false">
+                      <i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Low Stock (<span id="pickerFilterLowCount">0</span>)
+                    </button>
+                    <button type="button" class="request-filter-tab request-filter-tab--expiring" data-picker-filter="expiring" role="tab" aria-selected="false">
+                      <i class="bi bi-clock-history" aria-hidden="true"></i> Expiring (<span id="pickerFilterExpCount">0</span>)
+                    </button>
+                  </div>
+                </div>
                 <div class="request-medicine-search">
                   <i class="bi bi-search" aria-hidden="true"></i>
                   <input
                     type="search"
                     id="requestMedicineSearch"
                     class="form-control"
-                    placeholder="Type a medicine or generic name"
+                    placeholder="Type a medicine name, generic, category..."
                     autocomplete="off"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-controls="requestMedicineResults"
-                    aria-expanded="false"
                   >
-                  <span class="request-medicine-search__hint">Select from inventory</span>
                 </div>
-                <div id="requestMedicineResults" class="request-medicine-results d-none" role="listbox" aria-label="Available medicines" aria-multiselectable="true"></div>
+                <div id="requestMedicineResults" class="request-medicine-checklist" role="group" aria-label="Available medicines checklist"></div>
               </div>
 
-              <div class="request-selected-heading">
+              <div class="request-chips-section">
+                <div class="request-chips-header">
+                  <div>
+                    <h6 class="request-chips-title mb-0">Selected Medicines</h6>
+                    <span class="text-muted request-chips-sub">Click &times; to remove any medicine.</span>
+                  </div>
+                  <span class="request-selected-count" id="requestChipsCount">0 selected</span>
+                </div>
+
+                <div id="requestChipsContainer" class="request-chips-container"></div>
+                <div id="requestChipsEmpty" class="request-chips-empty">
+                  <span><i class="bi bi-capsule-pill" aria-hidden="true"></i></span>
+                  <div>
+                    <strong>No medicines selected yet</strong>
+                    <p>Use the search bar above to add medicines to this request.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- STEP 2: SET QUANTITIES -->
+            <section class="request-wizard-pane d-none" data-wizard-pane="2" aria-labelledby="requestStep2Title">
+              <div class="request-pane-header">
                 <div>
-                  <h6>Selected medicines</h6>
-                  <p id="requestItemsStatus">Add at least one medicine to continue.</p>
+                  <h6 id="requestStep2Title" class="request-pane-title">Set Quantities</h6>
+                  <p class="request-pane-desc" id="requestItemsStatus">Specify the quantity needed for each selected medicine.</p>
                 </div>
                 <span class="request-selected-count" id="requestItemCount">0 selected</span>
               </div>
 
               <div id="requestItemsContainer" class="request-items-list"></div>
-              <div id="requestItemsEmpty" class="request-items-empty">
+              <div id="requestItemsEmpty" class="request-items-empty d-none">
                 <span><i class="bi bi-capsule-pill" aria-hidden="true"></i></span>
                 <div>
-                  <strong>No medicines added yet</strong>
-                  <p>Use the search field above to start your request.</p>
+                  <strong>No medicines selected</strong>
+                  <p>Go back to Step 1 to select medicines.</p>
                 </div>
               </div>
             </section>
 
-            <section class="col-span-2 request-form-section request-schedule-section" aria-labelledby="requestScheduleTitle">
-              <div class="request-section-heading">
-                <span class="request-step-number" aria-hidden="true">2</span>
+            <!-- STEP 3: SCHEDULE & SUMMARY REVIEW -->
+            <section class="request-wizard-pane d-none" data-wizard-pane="3" aria-labelledby="requestStep3Title">
+              <div class="request-pane-header">
                 <div>
-                  <h6 id="requestScheduleTitle">Delivery schedule</h6>
-                  <p>Confirm when the request is made and when delivery is expected.</p>
+                  <h6 id="requestStep3Title" class="request-pane-title">Delivery Schedule & Summary</h6>
+                  <p class="request-pane-desc">Review the full request before submitting to CHO.</p>
                 </div>
               </div>
 
               <div class="request-date-grid">
                 <div>
-                  <label for="requestDate" class="form-label">Request date</label>
+                  <label for="requestDate" class="form-label">Request Date</label>
                   <input type="date" id="requestDate" class="form-control" required>
-                  <small>Defaults to today's date.</small>
+                  <small>Current submission date.</small>
                 </div>
 
                 <div>
-                  <label for="requestExpectedDate" class="form-label">Expected delivery date</label>
+                  <label for="requestExpectedDate" class="form-label">Expected Delivery Date</label>
                   <input type="date" id="requestExpectedDate" class="form-control" required>
                   <small>Must be on or after the request date.</small>
                 </div>
               </div>
+
+              <div class="request-review-card mt-3" id="requestReviewSummary">
+                <div class="request-review-card__header">
+                  <div class="request-review-card__title">
+                    <i class="bi bi-clipboard2-check"></i>
+                    <span>Request Summary</span>
+                  </div>
+                  <span class="request-review-pill" id="requestReviewItemBadge">0 Medicines</span>
+                </div>
+                <div class="request-review-card__body">
+                  <div class="request-review-metrics">
+                    <div class="request-review-metric">
+                      <span>Total Medicines</span>
+                      <strong id="requestReviewCount">0</strong>
+                    </div>
+                    <div class="request-review-metric">
+                      <span>Total Units</span>
+                      <strong id="requestReviewTotalQty">0</strong>
+                    </div>
+                    <div class="request-review-metric">
+                      <span>Expected Delivery</span>
+                      <strong id="requestReviewDateText">-</strong>
+                    </div>
+                  </div>
+
+                  <div class="request-review-list-wrapper">
+                    <table class="table request-review-table align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th scope="col">Medicine</th>
+                          <th scope="col" class="text-end">Quantity</th>
+                        </tr>
+                      </thead>
+                      <tbody id="requestReviewList">
+                        <tr><td colspan="2" class="text-muted text-center py-2">No details available.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </section>
 
-            <div id="requestFormFeedback" class="col-span-2 request-form-feedback d-none" role="alert"></div>
+            <div id="requestFormFeedback" class="request-form-feedback d-none mt-3" role="alert"></div>
 
-            <div class="col-span-2 inventory-form-actions request-form-actions">
-              <div class="request-form-summary" aria-live="polite">
+            <!-- WIZARD ACTIONS FOOTER -->
+            <div class="request-wizard-actions">
+              <div class="request-form-summary d-none" aria-live="polite">
                 <strong id="requestSummaryTitle">No medicines selected</strong>
                 <span id="requestSummaryText">Add medicine and quantity details to continue.</span>
               </div>
-              <div class="request-form-actions__buttons">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-primary" id="requestSubmitBtn" disabled>
-                  <i class="bi bi-send-check"></i><span id="requestSubmitBtnLabel">Submit Request</span>
+              <div class="request-wizard-actions__left">
+                <button type="button" class="btn btn-light" id="requestWizardPrevBtn">Cancel</button>
+              </div>
+              <div class="request-wizard-actions__right">
+                <button type="button" class="btn btn-primary" id="requestWizardNextBtn">
+                  <span id="requestWizardNextBtnLabel">Next: Set Quantities</span>
+                  <i class="bi bi-arrow-right ms-1"></i>
+                </button>
+                <button type="submit" class="btn btn-primary d-none" id="requestSubmitBtn" disabled>
+                  <i class="bi bi-send-check me-1"></i><span id="requestSubmitBtnLabel">Submit Request</span>
                 </button>
               </div>
             </div>
