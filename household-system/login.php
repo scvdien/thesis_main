@@ -338,7 +338,7 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   <footer>
     <div class="footer-copy">&copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved</div>
     <div class="app-version-badge text-center mt-2">
-      Household Registration App <span class="badge bg-secondary text-white ms-1">v<?= htmlspecialchars(CABARIAN_APP_VERSION, ENT_QUOTES, 'UTF-8') ?></span>
+      Cabarian Registration <span class="badge bg-secondary text-white ms-1">v<?= htmlspecialchars(CABARIAN_APP_VERSION, ENT_QUOTES, 'UTF-8') ?></span>
     </div>
   </footer>
 
