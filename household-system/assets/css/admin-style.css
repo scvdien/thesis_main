@@ -736,6 +736,11 @@ footer.footer {
   .sidebar-backdrop.show{
     display:block;
   }
+  #main{
+    margin-left:0 !important;
+    width:100%;
+    max-width:100%;
+  }
   body.sidebar-open{
     overflow:hidden;
   }

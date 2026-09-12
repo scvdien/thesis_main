@@ -39,7 +39,7 @@ if (dashboardLink && (resolvedRole === 'secretary' || resolvedRole === 'admin'))
 }
 
 const isAdminRole = resolvedRole === 'secretary' || resolvedRole === 'admin';
-const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
+const dashboardLabel = isAdminRole ? 'Secretary Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Settings | ${dashboardLabel}`;
 
 const settingsMenuLink = document.querySelector('.menu a[href="settings.php"]');

@@ -17,7 +17,7 @@ $isAdminRole = $authRole === AUTH_ROLE_ADMIN;
 $dashboardHref = $isAdminRole ? 'admin.php' : 'index.php';
 $householdsHref = $isAdminRole ? 'households.php?role=admin' : 'households.php';
 $settingsHref = $isAdminRole ? 'settings.php?role=admin' : 'settings.php';
-$dashboardLabel = $isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
+$dashboardLabel = $isAdminRole ? 'Secretary Dashboard' : 'Barangay Captain Dashboard';
 
 $barangayName = auth_env(['BARANGAY_NAME'], 'Barangay');
 $barangayCity = auth_env(['BARANGAY_CITY', 'CITY_NAME', 'MUNICIPALITY_NAME'], '');

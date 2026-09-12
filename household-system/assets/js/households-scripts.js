@@ -370,7 +370,7 @@ if (dashboardLink && canEdit) {
 }
 
 const isAdminRole = canEdit;
-const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
+const dashboardLabel = isAdminRole ? 'Secretary Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Households | ${dashboardLabel}`;
 
 const editModalEl = document.getElementById('editHouseholdModal');

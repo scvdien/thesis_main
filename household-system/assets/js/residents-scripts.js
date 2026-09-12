@@ -214,7 +214,7 @@ if (dashboardLink && (resolvedRole === 'secretary' || resolvedRole === 'admin'))
 }
 
 const isAdminRole = resolvedRole === 'secretary' || resolvedRole === 'admin';
-const dashboardLabel = isAdminRole ? 'Admin Dashboard' : 'Barangay Captain Dashboard';
+const dashboardLabel = isAdminRole ? 'Secretary Dashboard' : 'Barangay Captain Dashboard';
 document.title = `Residents | ${dashboardLabel}`;
 
 const refreshBtn = document.getElementById('refreshBtn');

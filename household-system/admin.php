@@ -48,7 +48,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Admin Dashboard</title>
+<title>Secretary Dashboard</title>
 <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
@@ -89,7 +89,7 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
       <div class="topbar">
         <div class="topbar-title-row d-flex align-items-center gap-3">
           <i class="bi bi-list toggle-btn" onclick="toggleSidebar()"></i>
-          <h4 class="mb-0 text-primary">Admin Dashboard</h4>
+          <h4 class="mb-0 text-primary">Secretary Dashboard</h4>
         </div>
         <div class="topbar-control-row">
           <select id="yearSelect" class="form-select d-inline w-auto"></select>

@@ -308,7 +308,7 @@ function users_api_module_name(string $role): string
 {
     return match (auth_normalize_role($role)) {
         AUTH_ROLE_CAPTAIN => 'Barangay Captain Dashboard',
-        AUTH_ROLE_ADMIN => 'Admin Dashboard',
+        AUTH_ROLE_ADMIN => 'Secretary Dashboard',
         AUTH_ROLE_STAFF => 'Registration Module',
         default => 'General Module',
     };
