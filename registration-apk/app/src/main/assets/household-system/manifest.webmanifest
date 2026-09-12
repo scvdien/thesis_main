@@ -1,6 +1,6 @@
 {
-  "name": "Household Registration Module",
-  "short_name": "Registration",
+  "name": "Cabarian Registration",
+  "short_name": "Cabarian Registration",
   "start_url": "./login.php",
   "scope": "./",
   "display": "standalone",

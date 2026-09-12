@@ -49,8 +49,8 @@ android {
         applicationId "online.cabarianportal.registration.v5"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 37
-        versionName "3.7"
+        versionCode 38
+        versionName "3.0"
 
         resValue "string", "appName", twaManifest.name
         resValue "string", "launcherName", twaManifest.launcherName

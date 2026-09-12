@@ -16,7 +16,7 @@ const AUTH_ROLE_SECRETARY = 'secretary';
 const AUTH_ROLE_CAPTAIN = 'captain';
 const AUTH_ROLE_STAFF = 'staff';
 
-const CABARIAN_APP_VERSION = '3.6';
+const CABARIAN_APP_VERSION = '3.0';
 
 /**
  * @return array<int, string>
