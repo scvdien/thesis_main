@@ -363,4 +363,41 @@
 
     await performOnlineLogin(false);
   });
+
+  // Mobile adaptive keyboard handler for smooth viewport transitions
+  (function initKeyboardAdaptive() {
+    const inputs = document.querySelectorAll('.form-control');
+    let blurTimer = null;
+
+    inputs.forEach(function (input) {
+      input.addEventListener('focus', function () {
+        if (blurTimer) clearTimeout(blurTimer);
+        document.body.classList.add('keyboard-open');
+      });
+
+      input.addEventListener('blur', function () {
+        blurTimer = setTimeout(function () {
+          const active = document.activeElement;
+          if (!active || !active.classList.contains('form-control')) {
+            document.body.classList.remove('keyboard-open');
+          }
+        }, 120);
+      });
+    });
+
+    if (window.visualViewport) {
+      let baseHeight = window.visualViewport.height;
+      window.visualViewport.addEventListener('resize', function () {
+        const currentHeight = window.visualViewport.height;
+        if (baseHeight - currentHeight > 150) {
+          document.body.classList.add('keyboard-open');
+        } else if (Math.abs(baseHeight - currentHeight) < 40) {
+          const active = document.activeElement;
+          if (!active || !active.classList.contains('form-control')) {
+            document.body.classList.remove('keyboard-open');
+          }
+        }
+      });
+    }
+  })();
 })();

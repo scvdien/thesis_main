@@ -596,6 +596,102 @@ footer{
     font-weight: 600;
     vertical-align: middle;
   }
+
+  /* Smooth layout transitions for keyboard appearance */
+  .brand-panel,
+  .form-panel,
+  .brand-title,
+  .brand-sub,
+  .mobile-card-logos img,
+  footer{
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Option B: Adaptive Mobile Keyboard Layout (clean 10px separation, no overlap) */
+  body.keyboard-open .brand-panel,
+  .login-shell:focus-within .brand-panel{
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
+    border-radius: 0 0 20px 20px;
+  }
+
+  body.keyboard-open .brand-title,
+  .login-shell:focus-within .brand-title{
+    font-size: 1.05rem;
+  }
+
+  body.keyboard-open .brand-sub,
+  .login-shell:focus-within .brand-sub{
+    font-size: 0.72rem;
+    margin-top: 2px;
+  }
+
+  body.keyboard-open .form-panel,
+  .login-shell:focus-within .form-panel{
+    margin: 10px auto auto auto;
+    padding: 16px 18px 14px;
+    gap: 10px;
+  }
+
+  body.keyboard-open .mobile-card-logos,
+  .login-shell:focus-within .mobile-card-logos{
+    gap: 12px;
+    margin-bottom: 0;
+  }
+
+  body.keyboard-open .mobile-card-logos img,
+  .login-shell:focus-within .mobile-card-logos img{
+    width: 38px;
+    height: 38px;
+  }
+
+  body.keyboard-open .form-head .eyebrow,
+  .login-shell:focus-within .form-head .eyebrow{
+    font-size: 0.68rem;
+  }
+
+  body.keyboard-open .form-head h2,
+  .login-shell:focus-within .form-head h2{
+    font-size: 1.15rem;
+    margin: 0;
+  }
+
+  body.keyboard-open .form-head p,
+  .login-shell:focus-within .form-head p{
+    display: none;
+  }
+
+  body.keyboard-open .login-form,
+  .login-shell:focus-within .login-form{
+    gap: 10px;
+  }
+
+  body.keyboard-open .form-control,
+  .login-shell:focus-within .form-control{
+    min-height: 44px;
+    font-size: 0.90rem;
+    padding: 8px 14px 8px 42px;
+  }
+
+  body.keyboard-open .btn-primary,
+  .login-shell:focus-within .btn-primary{
+    min-height: 44px;
+    font-size: 0.94rem;
+  }
+
+  body.keyboard-open .mobile-auth-note,
+  .login-shell:focus-within .mobile-auth-note{
+    display: none;
+  }
+
+  body.keyboard-open footer,
+  body:has(.form-control:focus) footer{
+    opacity: 0;
+    pointer-events: none;
+    max-height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+  }
 }
 
 @media (max-width: 480px){
