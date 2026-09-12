@@ -245,6 +245,10 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
       </section>
 
       <section class="form-panel reveal delay-2">
+        <div class="mobile-card-logos">
+          <img src="assets/img/barangay-cabarian-logo.png" alt="<?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
+          <img src="assets/img/ligao-city-logo.png" alt="<?= htmlspecialchars($accessAreaLabel, ENT_QUOTES, 'UTF-8') ?> Logo">
+        </div>
         <div class="form-head">
           <span class="eyebrow"><?= htmlspecialchars($panelEyebrow, ENT_QUOTES, 'UTF-8') ?></span>
           <h2><?= htmlspecialchars($panelHeading, ENT_QUOTES, 'UTF-8') ?></h2>
@@ -321,6 +325,10 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
             </div>
 
             <button id="loginBtn" class="btn btn-primary w-100" type="submit"><?= $setupRequired ? 'Create Secure Account' : 'Sign In' ?></button>
+            <div class="mobile-auth-note">
+              <i class="bi bi-shield-check"></i>
+              <span>Authorized Personnel Only</span>
+            </div>
           </form>
         <?php endif; ?>
       </section>
@@ -328,9 +336,9 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   </div>
 
   <footer>
-    <div>&copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved</div>
-    <div class="app-only-badge text-center mt-2" style="display: none; font-size: 0.78rem; color: #6c757d; font-weight: 500;">
-      Household Registration App <span class="badge bg-secondary text-white ms-1"><?= htmlspecialchars(CABARIAN_APP_VERSION, ENT_QUOTES, 'UTF-8') ?></span>
+    <div class="footer-copy">&copy; <?php echo date('Y'); ?> <?= htmlspecialchars(auth_footer_system_name(), ENT_QUOTES, 'UTF-8') ?> | All Rights Reserved</div>
+    <div class="app-version-badge text-center mt-2">
+      Household Registration App <span class="badge bg-secondary text-white ms-1">v<?= htmlspecialchars(CABARIAN_APP_VERSION, ENT_QUOTES, 'UTF-8') ?></span>
     </div>
   </footer>
 
