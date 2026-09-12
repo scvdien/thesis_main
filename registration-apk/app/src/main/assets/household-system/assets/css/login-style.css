@@ -607,11 +607,11 @@ footer{
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* Option B: Adaptive Mobile Keyboard Layout (clean 10px separation, no overlap) */
+  /* Option A: Adaptive Mobile Keyboard Layout (Overlapping / Nagpapatong sa Top Bar) */
   body.keyboard-open .brand-panel,
   .login-shell:focus-within .brand-panel{
-    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-    border-radius: 0 0 20px 20px;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 28px;
+    border-radius: 0 0 24px 24px;
   }
 
   body.keyboard-open .brand-title,
@@ -621,13 +621,13 @@ footer{
 
   body.keyboard-open .brand-sub,
   .login-shell:focus-within .brand-sub{
-    font-size: 0.72rem;
+    font-size: 0.74rem;
     margin-top: 2px;
   }
 
   body.keyboard-open .form-panel,
   .login-shell:focus-within .form-panel{
-    margin: 10px auto auto auto;
+    margin: -18px auto auto auto;
     padding: 16px 18px 14px;
     gap: 10px;
   }
