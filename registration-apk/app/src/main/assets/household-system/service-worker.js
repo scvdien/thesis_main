@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "registration-module";
-const CACHE_VERSION = "2026-09-13-v65";
+const CACHE_VERSION = "2026-09-13-v66";
 const STATIC_CACHE_NAME = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const PAGE_CACHE_NAME = `${CACHE_PREFIX}-pages-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`;
