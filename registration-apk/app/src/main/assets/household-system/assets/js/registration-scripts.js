@@ -1625,12 +1625,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     return writeArrayToStorage(key, [...preservedRecords, ...ownedRecords]);
   };
 
-  const getRegistrationRecords = () => readCurrentUserArray(REGISTRATION_RECORDS_KEY);
-  const setRegistrationRecords = (records) => writeCurrentUserArray(REGISTRATION_RECORDS_KEY, records);
+  const getRegistrationRecords = () => readArrayFromStorage(REGISTRATION_RECORDS_KEY);
+  const setRegistrationRecords = (records) => {
+    const normalized = (Array.isArray(records) ? records : []).filter((record) => record && typeof record === "object");
+    return writeArrayToStorage(REGISTRATION_RECORDS_KEY, normalized);
+  };
   const getSyncQueue = () => readCurrentUserArray(SYNC_QUEUE_KEY);
   const setSyncQueue = (queue) => writeCurrentUserArray(SYNC_QUEUE_KEY, queue);
   const getCachedHouseholdYears = () => Array.from(new Set(
-    readCurrentUserArray(HOUSEHOLD_YEARS_CACHE_KEY)
+    readArrayFromStorage(HOUSEHOLD_YEARS_CACHE_KEY)
       .map((item) => Number.parseInt(String(item?.year || ""), 10))
       .filter((year) => isValidRecordYear(year))
   )).sort((left, right) => right - left);
@@ -1640,7 +1643,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         .map((year) => Number.parseInt(String(year || ""), 10))
         .filter((year) => isValidRecordYear(year))
     )).sort((left, right) => right - left);
-    writeCurrentUserArray(
+    writeArrayToStorage(
       HOUSEHOLD_YEARS_CACHE_KEY,
       normalizedYears.map((year) => ({ year }))
     );
@@ -1933,10 +1936,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const targetId = String(householdId || "").trim();
     if (!targetId) return null;
 
-    const candidates = [
-      ...getRegistrationRecords().filter((item) => String(item?.household_id || "").trim() === targetId),
-      ...getSyncQueue().filter((item) => String(item?.household_id || "").trim() === targetId)
-    ]
+    const allRecords = [
+      ...readArrayFromStorage(REGISTRATION_RECORDS_KEY),
+      ...readArrayFromStorage(SYNC_QUEUE_KEY)
+    ];
+    const candidates = allRecords
+      .filter((item) => String(item?.household_id || "").trim() === targetId)
       .map((item) => normalizeLookupHouseholdRecord(item))
       .filter(Boolean);
 
@@ -1949,17 +1954,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const getOfflineLookupRecords = () => {
     const recordsById = new Map();
-    getRegistrationRecords().forEach((item) => {
+    const allRecords = [
+      ...readArrayFromStorage(REGISTRATION_RECORDS_KEY),
+      ...readArrayFromStorage(SYNC_QUEUE_KEY)
+    ];
+    allRecords.forEach((item) => {
       const normalized = normalizeLookupHouseholdRecord(item);
-      if (normalized) recordsById.set(normalized.household_id, { ...normalized, offline_cached: true });
-    });
-    getSyncQueue().forEach((item) => {
-      const normalized = normalizeLookupHouseholdRecord(item);
-      if (normalized) {
+      if (normalized && normalized.household_id) {
         recordsById.set(normalized.household_id, {
           ...normalized,
           offline_cached: true,
-          pending_sync: true
+          pending_sync: Boolean(item?.pending_sync || item?.sync_pending)
         });
       }
     });
@@ -1976,10 +1981,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     const safeYear = Number.parseInt(String(year || ''), 10);
     const term = String(query || '').trim().toLowerCase();
     return getOfflineLookupRecords().filter((record) => {
-      const recordYear = Number(record.record_year || getHouseholdYearFromId(record.household_id));
-      if (isValidRecordYear(safeYear) && recordYear !== safeYear) return false;
+      const recordYear = Number(record.record_year || getHouseholdYearFromId(record.household_id) || 0);
+      if (isValidRecordYear(safeYear) && recordYear > 0 && recordYear !== safeYear) return false;
       const head = record.head && typeof record.head === 'object' ? record.head : {};
-      const searchable = [record.household_id, record.head_name, record.zone, head.address]
+      const searchable = [
+        record.household_id,
+        record.head_name,
+        record.zone,
+        head.address,
+        head.first_name,
+        head.last_name,
+        head.contact_number
+      ]
         .map((value) => String(value || '').toLowerCase())
         .join(' ');
       return !term || searchable.includes(term);
@@ -4130,7 +4143,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     let persistedRecords = [];
     try {
       const parsed = JSON.parse(persistedValue);
-      persistedRecords = Array.isArray(parsed) ? parsed.filter(isCurrentUserLocalRecord) : [];
+      persistedRecords = Array.isArray(parsed) ? parsed : [];
     } catch {
       throw new Error("Household records could not be saved for offline use.");
     }
@@ -5048,6 +5061,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         loadHouseholdSearch.value = "";
       }
       void syncLoadHouseholdYearOptions(targetRecordYear);
+      if (isAppOnline()) {
+        void warmHouseholdOfflineCache({ years: [targetRecordYear] }).catch(() => {});
+      }
     });
 
     loadHouseholdModalEl.addEventListener("shown.bs.modal", () => {
