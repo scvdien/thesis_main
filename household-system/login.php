@@ -200,21 +200,27 @@ $panelDescription = $setupLocked
         ? 'No user accounts exist yet. Complete the secure first-time setup before going online.'
         : 'Use your assigned credentials to continue.');
 $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login';
+$isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER['HTTP_USER_AGENT'], 'CabarianRegistrationApp') !== false);
 ?>
 <!doctype html>
-<html lang="en">
+<html lang="en" class="<?= $isAndroidApp ? 'is-cabarian-app' : '' ?>">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title><?= htmlspecialchars($brandLabel, ENT_QUOTES, 'UTF-8') ?> - Login</title>
   <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+  <script>
+    if (/CabarianRegistrationApp/i.test(navigator.userAgent)) {
+      document.documentElement.classList.add('is-cabarian-app');
+    }
+  </script>
 
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="<?= htmlspecialchars($loginStyleHref, ENT_QUOTES, 'UTF-8') ?>">
   <link rel="stylesheet" href="assets/css/password-toggle.css?v=<?= htmlspecialchars($passwordToggleVersion, ENT_QUOTES, 'UTF-8') ?>">
 </head>
-<body>
+<body class="<?= $isAndroidApp ? 'is-cabarian-app' : '' ?>">
   <div class="page">
     <div class="login-shell">
       <section class="brand-panel reveal delay-1">
@@ -347,12 +353,12 @@ $formMode = $setupRequired ? ($setupAllowed ? 'setup' : 'setup_locked') : 'login
   <script src="assets/js/login-scripts.js?v=<?= htmlspecialchars($loginScriptVersion, ENT_QUOTES, 'UTF-8') ?>"></script>
   <script>
   (function() {
-    var isApp = /CabarianRegistrationApp/i.test(navigator.userAgent)
-      || window.matchMedia('(display-mode: standalone)').matches
-      || window.navigator.standalone === true;
+    var isApp = /CabarianRegistrationApp/i.test(navigator.userAgent);
     if (isApp) {
-      var badge = document.querySelector('.app-only-badge');
-      if (badge) badge.style.display = 'block';
+      document.documentElement.classList.add('is-cabarian-app');
+      if (document.body) {
+        document.body.classList.add('is-cabarian-app');
+      }
     }
   })();
   </script>

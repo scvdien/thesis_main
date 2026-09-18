@@ -5,13 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Cabarian Ligao City - Login</title>
   <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
+  <script>
+    if (/CabarianRegistrationApp/i.test(navigator.userAgent)) {
+      document.documentElement.classList.add('is-cabarian-app');
+    }
+  </script>
 
   <link href="bootstrap/bootstrap-5.3.8-dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/login-style.css">
   <link rel="stylesheet" href="assets/css/password-toggle.css?v=1">
 </head>
-<body>
+<body class="is-cabarian-app">
   <div class="page">
     <div class="login-shell">
       <section class="brand-panel reveal delay-1">

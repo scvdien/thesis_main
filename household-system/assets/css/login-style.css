@@ -290,6 +290,24 @@ footer{
   display:none;
 }
 
+body.is-cabarian-app .app-version-badge,
+html.is-cabarian-app .app-version-badge{
+  display: block !important;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.app-version-badge .badge{
+  font-size: 0.66rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #64748b !important;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .reveal{
   opacity:0;
   transform:translateY(14px);
@@ -580,22 +598,6 @@ footer{
     flex-shrink: 0;
   }
 
-  .app-version-badge{
-    display: block !important;
-    margin-top: 4px;
-    font-size: 0.72rem;
-    color: #64748b;
-    font-weight: 500;
-  }
-
-  .app-version-badge .badge{
-    font-size: 0.66rem;
-    padding: 2px 6px;
-    border-radius: 6px;
-    background: #64748b !important;
-    font-weight: 600;
-    vertical-align: middle;
-  }
 
   /* Smooth layout transitions for keyboard appearance */
   .brand-panel,
