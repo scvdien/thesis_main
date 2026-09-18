@@ -1018,14 +1018,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const updateLoadExistingButtonVisibility = () => {
     if (!loadExistingBtn) return;
 
-    const hasCachedHouseholds = getRegistrationRecords().length > 0 || getSyncQueue().length > 0;
-    const shouldHideLoadExisting = !isEditMode && !isAppOnline() && !hasCachedHouseholds;
-    loadExistingBtn.classList.toggle("d-none", shouldHideLoadExisting);
-    loadExistingBtn.setAttribute("aria-hidden", shouldHideLoadExisting ? "true" : "false");
-
-    if (shouldHideLoadExisting && loadHouseholdModalEl?.classList.contains("show")) {
-      loadHouseholdModal?.hide();
-    }
+    loadExistingBtn.classList.remove("d-none");
+    loadExistingBtn.setAttribute("aria-hidden", "false");
   };
 
   const getSidebarFocusableElements = () => {
@@ -3633,7 +3627,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       ...getCachedHouseholdYears(),
       ...getOfflineLookupYears()
     ])).sort((left, right) => right - left);
-    if (!isAppOnline()) return cachedYears;
+    if (!isAppOnline()) {
+      if (cachedYears.length === 0 && isValidRecordYear(targetRecordYear)) {
+        return [targetRecordYear];
+      }
+      return cachedYears;
+    }
 
     let response = null;
     try {
@@ -3644,6 +3643,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     } catch (error) {
       if (cachedYears.length > 0) return cachedYears;
+      if (isValidRecordYear(targetRecordYear)) return [targetRecordYear];
       throw error;
     }
 
@@ -3657,6 +3657,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!response.ok || !payload || payload.success !== true) {
       const authoritativeFailure = [401, 403, 404].includes(Number(response.status || 0));
       if (cachedYears.length > 0 && !authoritativeFailure) return cachedYears;
+      if (isValidRecordYear(targetRecordYear) && !authoritativeFailure) return [targetRecordYear];
       const message = payload && payload.error
         ? String(payload.error)
         : `Unable to load household years (${response.status}).`;
@@ -3674,7 +3675,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (typeof localStorage.flush === "function") {
       await localStorage.flush();
     }
-    return serverYears;
+    return serverYears.length ? serverYears : (isValidRecordYear(targetRecordYear) ? [targetRecordYear] : []);
   };
 
   const syncLoadHouseholdYearOptions = async (selectedYear = targetRecordYear) => {
@@ -3691,7 +3692,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
       const years = await fetchLoadHouseholdYears();
-      const activeYear = applyLoadHouseholdYearOptions(years, selectedYear);
+      let activeYear = applyLoadHouseholdYearOptions(years, selectedYear);
+
+      if (!activeYear && isValidRecordYear(targetRecordYear)) {
+        activeYear = applyLoadHouseholdYearOptions([targetRecordYear], targetRecordYear);
+      }
 
       if (!activeYear) {
         setLoadHouseholdLookupEnabled(false);
@@ -3701,9 +3706,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       setLoadHouseholdLookupEnabled(true);
-      setLoadHouseholdPrompt(`Select year ${activeYear}, enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters, then click Search.`);
-      return years;
+      const offlineSuffix = !isAppOnline() ? " (offline search)" : "";
+      setLoadHouseholdPrompt(`Select year ${activeYear}, enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters, then click Search.${offlineSuffix}`);
+      return years.length ? years : [activeYear];
     } catch (error) {
+      if (isValidRecordYear(targetRecordYear)) {
+        const activeYear = applyLoadHouseholdYearOptions([targetRecordYear], targetRecordYear);
+        setLoadHouseholdLookupEnabled(true);
+        setLoadHouseholdPrompt(`Select year ${activeYear}, enter at least ${LOAD_HOUSEHOLD_MIN_QUERY_LENGTH} characters, then click Search (offline search).`);
+        return [activeYear];
+      }
       loadHouseholdYear.innerHTML = '<option value="">Unavailable</option>';
       loadHouseholdYear.value = "";
       setLoadHouseholdLookupEnabled(false);
