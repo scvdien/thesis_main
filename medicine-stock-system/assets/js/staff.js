@@ -410,6 +410,7 @@
   };
 
   const normalizeNotification = (entry = {}) => {
+    const category = text(entry.category) || "Medicine Status";
     const priority = ["critical", "high", "medium", "low"].includes(keyOf(entry.priority)) ? keyOf(entry.priority) : "medium";
     const notificationId = text(entry.id) || uid();
     const parsedOccurrence = parseNotificationOccurrenceId(notificationId);
@@ -418,18 +419,26 @@
       ? occurrenceCandidate
       : parsedOccurrence.occurrenceIndex;
     const alertKey = text(entry.alertKey || entry.alert_key) || parsedOccurrence.alertKey || notificationId;
+    const targetRoles = Array.isArray(entry.targetRoles || entry.target_roles)
+      ? (entry.targetRoles || entry.target_roles).map((r) => keyOf(r)).filter(Boolean)
+      : (entry.role ? [keyOf(entry.role)] : (
+        category === "Disease Signal" || category === "Supply Chain" || notificationId.startsWith("illness-signal-") || notificationId.startsWith("trend-") || notificationId.startsWith("cho-")
+          ? ["admin"]
+          : ["admin", "staff"]
+      ));
     return {
       id: notificationId,
       alertKey,
       occurrenceIndex,
-      category: text(entry.category) || "Medicine Status",
+      category,
       priority,
       title: text(entry.title) || "Medicine alert",
       body: text(entry.body) || DEFAULT_NOTIFICATION_MESSAGE,
+      targetRoles: targetRoles.length ? targetRoles : ["admin", "staff"],
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
       read: Boolean(entry.read),
-      signature: text(entry.signature) || [text(entry.category) || "Medicine Status", priority, text(entry.title) || "Medicine alert"].join("|"),
+      signature: text(entry.signature) || [category, priority, text(entry.title) || "Medicine alert"].join("|"),
       resolved: Boolean(entry.resolved),
       resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
@@ -757,10 +766,24 @@
 
   const canRemoveStaffNotification = (notification) => Boolean(notification?.resolved);
 
+  const isNotificationVisibleForStaff = (notification) => {
+    const normalized = normalizeNotification(notification);
+    if (Array.isArray(normalized.targetRoles) && normalized.targetRoles.length) {
+      return normalized.targetRoles.map(keyOf).includes("staff");
+    }
+    const category = text(normalized.category);
+    const id = text(normalized.id);
+    if (category === "Disease Signal" || category === "Supply Chain" || id.startsWith("illness-signal-") || id.startsWith("trend-") || id.startsWith("cho-")) {
+      return false;
+    }
+    return true;
+  };
+
   const getVisibleStaffNotifications = () => {
     const notifications = getStoredNotifications();
     pruneStaffNotificationHiddenState(notifications);
-    return notifications.filter((notification) => !isStaffNotificationRemoved(notification));
+    return notifications
+      .filter((notification) => isNotificationVisibleForStaff(notification) && !isStaffNotificationRemoved(notification));
   };
 
   const matchesStaffNotificationType = (notification) => {

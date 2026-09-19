@@ -11,6 +11,7 @@
   const SOUND_PREF_KEY = "mss_notification_sound_enabled_v1";
   const INVENTORY_STORAGE = "mss_inventory_records_v1";
   const MOVEMENTS_STORAGE = "mss_inventory_movements_v1";
+  const REQUESTS_STORAGE = "mss_cho_requests_v1";
   const STATE_ENDPOINT = "state-api.php";
   const NOTIFICATION_OCCURRENCE_SEPARATOR = "::";
   const MAX_POPUPS = 3;
@@ -114,6 +115,7 @@
   const state = {
     inventory: [],
     movements: [],
+    requests: [],
     notifications: [],
     monitoringSnapshot: null,
     notificationPreferences: {
@@ -129,6 +131,15 @@
     if (key === STORAGE_KEY) return cloneEntries(state.notifications);
     if (key === INVENTORY_STORAGE) return cloneEntries(state.inventory);
     if (key === MOVEMENTS_STORAGE) return cloneEntries(state.movements);
+    if (key === REQUESTS_STORAGE) {
+      if (Array.isArray(state.requests) && state.requests.length) {
+        return cloneEntries(state.requests);
+      }
+      if (window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.readRequests === "function") {
+        return cloneEntries(window.MSSSupplyMonitoring.readRequests());
+      }
+      return [];
+    }
     return [];
   };
 
@@ -250,6 +261,14 @@
       .map(normalizeMovement)
       .filter((entry) => text(entry.medicineId) || text(entry.medicineName));
     return records;
+  };
+
+  const readRequests = () => {
+    if (window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.readRequests === "function") {
+      return window.MSSSupplyMonitoring.readRequests();
+    }
+    const raw = readList(REQUESTS_STORAGE);
+    return Array.isArray(raw) ? raw : [];
   };
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
@@ -562,7 +581,8 @@
         source: "Data Analytics",
         recommendation: safeRecentQuantity > 0
           ? "Prioritize replenishment because recent release activity shows active demand."
-          : "Restock and verify expected patient demand before the next release cycle."
+          : "Restock and verify expected patient demand before the next release cycle.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -576,7 +596,8 @@
         source: "Data Analytics",
         recommendation: coverDays <= 14
           ? "Prepare replenishment now to avoid stockout under the current demand trend."
-          : "Review reorder timing because current stock cover is below one month."
+          : "Review reorder timing because current stock cover is below one month.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -588,7 +609,8 @@
         title: `${label} is low in stock`,
         body: `${quantityLabel(safeStock, unit)} remaining, below the safety stock level. No recent dispense was recorded in the last ${analyticsDemandWindowDays} days, so monitor upcoming demand.`,
         source: "Stock Balance Analytics",
-        recommendation: "Review whether this medicine should be replenished now or monitored based on expected demand."
+        recommendation: "Review whether this medicine should be replenished now or monitored based on expected demand.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -607,6 +629,13 @@
       ? occurrenceCandidate
       : parsedOccurrence.occurrenceIndex;
     const alertKey = text(entry.alertKey || entry.alert_key) || parsedOccurrence.alertKey || notificationId;
+    const targetRoles = Array.isArray(entry.targetRoles || entry.target_roles)
+      ? (entry.targetRoles || entry.target_roles).map((r) => keyOf(r)).filter(Boolean)
+      : (entry.role ? [keyOf(entry.role)] : (
+        category === "Disease Signal" || category === "Supply Chain" || notificationId.startsWith("illness-signal-") || notificationId.startsWith("trend-") || notificationId.startsWith("cho-")
+          ? ["admin"]
+          : ["admin", "staff"]
+      ));
 
     return {
       id: notificationId,
@@ -618,6 +647,7 @@
       body,
       source: text(entry.source) || "Inventory Analytics",
       recommendation: text(entry.recommendation) || DEFAULT_NOTIFICATION_MESSAGE,
+      targetRoles: targetRoles.length ? targetRoles : ["admin", "staff"],
       signature: [category, priority, title].join("|"),
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
@@ -625,6 +655,28 @@
       resolved: Boolean(entry.resolved),
       resolvedAt: text(entry.resolvedAt || entry.resolved_at)
     };
+  };
+
+  const resolveCurrentRole = () => {
+    const role = text(currentAuthUser?.normalizedRole || currentAuthUser?.role || window.MSS_AUTH_USER?.normalizedRole || window.MSS_AUTH_USER?.role);
+    if (role) return keyOf(role);
+    if (window.location.pathname.includes("staff.php")) return "staff";
+    return "admin";
+  };
+
+  const isNotificationVisibleForRole = (notification, role = "admin") => {
+    const normalizedRole = keyOf(role) || "admin";
+    if (normalizedRole === "admin") return true;
+    const normalized = normalizeNotification(notification);
+    if (Array.isArray(normalized.targetRoles) && normalized.targetRoles.length) {
+      return normalized.targetRoles.map(keyOf).includes(normalizedRole);
+    }
+    const category = text(normalized.category);
+    const id = text(normalized.id);
+    if (category === "Disease Signal" || category === "Supply Chain" || id.startsWith("illness-signal-") || id.startsWith("trend-") || id.startsWith("cho-")) {
+      return false;
+    }
+    return true;
   };
 
   const matchesNotificationSignature = (notification, signature) => {
@@ -675,9 +727,10 @@
   });
 
   const updateNotificationSidebarBadges = (notifications = state.notifications) => {
+    const currentRole = resolveCurrentRole();
     const unreadCount = notifications
       .map((entry) => normalizeNotification(entry))
-      .filter((entry) => !entry.read && !entry.resolved)
+      .filter((entry) => isNotificationVisibleForRole(entry, currentRole) && !entry.read && !entry.resolved)
       .length;
     const displayCount = unreadCount > 99 ? "99+" : formatNumber(unreadCount);
 
@@ -955,6 +1008,9 @@
     if (Array.isArray(serverState.movements)) {
       state.movements = serverState.movements.map(normalizeMovement);
     }
+    if (Array.isArray(serverState.requests)) {
+      state.requests = serverState.requests.map((entry) => ({ ...entry }));
+    }
     if (serverState.notificationPreferences && typeof serverState.notificationPreferences === "object") {
       state.notificationPreferences = normalizeNotificationPreferences(serverState.notificationPreferences);
     }
@@ -1149,7 +1205,8 @@
           title: `${label} shows high usage trend`,
           body: `${quantityLabel(demand.quantity, unit)} released in the last ${analyticsDemandWindowDays} days across ${pluralize(usageCount, "transaction")}. Current stock cover is about ${pluralize(Math.max(1, Math.ceil(coverDays)), "day")}.`,
           source: "Data Analytics",
-          recommendation: "Monitor movement trends and consider early replenishment."
+          recommendation: "Monitor movement trends and consider early replenishment.",
+          targetRoles: ["admin"]
         });
       }
 
@@ -1177,7 +1234,8 @@
           title,
           body,
           source: "Expiry Analytics",
-          recommendation
+          recommendation,
+          targetRoles: ["admin", "staff"]
         });
       }
     });
@@ -1216,9 +1274,72 @@
           title,
           body,
           source: "Illness Analytics",
-          recommendation
+          recommendation,
+          targetRoles: ["admin"]
         });
       });
+
+    const requests = readRequests();
+    const today = new Date().toISOString().slice(0, 10);
+    const getRequestReceivedQuantity = (request, movementsList) => {
+      const reqId = text(request.id);
+      const reqCode = text(request.requestCode);
+      const reqGroupId = text(request.requestGroupId);
+      const medId = text(request.medicineId);
+      const medName = text(request.medicineName).toLowerCase();
+      let total = 0;
+      movementsList.forEach((m) => {
+        if (text(m.actionType).toLowerCase() !== "restock") return;
+        const linkItem = text(m.linkedRequestItemId || m.linkedRequestId);
+        const linkCode = text(m.linkedRequestCode);
+        const linkGroup = text(m.linkedRequestGroupId);
+        const matchesId = reqId && linkItem === reqId;
+        const matchesCodeOrGroup = (reqCode && linkCode === reqCode) || (reqGroupId && linkGroup === reqGroupId);
+        const matchesMed = (medId && text(m.medicineId) === medId) || (!medId && medName && text(m.medicineName).toLowerCase() === medName);
+        if (matchesId || (matchesCodeOrGroup && matchesMed)) {
+          total += Math.max(0, numeric(m.quantity));
+        }
+      });
+      return total;
+    };
+
+    requests.forEach((req) => {
+      const recordStatus = text(req.recordStatus || req.record_status).toLowerCase();
+      if (recordStatus === "archived") return;
+
+      const progress = window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.computeRequestProgress === "function"
+        ? window.MSSSupplyMonitoring.computeRequestProgress(req, movements, today)
+        : null;
+
+      const quantityRequested = Math.max(1, Math.round(numeric(req.quantityRequested) || 1));
+      const receivedQuantity = progress ? progress.receivedQuantity : getRequestReceivedQuantity(req, movements);
+      const isComplete = progress ? progress.isComplete : (receivedQuantity >= quantityRequested);
+      if (isComplete) return;
+
+      const expectedDate = text(req.expectedDate);
+      if (!expectedDate) return;
+      const days = daysUntil(expectedDate);
+      if (days < 0) {
+        const overdueDays = Math.abs(days);
+        const priority = overdueDays > 7 ? "critical" : "high";
+        const requestCode = text(req.requestCode) || "CHO Request";
+        const medicineName = text(req.medicineName) || "Medicine";
+        const remainingQuantity = Math.max(0, quantityRequested - receivedQuantity);
+        const unit = text(req.unit) || "units";
+        const safeReqKey = text(req.requestCode || req.id).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+        pushNotification({
+          id: `cho-overdue-${safeReqKey}`,
+          category: "Supply Chain",
+          priority,
+          title: `CHO Request ${requestCode} is overdue`,
+          body: `Expected on ${formatShortDate(expectedDate)}. ${medicineName} (${formatNumber(remainingQuantity)} ${unit} pending) is overdue by ${pluralize(overdueDays, "day")}.`,
+          source: "Supply Chain Analytics",
+          recommendation: "Follow up with City Health Office regarding delayed delivery.",
+          targetRoles: ["admin"]
+        });
+      }
+    });
 
     previousMap.forEach((previousEntry, notificationId) => {
       if (activeIds.has(notificationId)) return;
@@ -1680,9 +1801,10 @@
               delete popupState[notificationId];
             }
           });
+          const currentRole = resolveCurrentRole();
           const unseen = nextOptions.showToasts
             ? activeNotifications
-              .filter((notification) => !notification.read && shouldPopup(notification) && !matchesNotificationSignature(notification, popupState[notification.id]))
+              .filter((notification) => isNotificationVisibleForRole(notification, currentRole) && !notification.read && shouldPopup(notification) && !matchesNotificationSignature(notification, popupState[notification.id]))
               .sort((left, right) => {
                 const priorityDelta = (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
                 if (priorityDelta !== 0) return priorityDelta;

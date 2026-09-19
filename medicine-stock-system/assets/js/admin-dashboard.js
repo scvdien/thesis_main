@@ -749,7 +749,7 @@
       { match: /(cough|cold|ubo|sipon|uri)/i, accent: "orange", icon: "bi bi-capsule-pill" },
       { match: /(diarrhea|diarrhoe|dehydration|ors|lbm|tae)/i, accent: "teal", icon: "bi bi-droplet-half" },
       { match: /(gastro|acid|ulcer|sikmura|heartburn|kabag)/i, accent: "orange", icon: "bi bi-shield-plus" },
-      { match: /(allergy|pantal|hives|urticaria)/i, accent: "gold", icon: "bi bi-stars" },
+      { match: /(allergy|pantal|hives|urticaria)/i, accent: "gold", icon: "bi bi-patch-exclamation" },
       { match: /(skin|buni|alipunga|dermat|eczema|pigsa|sugat)/i, accent: "gold", icon: "bi bi-patch-question" },
       { match: /(hypertension|bp|heart|blood pressure)/i, accent: "danger", icon: "bi bi-heart-pulse" },
       { match: /(respiratory|asthma|lungs|hika|bronch)/i, accent: "teal", icon: "bi bi-lungs" },

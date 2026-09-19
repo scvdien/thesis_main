@@ -55,6 +55,7 @@
     notificationResolvedState: {},
     inventory: [],
     movements: [],
+    requests: [],
     users: [],
     sessions: [],
     activityLogs: []
@@ -450,6 +451,9 @@
     state.movements = Array.isArray(serverState.movements)
       ? serverState.movements.map(normalizeMovement)
       : state.movements;
+    state.requests = Array.isArray(serverState.requests)
+      ? serverState.requests.map((entry) => ({ ...entry }))
+      : state.requests;
     state.users = Array.isArray(serverState.users) ? serverState.users : state.users;
     state.sessions = Array.isArray(serverState.sessions) ? serverState.sessions : state.sessions;
     state.activityLogs = Array.isArray(serverState.logs) ? serverState.logs : state.activityLogs;
@@ -675,6 +679,13 @@
       .map(normalizeMovement)
       .filter((entry) => text(entry.medicineId) || text(entry.medicineName));
     return records;
+  };
+
+  const readRequests = () => {
+    if (window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.readRequests === "function") {
+      return window.MSSSupplyMonitoring.readRequests();
+    }
+    return Array.isArray(state.requests) ? state.requests : [];
   };
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
@@ -981,7 +992,8 @@
         source: "Data Analytics",
         recommendation: safeRecentQuantity > 0
           ? "Prioritize replenishment because recent release activity shows active demand."
-          : "Restock and verify expected patient demand before the next release cycle."
+          : "Restock and verify expected patient demand before the next release cycle.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -995,7 +1007,8 @@
         source: "Data Analytics",
         recommendation: coverDays <= 14
           ? "Prepare replenishment now to avoid stockout under the current demand trend."
-          : "Review reorder timing because current stock cover is below one month."
+          : "Review reorder timing because current stock cover is below one month.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -1007,7 +1020,8 @@
         title: `${label} is low in stock`,
         body: `${quantityLabel(safeStock, unit)} remaining, below the safety stock level. No recent dispense was recorded in the last ${analyticsDemandWindowDays} days, so monitor upcoming demand.`,
         source: "Stock Balance Analytics",
-        recommendation: "Review whether this medicine should be replenished now or monitored based on expected demand."
+        recommendation: "Review whether this medicine should be replenished now or monitored based on expected demand.",
+        targetRoles: ["admin", "staff"]
       };
     }
 
@@ -1028,6 +1042,13 @@
       ? occurrenceCandidate
       : parsedOccurrence.occurrenceIndex;
     const alertKey = text(entry.alertKey || entry.alert_key) || parsedOccurrence.alertKey || notificationId;
+    const targetRoles = Array.isArray(entry.targetRoles || entry.target_roles)
+      ? (entry.targetRoles || entry.target_roles).map((r) => keyOf(r)).filter(Boolean)
+      : (entry.role ? [keyOf(entry.role)] : (
+        category === "Disease Signal" || category === "Supply Chain" || notificationId.startsWith("illness-signal-") || notificationId.startsWith("trend-") || notificationId.startsWith("cho-")
+          ? ["admin"]
+          : ["admin", "staff"]
+      ));
 
     return {
       id: notificationId,
@@ -1039,6 +1060,7 @@
       body,
       source: text(entry.source) || "Inventory Analytics",
       recommendation: text(entry.recommendation) || DEFAULT_NOTIFICATION_MESSAGE,
+      targetRoles: targetRoles.length ? targetRoles : ["admin", "staff"],
       signature: [category, priority, title].join("|"),
       createdAt: text(entry.createdAt) || nowIso(),
       updatedAt: text(entry.updatedAt) || text(entry.createdAt) || nowIso(),
@@ -1323,7 +1345,8 @@
           title: `${label} shows high usage trend`,
           body: `${quantityLabel(demand.quantity, unit)} released in the last ${analyticsDemandWindowDays} days across ${pluralize(usageCount, "transaction")}. Current stock cover is about ${pluralize(Math.max(1, Math.ceil(coverDays)), "day")}.`,
           source: "Data Analytics",
-          recommendation: "Monitor movement trends and consider early replenishment."
+          recommendation: "Monitor movement trends and consider early replenishment.",
+          targetRoles: ["admin"]
         });
       }
 
@@ -1351,7 +1374,8 @@
           title,
           body,
           source: "Expiry Analytics",
-          recommendation
+          recommendation,
+          targetRoles: ["admin", "staff"]
         });
       }
     });
@@ -1390,9 +1414,72 @@
           title,
           body,
           source: "Illness Analytics",
-          recommendation
+          recommendation,
+          targetRoles: ["admin"]
         });
       });
+
+    const requests = readRequests();
+    const today = new Date().toISOString().slice(0, 10);
+    const getRequestReceivedQuantity = (request, movementsList) => {
+      const reqId = text(request.id);
+      const reqCode = text(request.requestCode);
+      const reqGroupId = text(request.requestGroupId);
+      const medId = text(request.medicineId);
+      const medName = text(request.medicineName).toLowerCase();
+      let total = 0;
+      movementsList.forEach((m) => {
+        if (text(m.actionType).toLowerCase() !== "restock") return;
+        const linkItem = text(m.linkedRequestItemId || m.linkedRequestId);
+        const linkCode = text(m.linkedRequestCode);
+        const linkGroup = text(m.linkedRequestGroupId);
+        const matchesId = reqId && linkItem === reqId;
+        const matchesCodeOrGroup = (reqCode && linkCode === reqCode) || (reqGroupId && linkGroup === reqGroupId);
+        const matchesMed = (medId && text(m.medicineId) === medId) || (!medId && medName && text(m.medicineName).toLowerCase() === medName);
+        if (matchesId || (matchesCodeOrGroup && matchesMed)) {
+          total += Math.max(0, numeric(m.quantity));
+        }
+      });
+      return total;
+    };
+
+    requests.forEach((req) => {
+      const recordStatus = text(req.recordStatus || req.record_status).toLowerCase();
+      if (recordStatus === "archived") return;
+
+      const progress = window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.computeRequestProgress === "function"
+        ? window.MSSSupplyMonitoring.computeRequestProgress(req, movements, today)
+        : null;
+
+      const quantityRequested = Math.max(1, Math.round(numeric(req.quantityRequested) || 1));
+      const receivedQuantity = progress ? progress.receivedQuantity : getRequestReceivedQuantity(req, movements);
+      const isComplete = progress ? progress.isComplete : (receivedQuantity >= quantityRequested);
+      if (isComplete) return;
+
+      const expectedDate = text(req.expectedDate);
+      if (!expectedDate) return;
+      const days = daysUntil(expectedDate);
+      if (days < 0) {
+        const overdueDays = Math.abs(days);
+        const priority = overdueDays > 7 ? "critical" : "high";
+        const requestCode = text(req.requestCode) || "CHO Request";
+        const medicineName = text(req.medicineName) || "Medicine";
+        const remainingQuantity = Math.max(0, quantityRequested - receivedQuantity);
+        const unit = text(req.unit) || "units";
+        const safeReqKey = text(req.requestCode || req.id).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+        pushNotification({
+          id: `cho-overdue-${safeReqKey}`,
+          category: "Supply Chain",
+          priority,
+          title: `CHO Request ${requestCode} is overdue`,
+          body: `Expected on ${formatShortDate(expectedDate)}. ${medicineName} (${formatNumber(remainingQuantity)} ${unit} pending) is overdue by ${pluralize(overdueDays, "day")}.`,
+          source: "Supply Chain Analytics",
+          recommendation: "Follow up with City Health Office regarding delayed delivery.",
+          targetRoles: ["admin"]
+        });
+      }
+    });
 
     previousMap.forEach((previousEntry, notificationId) => {
       if (activeIds.has(notificationId)) return;
