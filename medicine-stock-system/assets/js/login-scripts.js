@@ -163,4 +163,60 @@
   clearError();
   setMode('login');
   checkExistingSession();
+
+  // Mobile adaptive keyboard handler for smooth viewport transitions
+  (function initKeyboardAdaptive() {
+    const inputs = document.querySelectorAll('.form-control');
+    let baseHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    let blurTimer = null;
+
+    function activateKeyboard() {
+      if (blurTimer) clearTimeout(blurTimer);
+      document.body.classList.add('keyboard-open');
+    }
+
+    function deactivateKeyboard() {
+      if (blurTimer) clearTimeout(blurTimer);
+      document.body.classList.remove('keyboard-open');
+    }
+
+    inputs.forEach(function (input) {
+      input.addEventListener('focus', function () {
+        activateKeyboard();
+      });
+
+      input.addEventListener('blur', function () {
+        blurTimer = setTimeout(function () {
+          deactivateKeyboard();
+        }, 100);
+      });
+    });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function () {
+        const currentHeight = window.visualViewport.height;
+        baseHeight = Math.max(baseHeight, currentHeight);
+        if (baseHeight - currentHeight > 130) {
+          activateKeyboard();
+        } else if (currentHeight >= baseHeight - 50) {
+          deactivateKeyboard();
+          if (document.activeElement && document.activeElement.classList.contains('form-control')) {
+            document.activeElement.blur();
+          }
+        }
+      });
+    }
+
+    window.addEventListener('resize', function () {
+      if (!window.visualViewport) {
+        const currentHeight = window.innerHeight;
+        baseHeight = Math.max(baseHeight, currentHeight);
+        if (baseHeight - currentHeight > 130) {
+          activateKeyboard();
+        } else if (currentHeight >= baseHeight - 50) {
+          deactivateKeyboard();
+        }
+      }
+    });
+  })();
 })();

@@ -16,7 +16,7 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="assets/css/login-style.css?v=<?= urlencode($loginCssVersion) ?>">
@@ -57,6 +57,10 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
       </section>
 
       <section class="form-panel reveal delay-2">
+        <div class="mobile-card-logos">
+          <img src="assets/img/CityHealthOffice_LOGO.png" alt="Ligao City Coastal Rural Health Unit Logo">
+          <img src="assets/img/ligao-city-logo.png" alt="Ligao City Logo">
+        </div>
         <div class="form-head">
           <span class="eyebrow" id="loginEyebrow">Welcome back</span>
           <h2 id="loginTitle">Sign in as Admin or Staff</h2>
@@ -103,14 +107,18 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
           <div id="error" class="form-error" role="alert" aria-live="polite"></div>
 
           <button id="loginBtn" class="btn btn-primary w-100" type="submit">Sign In</button>
+          <div class="mobile-auth-note">
+            <i class="bi bi-shield-check"></i>
+            <span>Authorized Personnel Only</span>
+          </div>
         </form>
       </section>
-
-      <footer class="login-footer">
-        &copy; <span id="year"></span> Ligao City Coastal RHU Medicine Stock Monitoring System | All Rights Reserved
-      </footer>
     </div>
   </div>
+
+  <footer>
+    <div class="footer-copy">&copy; <span id="year"></span> Ligao City Coastal RHU Medicine Stock Monitoring System | All Rights Reserved</div>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="assets/js/password-toggle.js?v=<?= urlencode($passwordToggleJsVersion) ?>"></script>

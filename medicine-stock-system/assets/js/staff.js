@@ -2623,9 +2623,6 @@
         return !query || haystack.includes(query);
       })
       .sort((left, right) => {
-        if (text(left.resident.id) === selectedId) return -1;
-        if (text(right.resident.id) === selectedId) return 1;
-
         const leftRecent = new Date(text(left.stats.lastReleaseAt) || 0).getTime();
         const rightRecent = new Date(text(right.stats.lastReleaseAt) || 0).getTime();
         if (leftRecent !== rightRecent) return rightRecent - leftRecent;
