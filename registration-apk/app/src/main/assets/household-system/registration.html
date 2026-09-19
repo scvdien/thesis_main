@@ -23,23 +23,41 @@
   <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/registration-style.css?v=1">
   <link rel="stylesheet" href="assets/css/password-toggle.css?v=1">
-  <script>
-    if (navigator.onLine) {
-      try {
-        sessionStorage.setItem('cabarian_session_authenticated', 'true');
-        sessionStorage.setItem('cabarian_offline_session_active', 'true');
-      } catch {}
-    } else {
-      var isSessionActive = false;
-      try {
-        isSessionActive = sessionStorage.getItem('cabarian_session_authenticated') === 'true'
-          || sessionStorage.getItem('cabarian_offline_session_active') === 'true';
-      } catch {}
-
-      if (!isSessionActive) {
-        window.location.replace('login.php');
-      }
+  <style>
+    html.is-offline-mode #openStaffAccountSettingsBtn {
+      display: none !important;
     }
+  </style>
+  <script>
+    (function () {
+      var isOffline = !navigator.onLine || (function () {
+        try {
+          return sessionStorage.getItem('cabarian_offline_session_active') === 'true';
+        } catch (e) {
+          return false;
+        }
+      })();
+
+      if (navigator.onLine) {
+        try {
+          sessionStorage.setItem('cabarian_session_authenticated', 'true');
+        } catch (e) {}
+      } else {
+        var isSessionActive = false;
+        try {
+          isSessionActive = sessionStorage.getItem('cabarian_session_authenticated') === 'true'
+            || sessionStorage.getItem('cabarian_offline_session_active') === 'true';
+        } catch (e) {}
+
+        if (!isSessionActive) {
+          window.location.replace('login.php');
+        }
+      }
+
+      if (isOffline) {
+        document.documentElement.classList.add('is-offline-mode');
+      }
+    })();
   </script>
 </head>
 

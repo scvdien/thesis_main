@@ -187,6 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
           try {
             sessionStorage.removeItem("cabarian_offline_reauth_pass");
+            sessionStorage.removeItem("cabarian_offline_session_active");
           } catch {}
           return true;
         }
@@ -205,12 +206,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
-  const updateOfflineUIState = () => {
-    const credentialsBtn = document.getElementById("openStaffAccountSettingsBtn");
-    if (credentialsBtn) {
-      credentialsBtn.classList.toggle("d-none", !isAppOnline());
+  const isOfflineSessionActive = () => {
+    try {
+      return window.sessionStorage.getItem("cabarian_offline_session_active") === "true";
+    } catch {
+      return false;
     }
   };
+
+  const isEffectivelyOffline = () => {
+    if (window.navigator.onLine === false) return true;
+    if (isOfflineSessionActive()) return true;
+    if (!isAppOnline()) return true;
+    return false;
+  };
+
+  const updateOfflineUIState = () => {
+    const credentialsBtn = document.getElementById("openStaffAccountSettingsBtn");
+    const offline = isEffectivelyOffline();
+    if (credentialsBtn) {
+      credentialsBtn.classList.toggle("d-none", offline);
+      if (offline) {
+        credentialsBtn.setAttribute("hidden", "hidden");
+        credentialsBtn.style.display = "none";
+      } else {
+        credentialsBtn.removeAttribute("hidden");
+        credentialsBtn.style.removeProperty("display");
+      }
+    }
+    document.documentElement.classList.toggle("is-offline-mode", offline);
+  };
+
+  updateOfflineUIState();
 
   const currentDraftOwner = getEffectiveUserId();
   const contentTitle = document.querySelector(".content-title");
@@ -268,6 +295,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const logoutModal = logoutModalEl ? new bootstrap.Modal(logoutModalEl) : null;
   const logoutConfirm = document.getElementById("logoutConfirm");
   const openStaffAccountSettingsBtn = document.getElementById("openStaffAccountSettingsBtn");
+  updateOfflineUIState();
   const staffCredentialsModalEl = document.getElementById("staffCredentialsModal");
   const staffCredentialsModal = staffCredentialsModalEl
     ? new bootstrap.Modal(staffCredentialsModalEl, { backdrop: "static", keyboard: false })
@@ -902,10 +930,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const isAppOnline = () => {
     if (window.navigator.onLine === false) return false;
+    if (isOfflineSessionActive()) return false;
+    if (serverReachable === false) return false;
     if (isLocalhostOrigin) {
       return true;
     }
-    if (serverReachable === false) return false;
     return true;
   };
 
@@ -1236,6 +1265,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const openStaffCredentialsModal = (mode = "optional") => {
+    if (isEffectivelyOffline()) {
+      updateOfflineUIState();
+      return;
+    }
     setStaffCredentialsMode(mode);
     resetStaffCredentialFields();
     staffCredentialsModal?.show();
@@ -4900,6 +4933,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   window.addEventListener("online", async () => {
+    updateOfflineUIState();
     await triggerAutoSyncWhenOnline({ delayMs: 250, forceProbe: true });
     window.setTimeout(() => {
       if (getSyncQueue().length > 0) {
@@ -5153,6 +5187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateAddMemberState();
   await syncConnectivityState({ force: true });
   updateSyncStatus();
+  updateOfflineUIState();
   const quarantinedLegacyQueueCount = getQuarantinedLegacyQueueCount();
   if (quarantinedLegacyQueueCount > 0) {
     showSyncToast(
@@ -5322,6 +5357,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   if (openStaffAccountSettingsBtn) {
     openStaffAccountSettingsBtn.addEventListener("click", () => {
+      if (isEffectivelyOffline()) {
+        updateOfflineUIState();
+        return;
+      }
       openStaffCredentialsModal("optional");
     });
   }
@@ -5398,7 +5437,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  if (requiresCredentialUpdate) {
+  if (requiresCredentialUpdate && !isEffectivelyOffline()) {
     window.setTimeout(() => {
       openStaffCredentialsModal("required");
     }, 0);
