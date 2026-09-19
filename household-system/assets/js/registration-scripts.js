@@ -91,6 +91,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   let csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   let requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
   let currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
+  let serverReachable = window.navigator.onLine === false ? false : null;
+
+  const isOfflineSessionActive = () => {
+    try {
+      return window.sessionStorage.getItem("cabarian_offline_session_active") === "true";
+    } catch {
+      return false;
+    }
+  };
+
+  const isAppOnline = () => {
+    if (window.navigator.onLine === false) return false;
+    if (isOfflineSessionActive()) return false;
+    if (serverReachable === false) return false;
+    if (isLocalhostOrigin) {
+      return true;
+    }
+    return true;
+  };
+
+  const isEffectivelyOffline = () => {
+    if (window.navigator.onLine === false) return true;
+    if (isOfflineSessionActive()) return true;
+    if (!isAppOnline()) return true;
+    return false;
+  };
+
+  const updateOfflineUIState = () => {
+    const credentialsBtn = document.getElementById("openStaffAccountSettingsBtn");
+    const offline = isEffectivelyOffline();
+    if (credentialsBtn) {
+      credentialsBtn.classList.toggle("d-none", offline);
+      if (offline) {
+        credentialsBtn.setAttribute("hidden", "hidden");
+        credentialsBtn.style.display = "none";
+      } else {
+        credentialsBtn.removeAttribute("hidden");
+        credentialsBtn.style.removeProperty("display");
+      }
+    }
+    document.documentElement.classList.toggle("is-offline-mode", offline);
+  };
   const getEffectiveUserId = () => {
     const pageUserId = String(document.body.dataset.currentUserId || "").trim();
     if (pageUserId && pageUserId !== "0") return pageUserId;
@@ -204,37 +246,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     } finally {
       reauthInProgress = false;
     }
-  };
-
-  const isOfflineSessionActive = () => {
-    try {
-      return window.sessionStorage.getItem("cabarian_offline_session_active") === "true";
-    } catch {
-      return false;
-    }
-  };
-
-  const isEffectivelyOffline = () => {
-    if (window.navigator.onLine === false) return true;
-    if (isOfflineSessionActive()) return true;
-    if (!isAppOnline()) return true;
-    return false;
-  };
-
-  const updateOfflineUIState = () => {
-    const credentialsBtn = document.getElementById("openStaffAccountSettingsBtn");
-    const offline = isEffectivelyOffline();
-    if (credentialsBtn) {
-      credentialsBtn.classList.toggle("d-none", offline);
-      if (offline) {
-        credentialsBtn.setAttribute("hidden", "hidden");
-        credentialsBtn.style.display = "none";
-      } else {
-        credentialsBtn.removeAttribute("hidden");
-        credentialsBtn.style.removeProperty("display");
-      }
-    }
-    document.documentElement.classList.toggle("is-offline-mode", offline);
   };
 
   updateOfflineUIState();
@@ -921,22 +932,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  let serverReachable = window.navigator.onLine === false ? false : null;
   let connectivityProbePromise = null;
   let connectivityProbeController = null;
   let connectivityProbeSequence = 0;
   let lastConnectivityProbeAt = 0;
   let householdOfflineWarmActiveCount = 0;
-
-  const isAppOnline = () => {
-    if (window.navigator.onLine === false) return false;
-    if (isOfflineSessionActive()) return false;
-    if (serverReachable === false) return false;
-    if (isLocalhostOrigin) {
-      return true;
-    }
-    return true;
-  };
 
   const cancelConnectivityProbe = () => {
     connectivityProbeSequence += 1;
