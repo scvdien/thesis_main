@@ -1560,11 +1560,11 @@ function buildRbiFormCReportData(array $analytics, int $year, array $profile, ar
     $ageDistribution = normalizeAssocArray($analytics['rbi_age_sex_distribution'] ?? null);
     $sectorDistribution = normalizeAssocArray($analytics['rbi_sector_sex_distribution'] ?? null);
     $ageLabels = [
-        'Under 5 years old', '5-9 years old', '10-14 years old', '15-19 years old',
-        '20-24 years old', '25-29 years old', '30-34 years old', '35-39 years old',
-        '40-44 years old', '45-49 years old', '50-54 years old', '55-59 years old',
-        '60-64 years old', '65-69 years old', '70-74 years old', '75-79 years old',
-        '80 years old and over',
+        'Under 1', '1 to 4', '5 to 9', '10 to 14',
+        '15 to 19', '20 to 24', '25 to 29', '30 to 34',
+        '35 to 39', '40 to 44', '45 to 49', '50 to 54',
+        '55 to 59', '60 to 64', '65 to 69', '70 to 74',
+        '75 to 79', '80 and over',
     ];
     $sectorLabels = [
         'Labor Force',
@@ -1583,8 +1583,6 @@ function buildRbiFormCReportData(array $analytics, int $year, array $profile, ar
         '4Ps Beneficiaries',
         'Registered Voters',
         'Pregnant Women',
-        'Persons with Current Illness',
-        'Malnourished Children',
         'Employment: Employed',
         'Employment: Self-Employed',
         'Education: Elementary',
@@ -2285,128 +2283,342 @@ function renderRbiFormCWithFpdf(array $report, array $profile): string
     $pdf = new FPDF('P', 'mm', 'Letter');
     $pdf->SetMargins(14, 10, 14);
     $pdf->SetAutoPageBreak(false);
-    $widths = [57.0, 21.0, 21.0, 26.0, 62.0];
+
+    // Optimized column widths: wide Indicators (89mm) so long titles fit on a single line
+    $widths = [89.0, 19.5, 19.5, 23.0, 36.0];
     $tableWidth = array_sum($widths);
     $ageRows = is_array($report['age_rows'] ?? null) ? $report['age_rows'] : [];
     $sectorRows = is_array($report['sector_rows'] ?? null) ? $report['sector_rows'] : [];
     $blankTemplate = ($report['blank_template'] ?? false) === true;
-
-    $drawTableHeader = static function () use ($pdf, $widths): void {
-        $pdf->SetFont('Arial', 'B', 9);
-        drawFpdfRow($pdf, $widths, ['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'], true, '', 3.8, 9.0, 5.0, 14.0);
-    };
-    $drawSection = static function (string $label) use ($pdf, $tableWidth): void {
-        $pdf->SetX(14);
-        $pdf->SetFont('Arial', 'BI', 8.5);
-        $pdf->Cell($tableWidth, 7.0, toPdfText($label), 1, 1, 'L');
-    };
-    $drawRows = static function (array $rows) use ($pdf, $widths): void {
-        foreach ($rows as $row) {
-            $cells = is_array($row) ? array_values($row) : [];
-            $pdf->SetFont('Arial', '', 8.2);
-            drawFpdfRow($pdf, $widths, $cells, false, '', 3.5, 7.0, 5.0, 14.0);
-        }
-    };
-
-    $pdf->AddPage();
-    $pdf->SetXY(14, 14);
-    $pdf->SetFont('Arial', 'B', 11);
-    $pdf->Cell($tableWidth, 5, 'ANNUAL MONITORING REPORT', 0, 1, 'C');
-
-    $pdf->SetXY(17, 32);
-    $profileLines = [
-        ['REGION : ', (string) ($report['region'] ?? '')],
-        ['PROVINCE: ', (string) ($report['province'] ?? '')],
-        ['CITY/MUNICIPALITY: ', (string) ($report['city'] ?? '')],
-        ['BARANGAY: ', (string) ($report['barangay'] ?? '')],
-    ];
-    foreach ($profileLines as [$label, $value]) {
-        $pdf->SetFont('Arial', 'B', 8.5);
-        $labelWidth = $pdf->GetStringWidth(toPdfText($label)) + 1.5;
-        $pdf->Cell($labelWidth, 4.7, toPdfText($label), 0, 0, 'L');
-        $pdf->SetFont('Arial', '', 8.5);
-        $pdf->Cell(100, 4.7, toPdfText($value), 0, 1, 'L');
-        $pdf->SetX(17);
-    }
-    $pdf->Ln(2);
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $pdf->SetX(17);
-    $pdf->Cell(100, 4.7, 'Total No. of Barangay Inhabitants:', 0, 1, 'L');
-    $pdf->SetX(17);
-    $pdf->SetFont('Arial', '', 8.5);
-    $pdf->Cell(100, 4.7, $blankTemplate ? '' : nfmt(toInt($report['population'] ?? 0)), 0, 1, 'L');
-    $pdf->Ln(1);
-    $pdf->SetX(17);
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $householdLabel = 'Total No. of Households: ';
-    $pdf->Cell($pdf->GetStringWidth($householdLabel) + 1.5, 4.7, $householdLabel, 0, 0, 'L');
-    $pdf->SetFont('Arial', '', 8.5);
-    $pdf->Cell(30, 4.7, $blankTemplate ? '' : nfmt(toInt($report['households'] ?? 0)), 0, 1, 'L');
-    $pdf->SetX(17);
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $familyLabel = 'Total No. of Families: ';
-    $pdf->Cell($pdf->GetStringWidth($familyLabel) + 1.5, 4.7, $familyLabel, 0, 0, 'L');
-    $pdf->SetFont('Arial', '', 8.5);
-    $pdf->Cell(30, 4.7, $blankTemplate ? '' : nfmt(toInt($report['families'] ?? 0)), 0, 1, 'L');
-    $pdf->Ln(4);
-
-    $drawTableHeader();
-    $drawSection('Population by Age Bracket:');
-    $drawRows($ageRows);
-    $drawSection('Population by Sector:');
-    $drawRows(array_slice($sectorRows, 0, 3));
-
-    $pdf->AddPage();
-    $pdf->SetXY(14, 12);
-    $drawTableHeader();
-    $drawSection('Population by Sector:');
-    foreach (array_slice($sectorRows, 3) as $row) {
-        $cells = array_values((array) $row);
-        $pdf->SetFont('Arial', '', 8.2);
-        drawFpdfRow($pdf, $widths, $cells, false, '', 3.5, 7.0, 5.0, 14.0);
-    }
-
+    $tableFontSize = 11.0;
+    $tableMinH = 6.2;
     $footer = reportFooterData($profile, $report);
-    $signatureY = $pdf->GetY() + 8.0;
-    $leftX = 18.0;
-    $rightX = 117.0;
-    $columnWidth = 78.0;
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $pdf->SetXY($leftX, $signatureY);
-    $pdf->Cell($columnWidth, 5, 'Prepared by:', 0, 0, 'L');
-    $pdf->SetXY($rightX, $signatureY);
-    $pdf->Cell($columnWidth, 5, 'Submitted by:', 0, 1, 'L');
-    $lineY = $signatureY + 15;
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $pdf->SetXY($leftX, $lineY + 1);
-    $pdf->Cell($columnWidth, 5, toPdfText(strtoupper($footer['secretary'])), 0, 0, 'C');
-    $pdf->SetXY($rightX, $lineY + 1);
-    $pdf->Cell($columnWidth, 5, toPdfText(strtoupper($footer['captain'])), 0, 1, 'C');
-    $pdf->SetFont('Arial', 'B', 8);
-    $pdf->SetXY($leftX, $lineY + 7);
-    $pdf->Cell($columnWidth, 5, 'Barangay Secretary', 0, 0, 'C');
-    $pdf->SetXY($rightX, $lineY + 7);
-    $pdf->Cell($columnWidth, 5, 'Punong Barangay', 0, 1, 'C');
-    $pdf->SetXY($leftX, $lineY + 15);
-    $pdf->Cell($columnWidth, 5, '(Signature over Printed Name)', 0, 0, 'C');
-    $pdf->SetXY($rightX, $lineY + 15);
-    $pdf->Cell($columnWidth, 5, '(Signature over Printed Name)', 0, 1, 'C');
+    $dateGenerated = text($footer['date_generated'] ?? date('F j, Y'), 60);
+    $footerSystemText = toPdfText("System-Generated Report | Online HIMS • {$dateGenerated}");
 
-    $dateLabel = $blankTemplate ? '' : reportDateAccomplishedLabel($report);
-    $pdf->SetXY(17, $lineY + 28);
-    $pdf->SetFont('Arial', 'B', 8.5);
-    $pdf->Cell(80, 5, 'Date Accomplished:', 0, 1, 'L');
-    $pdf->SetX(17);
-    $pdf->Cell(80, 5, $dateLabel, 0, 1, 'L');
-    $pdf->SetXY(17, $lineY + 43);
-    $pdf->SetFont('Arial', '', 7.5);
-    $noteLabel = 'Note: ';
-    $noteText = 'This RBI Form C (Annual Monitoring Report) is to be submitted to DILG C/MLGOO as a reference for encoding to BIS-BPS.';
-    $pdf->SetFont('Arial', 'B', 7.5);
-    $noteLabelWidth = $pdf->GetStringWidth($noteLabel);
-    $pdf->Cell($noteLabelWidth, 4, $noteLabel, 0, 0, 'L');
-    $pdf->SetFont('Arial', '', 7.5);
-    $pdf->MultiCell(180 - $noteLabelWidth, 4, $noteText, 0, 'L');
+    // Helper: calculate row height based on text wrapping
+    $calcRowHeight = static function (array $cells, float $minH = 6.2, float $fontSize = 11.0) use ($pdf, $widths): float {
+        $pdf->SetFont('Arial', '', $fontSize);
+        $maxLines = 1;
+        foreach ($widths as $idx => $w) {
+            $val = text($cells[$idx] ?? '', 200);
+            $lines = pdfLineCount($pdf, max(1.0, $w - 5.5), $val);
+            if ($lines > $maxLines) {
+                $maxLines = $lines;
+            }
+        }
+        if ($maxLines > 1) {
+            return max($minH, ($maxLines * 4.4) + 3.2);
+        }
+        return $minH;
+    };
+
+    // Helper: draw styled table header (clean black & white, no colors)
+    $drawTableHeader = static function (string $col1 = 'AGE BRACKET') use ($pdf, $widths): void {
+        $startX = 14.0;
+        $pdf->SetX($startX);
+        $y = $pdf->GetY();
+        $headerH = 7.5;
+
+        $pdf->SetFillColor(255, 255, 255); // Pure white
+        $pdf->SetDrawColor(0, 0, 0); // Black border
+        $pdf->SetLineWidth(0.25);
+
+        $cursorX = $startX;
+        foreach ($widths as $w) {
+            $pdf->Rect($cursorX, $y, $w, $headerH, 'FD');
+            $cursorX += $w;
+        }
+
+        $pdf->SetTextColor(0, 0, 0); // Pure Black
+        $pdf->SetFont('Arial', 'B', 11.0);
+
+        $headers = [$col1, 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'];
+        $cursorX = $startX;
+        foreach ($widths as $idx => $w) {
+            $align = ($idx === 0 || $idx === 4) ? 'L' : 'C';
+            $textY = $y + (($headerH - (11.0 * 0.40)) / 2.0);
+            $pdf->SetXY($cursorX + 2.0, $textY);
+            $pdf->Cell($w - 4.0, 4.4, $headers[$idx], 0, 0, $align);
+            $cursorX += $w;
+        }
+
+        $pdf->SetXY($startX, $y + $headerH);
+    };
+
+    // Helper: draw section banner (clean white background, black bold text)
+    $drawSectionHeader = static function (string $title) use ($pdf, $tableWidth): void {
+        $startX = 14.0;
+        $pdf->SetX($startX);
+        $y = $pdf->GetY();
+        $secH = 6.8;
+
+        $pdf->SetFillColor(255, 255, 255); // Pure white
+        $pdf->SetDrawColor(0, 0, 0); // Black border
+        $pdf->SetLineWidth(0.25);
+
+        $pdf->Rect($startX, $y, $tableWidth, $secH, 'FD');
+
+        $pdf->SetTextColor(0, 0, 0); // Pure Black
+        $pdf->SetFont('Arial', 'B', 11.0);
+        $textY = $y + (($secH - (11.0 * 0.40)) / 2.0);
+        $pdf->SetXY($startX + 2.5, $textY);
+        $pdf->Cell($tableWidth - 5.0, 4.4, toPdfText($title), 0, 0, 'L');
+
+        $pdf->SetXY($startX, $y + $secH);
+    };
+
+    // Helper: draw a data row (pure white, clean black borders and text)
+    $drawRow = static function (
+        array $cells,
+        bool $isAlt = false,
+        float $minH = 6.2,
+        float $fontSize = 11.0
+    ) use ($pdf, $widths, $calcRowHeight): void {
+        $rowH = $calcRowHeight($cells, $minH, $fontSize);
+        $startX = 14.0;
+        $pdf->SetX($startX);
+        $y = $pdf->GetY();
+
+        $pdf->SetFillColor(255, 255, 255); // Pure white
+        $pdf->SetDrawColor(0, 0, 0); // Black border
+        $pdf->SetLineWidth(0.2);
+
+        $cursorX = $startX;
+        foreach ($widths as $w) {
+            $pdf->Rect($cursorX, $y, $w, $rowH, 'FD');
+            $cursorX += $w;
+        }
+
+        $pdf->SetTextColor(0, 0, 0); // Pure Black
+
+        $cursorX = $startX;
+        foreach ($widths as $idx => $w) {
+            $align = ($idx === 0 || $idx === 4) ? 'L' : 'C';
+            $val = text($cells[$idx] ?? '', 200);
+
+            if ($idx === 3 && $val !== '' && $val !== '0' && $val !== '-') {
+                $pdf->SetFont('Arial', 'B', 11.0);
+            } else {
+                $pdf->SetFont('Arial', '', 11.0);
+            }
+
+            $lineCount = pdfLineCount($pdf, max(1.0, $w - 5.5), $val);
+            $textY = $lineCount === 1 ? ($y + (($rowH - (11.0 * 0.40)) / 2.0)) : ($y + 1.4);
+            $pdf->SetXY($cursorX + 2.0, $textY);
+            $pdf->MultiCell($w - 4.0, 4.4, toPdfText($val), 0, $align);
+            $cursorX += $w;
+        }
+
+        $pdf->SetXY($startX, $y + $rowH);
+    };
+
+    // ==========================================
+    // PAGE 1: HEADER, KPIS, AGE BRACKET TABLE
+    // ==========================================
+    $pdf->AddPage();
+
+    // 1. Dual Logos (25mm x 25mm standard official seal size)
+    $leftLogo = reportOfficialSealAbsolutePath($profile);
+    if ($leftLogo === '' || !is_file($leftLogo)) {
+        $leftLogo = __DIR__ . '/assets/img/barangay-cabarian-logo.png';
+    }
+    $rightLogo = __DIR__ . '/assets/img/ligao-city-logo.png';
+
+    $logoSize = 25.0; // 25mm (~1 inch)
+    $logoY = 8.5;
+    $leftLogoX = 14.0;
+    $rightLogoX = 215.9 - 14.0 - $logoSize; // 176.9mm
+
+    if (is_file($leftLogo)) {
+        $pdf->Image($leftLogo, $leftLogoX, $logoY, $logoSize, $logoSize);
+    }
+    if (is_file($rightLogo)) {
+        $pdf->Image($rightLogo, $rightLogoX, $logoY, $logoSize, $logoSize);
+    }
+
+    // 2. Official Republic Masthead (Standard government letterhead hierarchy)
+    $pdf->SetY(8.5);
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(0, 4.2, 'Republic of the Philippines', 0, 1, 'C');
+
+    $provinceText = reportProfileValueWithFallback($profile, 'province_name', ['BARANGAY_PROVINCE', 'PROVINCE_NAME'], 'Province of Albay');
+    if ($provinceText !== '' && stripos($provinceText, 'Province') === false) {
+        $provinceText = 'Province of ' . $provinceText;
+    }
+    $pdf->Cell(0, 4.2, toPdfText($provinceText), 0, 1, 'C');
+
+    $cityText = reportProfileValueWithFallback($profile, 'city_name', ['BARANGAY_CITY', 'CITY_NAME'], 'City of Ligao');
+    $pdf->Cell(0, 4.2, toPdfText($cityText), 0, 1, 'C');
+
+    $barangayText = reportProfileValueWithFallback($profile, 'barangay_name', ['BARANGAY_NAME'], 'Barangay Cabarian');
+    if ($barangayText !== '' && stripos($barangayText, 'Barangay') === false) {
+        $barangayText = 'Barangay ' . $barangayText;
+    }
+    $pdf->SetFont('Arial', 'B', 13.5);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(0, 5.5, toPdfText(strtoupper($barangayText)), 0, 1, 'C');
+
+    $pdf->SetFont('Arial', 'B', 10.5);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(0, 4.4, 'OFFICE OF THE BARANGAY SECRETARY', 0, 1, 'C');
+
+    // Horizontal Accent Rules
+    $ruleY = 36.5;
+    $pdf->SetDrawColor(0, 0, 0);
+    $pdf->SetLineWidth(0.5);
+    $pdf->Line(14.0, $ruleY, 201.0, $ruleY);
+
+    $pdf->SetLineWidth(0.2);
+    $pdf->Line(14.0, $ruleY + 0.8, 201.0, $ruleY + 0.8);
+
+    // 3. Document Title
+    $pdf->SetY(40.5);
+    $pdf->SetFont('Arial', 'B', 13);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->Cell(0, 5.5, 'REGISTRY OF BARANGAY INHABITANTS', 0, 1, 'C');
+
+    // 4. Summary Counts Lines (Stacked on Left: Inhabitants, then Households)
+    $blockY = 49.5;
+    $lineH = 5.4;
+
+    $popVal = $blankTemplate ? '-' : nfmt(toInt($report['population'] ?? 0));
+    $hhVal = $blankTemplate ? '-' : nfmt(toInt($report['households'] ?? 0));
+
+    // Line 1: Total Barangay Inhabitants (Regular label, Bold number)
+    $pdf->SetXY(14.0, $blockY);
+    $pdf->SetFont('Arial', '', 10.0);
+    $pdf->SetTextColor(0, 0, 0);
+    $lbl1 = 'Total No. of Barangay Inhabitants: ';
+    $pdf->Cell($pdf->GetStringWidth($lbl1), $lineH, $lbl1, 0, 0, 'L');
+    $pdf->SetFont('Arial', 'B', 10.5);
+    $pdf->Cell(25.0, $lineH, toPdfText($popVal), 0, 1, 'L');
+
+    // Line 2: Total Households (directly below with comfortable line height)
+    $pdf->SetX(14.0);
+    $pdf->SetFont('Arial', '', 10.0);
+    $pdf->SetTextColor(0, 0, 0);
+    $lbl2 = 'Total No. of Households: ';
+    $pdf->Cell($pdf->GetStringWidth($lbl2), $lineH, $lbl2, 0, 0, 'L');
+    $pdf->SetFont('Arial', 'B', 10.5);
+    $pdf->Cell(25.0, $lineH, toPdfText($hhVal), 0, 1, 'L');
+
+    // 5. Age Bracket Table (clean 4.0mm gap below the summary lines)
+    $pdf->SetY(64.0);
+    $drawTableHeader('AGE BRACKET');
+
+    foreach ($ageRows as $idx => $row) {
+        $cells = is_array($row) ? array_values($row) : [];
+        if ($blankTemplate) {
+            $cells = [$cells[0] ?? '', '', '', '', ''];
+        }
+        $drawRow($cells, ($idx % 2 === 1), $tableMinH, $tableFontSize);
+    }
+
+    // Continue with Sector Table directly on Page 1 (Balanced split: up to 7 rows)
+    $p1MaxSectorRows = 7;
+    $p1SectorCount = 0;
+    if (!empty($sectorRows)) {
+        // Space/gap between Age Bracket table and Sector table
+        $pdf->SetY($pdf->GetY() + 4.5);
+        $drawTableHeader('POPULATION BY SECTOR');
+        foreach ($sectorRows as $idx => $row) {
+            if ($p1SectorCount >= $p1MaxSectorRows) {
+                break;
+            }
+            $cells = is_array($row) ? array_values($row) : [];
+            if ($blankTemplate) {
+                $cells = [$cells[0] ?? '', '', '', '', ''];
+            }
+            $nextH = $calcRowHeight($cells, $tableMinH, $tableFontSize);
+            if (($pdf->GetY() + $nextH) > 250.0) {
+                break;
+            }
+            $drawRow($cells, ($idx % 2 === 1), $tableMinH, $tableFontSize);
+            $p1SectorCount++;
+        }
+    }
+
+    // Page 1 Footer
+    $pdf->SetDrawColor(226, 232, 240);
+    $pdf->SetLineWidth(0.2);
+    $pdf->Line(14.0, 268.0, 201.0, 268.0);
+
+    $pdf->SetXY(14.0, 269.5);
+    $pdf->SetFont('Arial', '', 7);
+    $pdf->SetTextColor(156, 163, 175);
+    $pdf->Cell(140.0, 3.5, $footerSystemText, 0, 0, 'L');
+    $pdf->Cell(47.0, 3.5, 'Page 1 of 2', 0, 1, 'R');
+
+    // ==========================================
+    // PAGE 2: SECTOR CONTINUATION, SIGNATURES
+    // ==========================================
+    $pdf->AddPage();
+
+    // Sector Table Continuation
+    $pdf->SetY(14.0);
+    $remainingSectors = array_slice($sectorRows, $p1SectorCount);
+    if (!empty($remainingSectors)) {
+        $drawTableHeader('POPULATION BY SECTOR');
+        foreach ($remainingSectors as $idx => $row) {
+            $cells = is_array($row) ? array_values($row) : [];
+            if ($blankTemplate) {
+                $cells = [$cells[0] ?? '', '', '', '', ''];
+            }
+            $drawRow($cells, (($p1SectorCount + $idx) % 2 === 1), $tableMinH, $tableFontSize);
+        }
+    }
+
+    // Signatory Block
+    $signatureY = max(148.0, $pdf->GetY() + 12.0);
+
+    $leftX = 20.0;
+    $rightX = 115.0;
+    $columnWidth = 75.0;
+
+    $pdf->SetFont('Arial', '', 10);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetXY($leftX, $signatureY);
+    $pdf->Cell($columnWidth, 4.5, 'Prepared by:', 0, 0, 'L');
+    $pdf->SetXY($rightX, $signatureY);
+    $pdf->Cell($columnWidth, 4.5, 'Approved by:', 0, 1, 'L');
+
+    $lineY = $signatureY + 18.0;
+    $pdf->SetDrawColor(0, 0, 0);
+    $pdf->SetLineWidth(0.3);
+    $pdf->Line($leftX, $lineY, $leftX + $columnWidth, $lineY);
+    $pdf->Line($rightX, $lineY, $rightX + $columnWidth, $lineY);
+
+    $pdf->SetFont('Arial', 'B', 11);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetXY($leftX, $lineY + 1.2);
+    $pdf->Cell($columnWidth, 4.5, toPdfText(strtoupper($footer['secretary'] ?: 'BARANGAY SECRETARY')), 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 1.2);
+    $pdf->Cell($columnWidth, 4.5, toPdfText(strtoupper($footer['captain'] ?: 'PUNONG BARANGAY')), 0, 1, 'C');
+
+    $pdf->SetFont('Arial', '', 9.5);
+    $pdf->SetTextColor(0, 0, 0);
+    $pdf->SetXY($leftX, $lineY + 5.8);
+    $pdf->Cell($columnWidth, 4.0, 'Barangay Secretary', 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 5.8);
+    $pdf->Cell($columnWidth, 4.0, 'Punong Barangay', 0, 1, 'C');
+
+    $pdf->SetXY($leftX, $lineY + 10.0);
+    $pdf->Cell($columnWidth, 3.8, '(Signature over Printed Name)', 0, 0, 'C');
+    $pdf->SetXY($rightX, $lineY + 10.0);
+    $pdf->Cell($columnWidth, 3.8, '(Signature over Printed Name)', 0, 1, 'C');
+
+    // Page 2 Footer
+    $pdf->SetDrawColor(226, 232, 240);
+    $pdf->SetLineWidth(0.2);
+    $pdf->Line(14.0, 268.0, 201.0, 268.0);
+
+    $pdf->SetXY(14.0, 269.5);
+    $pdf->SetFont('Arial', '', 7);
+    $pdf->SetTextColor(156, 163, 175);
+    $pdf->Cell(140.0, 3.5, $footerSystemText, 0, 0, 'L');
+    $pdf->Cell(47.0, 3.5, 'Page 2 of 2', 0, 1, 'R');
 
     $binary = $pdf->Output('S');
     return is_string($binary) ? $binary : '';
@@ -2543,51 +2755,29 @@ function outputRbiFormCSpreadsheet(
         $sheet->getColumnDimension($column)->setWidth($width);
     }
 
-    $sheet->setCellValue('A1', 'ANNUAL MONITORING REPORT');
+    $sheet->setCellValue('A1', 'REGISTRY OF BARANGAY INHABITANTS');
     $sheet->mergeCells('A1:E1');
     $sheet->getStyle('A1:E1')->getFont()->setBold(true)->setSize(11);
     $sheet->getStyle('A1:E1')->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
 
-    $profileRows = [
-        ['REGION :', (string) ($report['region'] ?? '')],
-        ['PROVINCE:', (string) ($report['province'] ?? '')],
-        ['CITY/MUNICIPALITY:', (string) ($report['city'] ?? '')],
-        ['BARANGAY:', (string) ($report['barangay'] ?? '')],
-    ];
-    $row = 5;
-    foreach ($profileRows as [$label, $value]) {
-        $sheet->setCellValue("A{$row}", $label);
-        $sheet->setCellValue("B{$row}", $value);
-        $sheet->mergeCells("B{$row}:C{$row}");
-        $sheet->getStyle("A{$row}")->getFont()->setBold(true);
-        $row++;
-    }
-    $row++;
+    $row = 3;
     $sheet->setCellValue("A{$row}", 'Total No. of Barangay Inhabitants:');
-    $sheet->mergeCells("A{$row}:C{$row}");
+    $sheet->setCellValue("B{$row}", toInt($report['population'] ?? 0));
     $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("B{$row}")->getFont()->setBold(true);
     $row++;
-    $sheet->setCellValue("A{$row}", toInt($report['population'] ?? 0));
-    $row += 2;
     $sheet->setCellValue("A{$row}", 'Total No. of Households:');
     $sheet->setCellValue("B{$row}", toInt($report['households'] ?? 0));
     $sheet->getStyle("A{$row}")->getFont()->setBold(true);
-    $row++;
-    $sheet->setCellValue("A{$row}", 'Total No. of Families:');
-    $sheet->setCellValue("B{$row}", toInt($report['families'] ?? 0));
-    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("B{$row}")->getFont()->setBold(true);
     $row += 2;
 
     $tableStart = $row;
-    foreach (['INDICATORS', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'] as $index => $header) {
+    foreach (['AGE BRACKET', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'] as $index => $header) {
         $sheet->setCellValue([$index + 1, $row], $header);
     }
     $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
     $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $row++;
-    $sheet->setCellValue("A{$row}", 'Population by Age Bracket:');
-    $sheet->mergeCells("A{$row}:E{$row}");
-    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setItalic(true);
     $row++;
     foreach ((array) ($report['age_rows'] ?? []) as $cells) {
         foreach (array_values((array) $cells) as $index => $value) {
@@ -2595,9 +2785,18 @@ function outputRbiFormCSpreadsheet(
         }
         $row++;
     }
-    $sheet->setCellValue("A{$row}", 'Population by Sector:');
-    $sheet->mergeCells("A{$row}:E{$row}");
-    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->setItalic(true);
+    $table1End = $row - 1;
+    $sheet->getStyle("A{$tableStart}:E{$table1End}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_MEDIUM);
+    $sheet->getStyle("A{$tableStart}:E{$table1End}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
+    $sheet->getStyle("B{$tableStart}:D{$table1End}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+
+    $row++; // Space between tables
+    $table2Start = $row;
+    foreach (['POPULATION BY SECTOR', 'MALE', 'FEMALE', 'TOTAL', 'REMARKS'] as $index => $header) {
+        $sheet->setCellValue([$index + 1, $row], $header);
+    }
+    $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
     $row++;
     $sectorRows = array_values((array) ($report['sector_rows'] ?? []));
     foreach ($sectorRows as $index => $cells) {
@@ -2609,15 +2808,15 @@ function outputRbiFormCSpreadsheet(
             $sheet->setBreak("A{$row}", PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW);
         }
     }
-    $tableEnd = $row - 1;
-    $sheet->getStyle("A{$tableStart}:E{$tableEnd}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_MEDIUM);
-    $sheet->getStyle("A{$tableStart}:E{$tableEnd}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
-    $sheet->getStyle("B{$tableStart}:D{$tableEnd}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
+    $table2End = $row - 1;
+    $sheet->getStyle("A{$table2Start}:E{$table2End}")->getBorders()->getAllBorders()->setBorderStyle($borderClass::BORDER_MEDIUM);
+    $sheet->getStyle("A{$table2Start}:E{$table2End}")->getAlignment()->setVertical($alignmentClass::VERTICAL_CENTER)->setWrapText(true);
+    $sheet->getStyle("B{$table2Start}:D{$table2End}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
 
     $footer = reportFooterData($profile, $report);
     $row += 3;
     $sheet->setCellValue("A{$row}", 'Prepared by:');
-    $sheet->setCellValue("D{$row}", 'Submitted by:');
+    $sheet->setCellValue("D{$row}", 'Approved by:');
     $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
     $row += 3;
     $sheet->setCellValue("A{$row}", strtoupper($footer['secretary']));
@@ -2638,21 +2837,6 @@ function outputRbiFormCSpreadsheet(
     $sheet->setCellValue("D{$row}", '(Signature over Printed Name)');
     $sheet->mergeCells("D{$row}:E{$row}");
     $sheet->getStyle("A{$row}:E{$row}")->getAlignment()->setHorizontal($alignmentClass::HORIZONTAL_CENTER);
-    $row += 2;
-    $dateLabel = reportDateAccomplishedLabel($report);
-    $sheet->setCellValue("A{$row}", 'Date Accomplished:');
-    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
-    $row++;
-    $sheet->setCellValue("A{$row}", $dateLabel);
-    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
-    $row += 2;
-    $noteRichText = new PhpOffice\PhpSpreadsheet\RichText\RichText();
-    $noteLabelRun = $noteRichText->createTextRun('Note:');
-    $noteLabelRun->getFont()->setBold(true);
-    $noteRichText->createText(' This RBI Form C (Annual Monitoring Report) is to be submitted to DILG C/MLGOO as a reference for encoding to BIS-BPS.');
-    $sheet->setCellValue("A{$row}", $noteRichText);
-    $sheet->mergeCells("A{$row}:E{$row}");
-    $sheet->getStyle("A{$row}")->getFont()->setBold(false)->setSize(8);
 
     $sheet->getPageMargins()->setTop(0.35)->setBottom(0.35)->setLeft(0.35)->setRight(0.35);
     $sheet->getPageSetup()->setOrientation($pageSetupClass::ORIENTATION_PORTRAIT);
@@ -2872,6 +3056,10 @@ if ($origin !== '' && in_array($origin, $allowedOrigins, true)) {
     header('Access-Control-Allow-Methods: POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Accept, X-CSRF-Token');
 }
+if (defined('REPORT_EXPORT_NO_RUN')) {
+    return;
+}
+
 if ($requestMethod === 'OPTIONS') {
     http_response_code(204);
     exit;

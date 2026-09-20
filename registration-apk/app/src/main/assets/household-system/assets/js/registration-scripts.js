@@ -339,6 +339,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const duplicateHouseholdModalTitle = document.getElementById("duplicateHouseholdModalTitle");
   const duplicateHouseholdModalMessage = document.getElementById("duplicateHouseholdModalMessage");
   const loadExistingBtn = document.getElementById("loadExistingBtn");
+  const cancelEditBtn = document.getElementById("cancelEditBtn");
   const loadHouseholdModalEl = document.getElementById("loadHouseholdModal");
   const loadHouseholdModal = loadHouseholdModalEl ? new bootstrap.Modal(loadHouseholdModalEl) : null;
   const loadHouseholdYear = document.getElementById("loadHouseholdYear");
@@ -919,9 +920,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (saveModalDescription) saveModalDescription.textContent = "Ready to update this household record?";
     if (saveConfirm) saveConfirm.textContent = "Update";
     if (loadExistingBtn) {
-      loadExistingBtn.innerHTML = editReturnSource === "household-view"
+      loadExistingBtn.classList.add("d-none");
+    }
+    if (cancelEditBtn) {
+      cancelEditBtn.classList.remove("d-none");
+      cancelEditBtn.innerHTML = editReturnSource === "household-view"
         ? '<i class="bi bi-arrow-left"></i> Back to Household'
         : '<i class="bi bi-arrow-left"></i> Back to Registration';
+    }
+    if (clearBtn) {
+      clearBtn.classList.add("d-none");
     }
   } else if (targetRecordYear !== new Date().getFullYear()) {
     if (contentSubtitle) {
@@ -3448,6 +3456,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       buildSection("E. Social Welfare", [
         { label: "4Ps Member?", value: valueOf("4ps") },
         { label: "Senior Citizen?", value: valueOf("senior") },
+        { label: "Solo Parent?", value: valueOf("solo_parent") },
         { label: "PWD?", value: valueOf("pwd") },
         { label: "Indigenous People (IP)?", value: valueOf("ip") }
       ]),
@@ -4629,6 +4638,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       { label: "Monthly Income", value: member.monthly_income },
       { label: "4Ps", value: member.four_ps },
       { label: "Senior Citizen", value: member.senior },
+      { label: "Solo Parent", value: member.solo_parent },
       { label: "PWD", value: member.pwd },
       { label: "IP", value: member.ip },
       { label: "Registered Voter", value: member.voter },
@@ -5062,23 +5072,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  const handleCancelEdit = async () => {
+    if (!requireRegistrationPhotosIdle()) {
+      return;
+    }
+    const returnUrl = buildEditModeReturnUrl();
+    if (cancelEditBtn) cancelEditBtn.disabled = true;
+    if (loadExistingBtn) loadExistingBtn.disabled = true;
+    try {
+      await clearRegistrationDraftState();
+      window.sessionStorage.removeItem(LOAD_EDIT_CONTEXT_KEY);
+      window.location.assign(returnUrl);
+    } catch (error) {
+      if (cancelEditBtn) cancelEditBtn.disabled = false;
+      if (loadExistingBtn) loadExistingBtn.disabled = false;
+      const message = error instanceof Error ? error.message : "Unable to clear the current household draft.";
+      showSyncToast(message, "danger", "Back to Registration");
+    }
+  };
+
+  if (cancelEditBtn) {
+    cancelEditBtn.addEventListener("click", handleCancelEdit);
+  }
+
   if (loadExistingBtn) {
     loadExistingBtn.addEventListener("click", async () => {
       if (!requireRegistrationPhotosIdle()) {
         return;
       }
       if (isEditMode) {
-        const returnUrl = buildEditModeReturnUrl();
-        loadExistingBtn.disabled = true;
-        try {
-          await clearRegistrationDraftState();
-          window.sessionStorage.removeItem(LOAD_EDIT_CONTEXT_KEY);
-          window.location.assign(returnUrl);
-        } catch (error) {
-          loadExistingBtn.disabled = false;
-          const message = error instanceof Error ? error.message : "Unable to clear the current household draft.";
-          showSyncToast(message, "danger", "Back to Registration");
-        }
+        await handleCancelEdit();
         return;
       }
       await syncConnectivityState({ force: true });

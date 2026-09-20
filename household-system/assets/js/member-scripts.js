@@ -927,6 +927,7 @@
       senior: document.getElementById("senior").value,
       pwd: document.getElementById("pwd").value,
       ip: document.getElementById("ip").value,
+      solo_parent: document.getElementById("solo_parent") ? document.getElementById("solo_parent").value : "No",
       voter: document.getElementById("voter").value,
       precinct: document.getElementById("precinct").value.trim(),
       sss: document.getElementById("sss").value.trim(),
@@ -984,6 +985,7 @@
       setValue("senior", member.senior);
       setValue("pwd", member.pwd);
       setValue("ip", member.ip);
+      setValue("solo_parent", member.solo_parent || "No");
       setValue("voter", member.voter);
       setValue("precinct", member.precinct);
       setValue("sss", member.sss);

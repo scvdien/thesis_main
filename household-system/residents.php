@@ -331,6 +331,7 @@ $residentsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/residents-s
                     <div class="resident-detail-item"><span class="k">4Ps Beneficiary</span><span class="v" id="rd4ps">-</span></div>
                     <div class="resident-detail-item"><span class="k">PWD</span><span class="v" id="rdPWD">-</span></div>
                     <div class="resident-detail-item"><span class="k">Senior Citizen</span><span class="v" id="rdSenior">-</span></div>
+                    <div class="resident-detail-item"><span class="k">Solo Parent</span><span class="v" id="rdSoloParent">-</span></div>
                     <div class="resident-detail-item"><span class="k">Indigenous People</span><span class="v" id="rdIP">-</span></div>
                   </div>
                   <div class="resident-gov-grid-bottom">

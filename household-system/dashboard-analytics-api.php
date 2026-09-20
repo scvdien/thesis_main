@@ -252,23 +252,24 @@ function dash_age_bucket_rbi(?int $age): ?string
         return null;
     }
     return match (true) {
-        $age < 5 => 'Under 5 years old',
-        $age <= 9 => '5-9 years old',
-        $age <= 14 => '10-14 years old',
-        $age <= 19 => '15-19 years old',
-        $age <= 24 => '20-24 years old',
-        $age <= 29 => '25-29 years old',
-        $age <= 34 => '30-34 years old',
-        $age <= 39 => '35-39 years old',
-        $age <= 44 => '40-44 years old',
-        $age <= 49 => '45-49 years old',
-        $age <= 54 => '50-54 years old',
-        $age <= 59 => '55-59 years old',
-        $age <= 64 => '60-64 years old',
-        $age <= 69 => '65-69 years old',
-        $age <= 74 => '70-74 years old',
-        $age <= 79 => '75-79 years old',
-        default => '80 years old and over',
+        $age < 1 => 'Under 1',
+        $age <= 4 => '1 to 4',
+        $age <= 9 => '5 to 9',
+        $age <= 14 => '10 to 14',
+        $age <= 19 => '15 to 19',
+        $age <= 24 => '20 to 24',
+        $age <= 29 => '25 to 29',
+        $age <= 34 => '30 to 34',
+        $age <= 39 => '35 to 39',
+        $age <= 44 => '40 to 44',
+        $age <= 49 => '45 to 49',
+        $age <= 54 => '50 to 54',
+        $age <= 59 => '55 to 59',
+        $age <= 64 => '60 to 64',
+        $age <= 69 => '65 to 69',
+        $age <= 74 => '70 to 74',
+        $age <= 79 => '75 to 79',
+        default => '80 and over',
     };
 }
 
@@ -393,6 +394,25 @@ function dash_sort_counts(array $map): array
 function dash_build_analytics(PDO $pdo, int $year): array
 {
     $ageBrackets = [
+        'Under 1' => 0,
+        '1 to 4' => 0,
+        '5 to 9' => 0,
+        '10 to 14' => 0,
+        '15 to 19' => 0,
+        '20 to 24' => 0,
+        '25 to 29' => 0,
+        '30 to 34' => 0,
+        '35 to 39' => 0,
+        '40 to 44' => 0,
+        '45 to 49' => 0,
+        '50 to 54' => 0,
+        '55 to 59' => 0,
+        '60 to 64' => 0,
+        '65 to 69' => 0,
+        '70 to 74' => 0,
+        '75 to 79' => 0,
+        '80 and over' => 0,
+        // Legacy fallback keys
         '0-5' => 0,
         '6-10' => 0,
         '11-15' => 0,
@@ -447,11 +467,24 @@ function dash_build_analytics(PDO $pdo, int $year): array
         '6+ Members' => 0,
     ];
     $rbiAgeLabels = [
-        'Under 5 years old', '5-9 years old', '10-14 years old', '15-19 years old',
-        '20-24 years old', '25-29 years old', '30-34 years old', '35-39 years old',
-        '40-44 years old', '45-49 years old', '50-54 years old', '55-59 years old',
-        '60-64 years old', '65-69 years old', '70-74 years old', '75-79 years old',
-        '80 years old and over',
+        'Under 1',
+        '1 to 4',
+        '5 to 9',
+        '10 to 14',
+        '15 to 19',
+        '20 to 24',
+        '25 to 29',
+        '30 to 34',
+        '35 to 39',
+        '40 to 44',
+        '45 to 49',
+        '50 to 54',
+        '55 to 59',
+        '60 to 64',
+        '65 to 69',
+        '70 to 74',
+        '75 to 79',
+        '80 and over',
     ];
     $rbiSectorLabels = [
         'Labor Force',
@@ -470,8 +503,6 @@ function dash_build_analytics(PDO $pdo, int $year): array
         '4Ps Beneficiaries',
         'Registered Voters',
         'Pregnant Women',
-        'Persons with Current Illness',
-        'Malnourished Children',
         'Employment: Employed',
         'Employment: Self-Employed',
         'Education: Elementary',
@@ -538,9 +569,12 @@ function dash_build_analytics(PDO $pdo, int $year): array
             dash_increment($ageFiveBrackets, $ageFiveKey);
         }
         $rbiAgeKey = dash_age_bucket_rbi($age);
-        if ($rbiAgeKey !== null && isset($rbiAgeSex[$rbiAgeKey])) {
-            $rbiAgeSex[$rbiAgeKey][$rbiSex]++;
-            $rbiAgeSex[$rbiAgeKey]['Total']++;
+        if ($rbiAgeKey !== null) {
+            dash_increment($ageBrackets, $rbiAgeKey);
+            if (isset($rbiAgeSex[$rbiAgeKey])) {
+                $rbiAgeSex[$rbiAgeKey][$rbiSex]++;
+                $rbiAgeSex[$rbiAgeKey]['Total']++;
+            }
         }
 
         $civilStatus = dash_normalize_civil_status($profile['civil_status'] ?? '');
@@ -565,13 +599,10 @@ function dash_build_analytics(PDO $pdo, int $year): array
             dash_increment($otherIndicators, 'Senior Citizens');
         }
         $numChildren = dash_to_int($profile['num_children'] ?? null) ?? 0;
-        $isSoloParent = false;
-        if (
-            $numChildren > 0
-            && in_array($civilStatus, ['Single', 'Separated', 'Widowed'], true)
-        ) {
+        $isSoloParent = dash_is_yes($profile['solo_parent'] ?? 'No')
+            || ($numChildren > 0 && in_array($civilStatus, ['Single', 'Separated', 'Widowed'], true));
+        if ($isSoloParent) {
             dash_increment($otherIndicators, 'Solo Parents');
-            $isSoloParent = true;
         }
 
         $sectorMatches = [
@@ -596,8 +627,6 @@ function dash_build_analytics(PDO $pdo, int $year): array
             'Registered Voters' => dash_is_yes($profile['voter'] ?? 'No'),
             'Pregnant Women' => $gender === 'Female'
                 && (dash_is_yes($profile['pregnant'] ?? 'No') || dash_is_yes($profile['health_maternal_pregnant'] ?? 'No')),
-            'Persons with Current Illness' => dash_is_yes($profile['health_current_illness'] ?? 'No'),
-            'Malnourished Children' => dash_is_yes($profile['health_child_malnutrition'] ?? 'No'),
             'Employment: Employed' => $employment === 'Employed',
             'Employment: Self-Employed' => $employment === 'Self-Employed',
             'Education: Elementary' => $education === 'Elementary',

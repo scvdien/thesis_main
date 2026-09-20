@@ -755,6 +755,7 @@ const buildResidentDefaults = (rowData = {}) => {
     senior: '-',
     pwd: '-',
     ip: '-',
+    solo_parent: '-',
     voter: '-',
     precinct: '-',
     sss: '-',
@@ -838,6 +839,7 @@ const normalizeResidentDetails = (rowData, payload) => {
     ),
     pwd: toYesNoOrDash(profile.pwd, defaults.pwd),
     ip: toYesNoOrDash(profile.ip, defaults.ip),
+    solo_parent: toYesNoOrDash(profile.solo_parent, defaults.solo_parent),
     four_ps: toYesNoOrDash(profile.four_ps, defaults.four_ps),
     voter: toYesNoOrDash(profile.voter, defaults.voter)
   };
@@ -1078,6 +1080,7 @@ const populateResidentModal = (details, loadErrorMessage = '') => {
     ['rdSenior', 'senior'],
     ['rdPWD', 'pwd'],
     ['rdIP', 'ip'],
+    ['rdSoloParent', 'solo_parent'],
     ['rdVoter', 'voter'],
     ['rdPrecinct', 'precinct'],
     ['rdSSS', 'sss'],

@@ -129,20 +129,20 @@
       <td>${escapeHtml(category)}</td>
       <td>${escapeHtml(period)}</td>
       <td>${escapeHtml(updated)}</td>
-      <td class="text-end">
-        <div class="table-actions">
-          <button type="button" class="btn btn-outline-primary btn-sm report-view-btn open-report view-report"
-                  data-id="${escapeHtml(reportId)}"
-                  data-title="${escapeHtml(title)}"
-                  data-category="${escapeHtml(category)}"
-                  data-period="${escapeHtml(period)}"
-                  data-status="Draft"
-                  data-updated="${escapeHtml(updated)}"
-                  data-summary="${escapeHtml(summary)}"
-                  data-document="${escapeHtml(documentBody)}">
-            <i class="bi bi-eye"></i> View
-          </button>
-        </div>
+      <td class="text-center">
+        <button type="button" class="btn btn-outline-primary btn-sm report-view-btn open-report view-report"
+                data-id="${escapeHtml(reportId)}"
+                data-title="${escapeHtml(title)}"
+                data-category="${escapeHtml(category)}"
+                data-period="${escapeHtml(period)}"
+                data-status="Draft"
+                data-updated="${escapeHtml(updated)}"
+                data-summary="${escapeHtml(summary)}"
+                data-document="${escapeHtml(documentBody)}"
+                title="View report"
+                aria-label="View report">
+          <i class="bi bi-eye" aria-hidden="true"></i>
+        </button>
       </td>
     `;
   };

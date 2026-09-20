@@ -129,16 +129,24 @@ $adminDashboardScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/admin-
       <!-- AGE -->
       <h5 class="mt-4 fw-bold">Age Brackets</h5>
       <div class="age-grid">
-        <div class="card-box">0-5<br><b id="age_0_5">0</b></div>
-        <div class="card-box">6-10<br><b id="age_6_10">0</b></div>
-        <div class="card-box">11-15<br><b id="age_11_15">0</b></div>
-        <div class="card-box">16-20<br><b id="age_16_20">0</b></div>
-        <div class="card-box">21-30<br><b id="age_21_30">0</b></div>
-        <div class="card-box">31-40<br><b id="age_31_40">0</b></div>
-        <div class="card-box">41-50<br><b id="age_41_50">0</b></div>
-        <div class="card-box">51-60<br><b id="age_51_60">0</b></div>
-        <div class="card-box">61-70<br><b id="age_61_70">0</b></div>
-        <div class="card-box">71+<br><b id="age_71_plus">0</b></div>
+        <div class="card-box">Under 1<br><b id="age_under_1">0</b></div>
+        <div class="card-box">1 to 4<br><b id="age_1_4">0</b></div>
+        <div class="card-box">5 to 9<br><b id="age_5_9">0</b></div>
+        <div class="card-box">10 to 14<br><b id="age_10_14">0</b></div>
+        <div class="card-box">15 to 19<br><b id="age_15_19">0</b></div>
+        <div class="card-box">20 to 24<br><b id="age_20_24">0</b></div>
+        <div class="card-box">25 to 29<br><b id="age_25_29">0</b></div>
+        <div class="card-box">30 to 34<br><b id="age_30_34">0</b></div>
+        <div class="card-box">35 to 39<br><b id="age_35_39">0</b></div>
+        <div class="card-box">40 to 44<br><b id="age_40_44">0</b></div>
+        <div class="card-box">45 to 49<br><b id="age_45_49">0</b></div>
+        <div class="card-box">50 to 54<br><b id="age_50_54">0</b></div>
+        <div class="card-box">55 to 59<br><b id="age_55_59">0</b></div>
+        <div class="card-box">60 to 64<br><b id="age_60_64">0</b></div>
+        <div class="card-box">65 to 69<br><b id="age_65_69">0</b></div>
+        <div class="card-box">70 to 74<br><b id="age_70_74">0</b></div>
+        <div class="card-box">75 to 79<br><b id="age_75_79">0</b></div>
+        <div class="card-box">80 and over<br><b id="age_80_over">0</b></div>
       </div>
 
       <!-- CHARTS -->

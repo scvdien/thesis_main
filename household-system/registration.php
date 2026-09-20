@@ -197,9 +197,11 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       </div>
       <div class="content-meta">
         <div class="content-meta-actions">
+          <?php if (!$isRegistrationEditMode): ?>
           <button type="button" class="btn btn-outline-primary btn-sm" id="loadExistingBtn">
-            <i class="bi <?= $isRegistrationEditMode ? 'bi-arrow-left' : 'bi-folder2-open' ?>"></i> <?= $isRegistrationEditMode ? ($isHouseholdEditReturn ? 'Back to Household' : 'Back to Registration') : 'Load Existing Household' ?>
+            <i class="bi bi-folder2-open"></i> Load Existing Household
           </button>
+          <?php endif; ?>
         </div>
       </div>
     </div>
@@ -485,11 +487,12 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
     <div class="card section-card mb-4">
       <div class="card-header section-header d-flex justify-content-between align-items-center">E. Social Welfare <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
       <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-3"><label class="form-label">4Ps Member?</label><select class="form-select" name="4ps"><option>No</option><option>Yes</option></select></div>
-          <div class="col-md-3"><label class="form-label">Senior Citizen?</label><select class="form-select" name="senior"><option>No</option><option>Yes</option></select></div>
-          <div class="col-md-3"><label class="form-label">PWD?</label><select class="form-select" name="pwd"><option>No</option><option>Yes</option></select></div>
-          <div class="col-md-3"><label class="form-label">Indigenous People (IP)?</label><select class="form-select" name="ip"><option>No</option><option>Yes</option></select></div>
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-5 g-3">
+          <div class="col"><label class="form-label">4Ps Member?</label><select class="form-select" name="4ps"><option>No</option><option>Yes</option></select></div>
+          <div class="col"><label class="form-label">Senior Citizen?</label><select class="form-select" name="senior"><option>No</option><option>Yes</option></select></div>
+          <div class="col"><label class="form-label">Solo Parent?</label><select class="form-select" name="solo_parent"><option>No</option><option>Yes</option></select></div>
+          <div class="col"><label class="form-label">PWD?</label><select class="form-select" name="pwd"><option>No</option><option>Yes</option></select></div>
+          <div class="col"><label class="form-label">Indigenous People (IP)?</label><select class="form-select" name="ip"><option>No</option><option>Yes</option></select></div>
         </div>
       </div>
     </div>
@@ -639,6 +642,9 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
         <button type="button" class="btn btn-outline-primary" id="previewBtn"><i class="bi bi-eye"></i> Preview</button>
         <?php if (!$isRegistrationEditMode): ?>
         <button type="button" class="btn btn-secondary" id="clearBtn"><i class="bi bi-x-circle"></i> Clear</button>
+        <button type="button" class="btn btn-outline-primary d-none" id="cancelEditBtn"><i class="bi bi-arrow-left"></i> Back to Registration</button>
+        <?php else: ?>
+        <button type="button" class="btn btn-outline-primary" id="cancelEditBtn"><i class="bi bi-arrow-left"></i> <?= $isHouseholdEditReturn ? 'Back to Household' : 'Back to Registration' ?></button>
         <?php endif; ?>
         <button type="button" class="btn btn-primary" id="saveBtn"><i class="bi bi-save"></i> Save Registration</button>
       </div>

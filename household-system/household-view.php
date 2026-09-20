@@ -258,6 +258,7 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
                       <div class="kv"><span class="k">Senior</span><span class="v" id="hvHeadSenior">-</span></div>
                       <div class="kv"><span class="k">PWD</span><span class="v" id="hvHeadPWD">-</span></div>
                       <div class="kv"><span class="k">Indigenous People</span><span class="v" id="hvHeadIP">-</span></div>
+                      <div class="kv"><span class="k">Solo Parent</span><span class="v" id="hvHeadSoloParent">-</span></div>
                   </div>
                 </div>
               </div>
@@ -462,6 +463,7 @@ $registrationOfflineInitVersion = (string) (@filemtime(__DIR__ . '/assets/js/reg
                     <div class="member-detail-item"><span class="k">PWD</span><span class="v" id="mdPWD">-</span></div>
                     <div class="member-detail-item"><span class="k">Senior Citizen</span><span class="v" id="mdSenior">-</span></div>
                     <div class="member-detail-item"><span class="k">Indigenous People</span><span class="v" id="mdIP">-</span></div>
+                    <div class="member-detail-item"><span class="k">Solo Parent</span><span class="v" id="mdSoloParent">-</span></div>
                   </div>
                   <div class="member-gov-grid-bottom">
                     <div class="member-detail-item"><span class="k">Registered Voter</span><span class="v" id="mdVoter">-</span></div>

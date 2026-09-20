@@ -150,7 +150,7 @@ BEGIN
     `zone`, `barangay`, `city`, `province`,
     `head_education`, `head_degree`, `head_school_name`, `head_school_type`, `head_dropout`, `head_osy`, `head_currently_studying`,
     `head_occupation`, `head_employment_status`, `head_work_type`, `head_monthly_income`, `head_four_ps`,
-    `head_senior`, `head_pwd`, `head_ip`, `head_voter`, `head_precinct`,
+    `head_senior`, `head_pwd`, `head_ip`, `head_solo_parent`, `head_voter`, `head_precinct`,
     `head_sss`, `head_philhealth`, `head_gsis`, `head_tin`, `head_philid`, `head_driver_license`, `head_passport`,
     `num_members`, `relation_to_head`, `num_children`, `partner_name`,
     `house_type`, `ownership`, `num_rooms`, `toilet`, `electricity`, `water`, `internet`,
@@ -318,6 +318,11 @@ BEGIN
       ''
     ), 20),
     LEFT(COALESCE(
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.solo_parent')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.solo_parent')), ''),
+      'No'
+    ), 20),
+    LEFT(COALESCE(
       NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_head_json, '$.voter')), ''),
       NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_record_head_json, '$.voter')), ''),
       ''
@@ -458,6 +463,7 @@ BEGIN
     `head_senior` = VALUES(`head_senior`),
     `head_pwd` = VALUES(`head_pwd`),
     `head_ip` = VALUES(`head_ip`),
+    `head_solo_parent` = VALUES(`head_solo_parent`),
     `head_voter` = VALUES(`head_voter`),
     `head_precinct` = VALUES(`head_precinct`),
     `head_sss` = VALUES(`head_sss`),

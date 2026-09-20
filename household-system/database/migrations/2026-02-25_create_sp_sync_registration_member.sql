@@ -80,7 +80,7 @@ BEGIN
     `zone`, `barangay`, `city`, `province`,
     `education`, `degree`, `school_name`, `school_type`, `dropout`, `osy`, `currently_studying`,
     `occupation`, `employment_status`, `work_type`, `monthly_income`, `four_ps`,
-    `senior`, `pwd`, `ip`, `voter`, `precinct`,
+    `senior`, `pwd`, `ip`, `solo_parent`, `voter`, `precinct`,
     `sss`, `philhealth`, `gsis`, `tin`, `philid`, `driver_license`, `passport`,
     `num_members`, `relation_to_head`, `num_children`, `partner_name`,
     `raw_member_json`, `created_at`, `updated_at`
@@ -132,6 +132,7 @@ BEGIN
     LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.senior')), ''), ''), 20),
     LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.pwd')), ''), ''), 20),
     LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.ip')), ''), ''), 20),
+    LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.solo_parent')), ''), 'No'), 20),
     LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.voter')), ''), ''), 20),
     LEFT(COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(v_member_json, '$.precinct')), ''), ''), 80),
 
@@ -192,6 +193,7 @@ BEGIN
     `senior` = VALUES(`senior`),
     `pwd` = VALUES(`pwd`),
     `ip` = VALUES(`ip`),
+    `solo_parent` = VALUES(`solo_parent`),
     `voter` = VALUES(`voter`),
     `precinct` = VALUES(`precinct`),
     `sss` = VALUES(`sss`),

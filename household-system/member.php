@@ -96,11 +96,6 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
             <div class="subtitle"><?= htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8') ?></div>
           </div>
         </div>
-        <div class="header-actions">
-          <button type="button" class="btn btn-light btn-sm" id="backBtn">
-            <i class="bi bi-arrow-left"></i> <?= $isHouseholdViewMode ? 'Back to Household' : 'Back to Registration' ?>
-          </button>
-        </div>
       </div>
     </div>
 
@@ -402,11 +397,12 @@ $memberScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/member-scripts
       <div class="card section-card mb-4">
         <div class="card-header section-header d-flex justify-content-between align-items-center">E. Social Welfare <span class="badge rounded-pill bg-light text-muted fw-normal">Optional</span></div>
         <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-3"><label class="form-label" for="four_ps">4Ps Member?</label><select class="form-select" id="four_ps"><option>No</option><option>Yes</option></select></div>
-            <div class="col-md-3"><label class="form-label" for="senior">Senior Citizen?</label><select class="form-select" id="senior"><option>No</option><option>Yes</option></select></div>
-            <div class="col-md-3"><label class="form-label" for="pwd">PWD?</label><select class="form-select" id="pwd"><option>No</option><option>Yes</option></select></div>
-            <div class="col-md-3"><label class="form-label" for="ip">Indigenous People (IP)?</label><select class="form-select" id="ip"><option>No</option><option>Yes</option></select></div>
+          <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-5 g-3">
+            <div class="col"><label class="form-label" for="four_ps">4Ps Member?</label><select class="form-select" id="four_ps"><option>No</option><option>Yes</option></select></div>
+            <div class="col"><label class="form-label" for="senior">Senior Citizen?</label><select class="form-select" id="senior"><option>No</option><option>Yes</option></select></div>
+            <div class="col"><label class="form-label" for="solo_parent">Solo Parent?</label><select class="form-select" id="solo_parent"><option>No</option><option>Yes</option></select></div>
+            <div class="col"><label class="form-label" for="pwd">PWD?</label><select class="form-select" id="pwd"><option>No</option><option>Yes</option></select></div>
+            <div class="col"><label class="form-label" for="ip">Indigenous People (IP)?</label><select class="form-select" id="ip"><option>No</option><option>Yes</option></select></div>
           </div>
         </div>
       </div>

@@ -133,7 +133,7 @@ if ($brandSidebarLabel === '') {
                 <th>Category</th>
                 <th>Period</th>
                 <th>Last Updated</th>
-                <th class="text-end">Action</th>
+                <th class="text-center">Action</th>
               </tr>
             </thead>
             <tbody id="reportsTableBody">
@@ -155,46 +155,46 @@ if ($brandSidebarLabel === '') {
   <div class="modal fade" id="reportModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content modern-modal">
-        <div class="modal-header border-0 pb-0 report-modal-header">
-          <h5 class="modal-title mb-0">Report Details</h5>
-<?php if ($isAdminRole): ?>
+        <div class="modal-header report-modal-header">
+          <div class="report-modal-title-group">
+            <div class="report-modal-icon-badge">
+              <i class="bi bi-file-earmark-text"></i>
+            </div>
+            <div>
+              <h5 class="report-modal-heading">Report Details</h5>
+              <p class="report-modal-subheading">Registry of Barangay Inhabitants</p>
+            </div>
+          </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-<?php else: ?>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-<?php endif; ?>
         </div>
-        <div class="modal-body pt-3">
-          <div class="report-detail-list">
-            <div class="report-detail-item">
-              <span class="report-detail-label">Report ID:</span>
-              <span class="report-detail-value" id="reportModalId">-</span>
+        <div class="modal-body">
+          <div class="report-detail-card">
+            <div class="report-detail-row">
+              <span class="report-detail-label">Report ID</span>
+              <span class="report-id-badge" id="reportModalId">-</span>
             </div>
-            <div class="report-detail-item">
-              <span class="report-detail-label">Title:</span>
-              <span class="report-detail-value" id="reportModalTitle">-</span>
+            <div class="report-detail-row">
+              <span class="report-detail-label">Title</span>
+              <span class="report-detail-value text-truncate" style="max-width: 230px;" id="reportModalTitle">-</span>
             </div>
-            <div class="report-detail-item">
-              <span class="report-detail-label">Period:</span>
+            <div class="report-detail-row">
+              <span class="report-detail-label">Period</span>
               <span class="report-detail-value" id="reportModalPeriod">Year <?= (int) date('Y') ?></span>
             </div>
-            <div class="report-detail-item">
-              <span class="report-detail-label">Generated Date:</span>
+            <div class="report-detail-row">
+              <span class="report-detail-label">Generated Date</span>
               <span class="report-detail-value" id="reportModalUpdated">-</span>
             </div>
           </div>
         </div>
-        <div class="modal-footer border-0 pt-0 report-modal-footer">
-          <div class="report-modal-actions">
-            <button class="btn btn-outline-success btn-modern" id="reportModalPrint"><i class="bi bi-file-earmark-excel"></i> Generate Excel</button>
-            <div class="report-modal-side-stack">
-              <button class="btn btn-modern btn-report-pdf" id="reportModalDownload"><i class="bi bi-file-earmark-pdf"></i> Generate PDF</button>
-<?php if ($isAdminRole): ?>
-              <button class="btn btn-danger btn-modern report-modal-delete-btn" id="reportModalDelete"><i class="bi bi-trash"></i> Delete Report</button>
-<?php else: ?>
-              <button class="btn btn-outline-secondary btn-modern" data-bs-dismiss="modal">Close</button>
-<?php endif; ?>
-            </div>
+        <div class="modal-footer report-modal-footer">
+          <div class="report-action-buttons-grid">
+            <button class="btn btn-report-pdf" id="reportModalDownload"><i class="bi bi-file-earmark-pdf"></i> Generate PDF</button>
+            <button class="btn btn-report-excel" id="reportModalPrint"><i class="bi bi-file-earmark-excel"></i> Generate Excel</button>
           </div>
+<?php if ($isAdminRole): ?>
+          <button type="button" class="btn btn-report-delete-link" id="reportModalDelete"><i class="bi bi-trash"></i> Delete this report</button>
+<?php endif; ?>
         </div>
       </div>
     </div>

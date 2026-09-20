@@ -289,6 +289,7 @@ const toMemberFormData = (member = {}, record = {}) => {
     senior: record.welfare?.senior || 'No',
     pwd: record.welfare?.pwd || 'No',
     ip: record.welfare?.ip || 'No',
+    solo_parent: record.welfare?.soloParent || 'No',
     voter: record.voter?.registered || 'No',
     precinct: record.voter?.precinct || '',
     sss: '',
@@ -625,7 +626,8 @@ const mapApiHouseholdToViewRecord = (payload) => {
       fourPs: head.four_ps,
       senior: head.senior,
       pwd: head.pwd,
-      ip: head.ip
+      ip: head.ip,
+      soloParent: head.solo_parent || 'No'
     },
     voter: {
       registered: head.voter,
@@ -1158,6 +1160,7 @@ const hydratePage = (record) => {
   setText('hvHeadSenior', welfare.senior);
   setText('hvHeadPWD', welfare.pwd);
   setText('hvHeadIP', welfare.ip);
+  setText('hvHeadSoloParent', welfare.soloParent);
 
   setText('hvHeadVoter', voter.registered);
   setText('hvHeadPrecinct', voter.precinct);
@@ -1241,6 +1244,7 @@ const openMemberDetails = (memberIndex) => {
   setText('mdSenior', memberData.senior);
   setText('mdPWD', memberData.pwd);
   setText('mdIP', memberData.ip);
+  setText('mdSoloParent', memberData.solo_parent);
   setText('mdVoter', memberData.voter);
   setText('mdPrecinct', memberData.precinct);
   setText('mdSSS', memberData.sss);
