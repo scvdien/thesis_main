@@ -51,6 +51,40 @@ $staffCredentialsDescription = $registrationRequiresCredentialUpdate
 $staffCredentialsBadge = $registrationRequiresCredentialUpdate ? 'Required' : '';
 $registrationCurrentUsername = (string) ($authUser['username'] ?? '');
 $registrationCurrentUserId = (int) ($authUser['id'] ?? 0);
+$registrationCurrentFullName = trim((string) ($authUser['full_name'] ?? ''));
+$registrationCurrentContact = trim((string) ($authUser['contact_number'] ?? ''));
+$registrationCurrentCreatedAt = trim((string) ($authUser['created_at'] ?? ''));
+$registrationRoleLabel = match ($authRole) {
+  AUTH_ROLE_ADMIN => 'Administrator',
+  AUTH_ROLE_CAPTAIN => 'Barangay Captain',
+  AUTH_ROLE_SECRETARY => 'Barangay Secretary',
+  default => 'Registration Staff',
+};
+$staffDisplayInitials = '';
+if ($registrationCurrentFullName !== '') {
+  $parts = preg_split('/\s+/', $registrationCurrentFullName);
+  if (!empty($parts)) {
+    $staffDisplayInitials = mb_strtoupper(mb_substr($parts[0], 0, 1));
+    if (count($parts) > 1) {
+      $staffDisplayInitials .= mb_strtoupper(mb_substr(end($parts), 0, 1));
+    }
+  }
+}
+if ($staffDisplayInitials === '') {
+  $staffDisplayInitials = mb_strtoupper(mb_substr($registrationCurrentUsername, 0, 2));
+}
+
+$staffRegisteredCount = 0;
+if ($registrationCurrentUserId > 0) {
+  try {
+    $countPdo = auth_db();
+    $countStmt = $countPdo->prepare('SELECT COUNT(*) FROM `households` WHERE `created_by_user_id` = :uid');
+    $countStmt->execute(['uid' => $registrationCurrentUserId]);
+    $staffRegisteredCount = (int) $countStmt->fetchColumn();
+  } catch (Throwable $e) {
+    $staffRegisteredCount = 0;
+  }
+}
 $registrationCsrfToken = auth_csrf_token();
 $registrationStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/registration-style.css') ?: time());
 $indexedDbStorageVersion = (string) (@filemtime(__DIR__ . '/assets/js/indexeddb-storage-scripts.js') ?: time());
@@ -119,6 +153,10 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
   data-requires-credential-update="<?= $registrationRequiresCredentialUpdate ? 'true' : 'false' ?>"
   data-current-username="<?= htmlspecialchars($registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?>"
   data-current-user-id="<?= $registrationCurrentUserId ?>"
+  data-current-full-name="<?= htmlspecialchars($registrationCurrentFullName, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-contact="<?= htmlspecialchars($registrationCurrentContact, ENT_QUOTES, 'UTF-8') ?>"
+  data-current-created-at="<?= htmlspecialchars($registrationCurrentCreatedAt, ENT_QUOTES, 'UTF-8') ?>"
+  data-registered-count="<?= $staffRegisteredCount ?>"
   data-offline-reauth-token="<?= htmlspecialchars((string) ($authUser['offline_reauth_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
 >
 <?php echo auth_client_role_script($authRole); ?>
@@ -169,11 +207,18 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       </div>
       <div class="sidebar-actions">
         <?php if ($showStaffAccountSettings): ?>
-          <button type="button" class="btn btn-light btn-sm" id="openStaffAccountSettingsBtn">
-            <i class="bi bi-person-gear"></i> Change Credentials
+          <button type="button" class="btn sidebar-staff-profile-btn" id="openStaffAccountSettingsBtn" title="View Staff Profile & Settings">
+            <div class="staff-profile-avatar">
+              <?= htmlspecialchars($staffDisplayInitials, ENT_QUOTES, 'UTF-8') ?>
+            </div>
+            <div class="staff-profile-info">
+              <span class="staff-profile-name"><?= htmlspecialchars($registrationCurrentFullName !== '' ? $registrationCurrentFullName : $registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?></span>
+              <span class="staff-profile-role"><?= htmlspecialchars($registrationRoleLabel, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <i class="bi bi-chevron-right staff-profile-arrow"></i>
           </button>
         <?php endif; ?>
-        <a href="logout.php" class="btn btn-light btn-sm">
+        <a href="logout.php" class="btn btn-light btn-sm sidebar-logout-btn">
           <i class="bi bi-box-arrow-right"></i> Log out
         </a>
       </div>
@@ -701,52 +746,101 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
   </div>
 </div>
 
-<!-- Staff Credential Update Modal -->
+<!-- Staff Profile & Security Modal -->
 <div class="modal fade" id="staffCredentialsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-dialog-centered staff-credentials-dialog">
-    <div class="modal-content modern-modal staff-credentials-modal">
-      <div class="staff-credentials-shell">
-        <div class="staff-credentials-hero">
-          <div class="staff-credentials-icon">
-            <i class="bi bi-shield-lock-fill"></i>
+  <div class="modal-dialog modal-dialog-centered staff-profile-dialog">
+    <div class="modal-content modern-modal staff-profile-modal">
+      <div class="staff-profile-shell">
+        <!-- Hero Header -->
+        <div class="staff-profile-hero">
+          <div class="staff-profile-avatar-large">
+            <?= htmlspecialchars($staffDisplayInitials, ENT_QUOTES, 'UTF-8') ?>
           </div>
-          <div class="staff-credentials-copy">
-            <span class="staff-credentials-badge" id="staffCredentialsModeBadge"<?= $staffCredentialsBadge === '' ? ' hidden' : '' ?>><?= htmlspecialchars($staffCredentialsBadge, ENT_QUOTES, 'UTF-8') ?></span>
-            <h5 class="modal-title" id="staffCredentialsModalTitle"><?= htmlspecialchars($staffCredentialsTitle, ENT_QUOTES, 'UTF-8') ?></h5>
-            <p id="staffCredentialsModalDescription"><?= htmlspecialchars($staffCredentialsDescription, ENT_QUOTES, 'UTF-8') ?></p>
-          </div>
-        </div>
-
-        <div class="staff-credentials-grid">
-          <div class="staff-credentials-field">
-            <label class="form-label small" for="staffCredentialsCurrentUsername">Current Username</label>
-            <input type="text" class="form-control" id="staffCredentialsCurrentUsername" readonly>
-          </div>
-          <div class="staff-credentials-field">
-            <label class="form-label small" for="staffCredentialsCurrentPassword">Current Password</label>
-            <input type="password" class="form-control" id="staffCredentialsCurrentPassword" placeholder="Enter current password" autocomplete="current-password">
-          </div>
-          <div class="staff-credentials-field">
-            <label class="form-label small" for="staffCredentialsNewUsername">New Username</label>
-            <input type="text" class="form-control" id="staffCredentialsNewUsername" placeholder="Enter new username" autocomplete="username">
-          </div>
-          <div class="staff-credentials-field">
-            <label class="form-label small" for="staffCredentialsNewPassword">New Password</label>
-            <input type="password" class="form-control" id="staffCredentialsNewPassword" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
-          </div>
-          <div class="staff-credentials-field staff-credentials-field-full">
-            <label class="form-label small" for="staffCredentialsConfirmPassword">Confirm New Password</label>
-            <input type="password" class="form-control" id="staffCredentialsConfirmPassword" placeholder="Re-type new password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
+          <div class="staff-profile-hero-copy">
+            <div class="staff-profile-badges">
+              <span class="staff-role-badge"><i class="bi bi-patch-check-fill"></i> <?= htmlspecialchars($registrationRoleLabel, ENT_QUOTES, 'UTF-8') ?></span>
+              <span class="staff-credentials-badge" id="staffCredentialsModeBadge"<?= $staffCredentialsBadge === '' ? ' hidden' : '' ?>><?= htmlspecialchars($staffCredentialsBadge, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <h5 class="modal-title" id="staffCredentialsModalTitle"><?= htmlspecialchars($registrationCurrentFullName !== '' ? $registrationCurrentFullName : $registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?></h5>
           </div>
         </div>
 
-        <div class="staff-credentials-notice text-muted" id="staffCredentialsNotice" hidden></div>
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs staff-profile-tabs" id="staffProfileTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="staffTabProfileBtn" type="button" role="tab" data-tab="profile">
+              <i class="bi bi-person-lines-fill"></i> My Profile
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="staffTabSecurityBtn" type="button" role="tab" data-tab="security">
+              <i class="bi bi-shield-lock"></i> Change Password
+            </button>
+          </li>
+        </ul>
 
-        <div class="staff-credentials-actions">
-          <button type="button" class="btn btn-secondary btn-modern d-none" id="staffCredentialsCancelBtn" data-bs-dismiss="modal">Close</button>
-          <a href="logout.php" class="btn btn-secondary btn-modern" id="staffCredentialsLogoutBtn">Logout</a>
-          <button type="button" class="btn btn-primary btn-modern" id="staffCredentialsSaveBtn">Save Changes</button>
+        <!-- Pane 1: Profile Information -->
+        <div class="staff-tab-pane" id="staffProfileInfoPane">
+          <div class="staff-info-grid">
+            <div class="staff-info-card">
+              <span class="staff-info-label"><i class="bi bi-person"></i> Full Name</span>
+              <span class="staff-info-value" id="staffInfoFullName"><?= htmlspecialchars($registrationCurrentFullName !== '' ? $registrationCurrentFullName : 'Not specified', ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="staff-info-card">
+              <span class="staff-info-label"><i class="bi bi-at"></i> Username</span>
+              <span class="staff-info-value" id="staffInfoUsername"><?= htmlspecialchars($registrationCurrentUsername, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="staff-info-card">
+              <span class="staff-info-label"><i class="bi bi-telephone"></i> Contact Number</span>
+              <span class="staff-info-value" id="staffInfoContact"><?= htmlspecialchars($registrationCurrentContact !== '' ? $registrationCurrentContact : 'None provided', ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="staff-info-card">
+              <span class="staff-info-label"><i class="bi bi-calendar-check"></i> Account Created</span>
+              <span class="staff-info-value" id="staffInfoCreated"><?= htmlspecialchars($registrationCurrentCreatedAt !== '' ? date('M d, Y', strtotime($registrationCurrentCreatedAt)) : 'Active', ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+          </div>
+
+          <div class="staff-credentials-actions mt-3">
+            <button type="button" class="btn btn-secondary btn-modern w-100" id="staffProfileCloseBtn" data-bs-dismiss="modal">Close</button>
+          </div>
         </div>
+
+        <!-- Pane 2: Security & Password Update -->
+        <div class="staff-tab-pane d-none" id="staffProfileSecurityPane">
+          <p id="staffCredentialsModalDescription" class="text-muted small mb-3"><?= htmlspecialchars($staffCredentialsDescription, ENT_QUOTES, 'UTF-8') ?></p>
+
+          <div class="staff-credentials-grid">
+            <div class="staff-credentials-field">
+              <label class="form-label small" for="staffCredentialsCurrentUsername">Current Username</label>
+              <input type="text" class="form-control" id="staffCredentialsCurrentUsername" readonly>
+            </div>
+            <div class="staff-credentials-field">
+              <label class="form-label small" for="staffCredentialsCurrentPassword">Current Password</label>
+              <input type="password" class="form-control" id="staffCredentialsCurrentPassword" placeholder="Enter current password" autocomplete="current-password">
+            </div>
+            <div class="staff-credentials-field">
+              <label class="form-label small" for="staffCredentialsNewUsername">New Username</label>
+              <input type="text" class="form-control" id="staffCredentialsNewUsername" placeholder="Enter new username" autocomplete="username">
+            </div>
+            <div class="staff-credentials-field">
+              <label class="form-label small" for="staffCredentialsNewPassword">New Password</label>
+              <input type="password" class="form-control" id="staffCredentialsNewPassword" placeholder="8+ chars, 1 special" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
+            </div>
+            <div class="staff-credentials-field staff-credentials-field-full">
+              <label class="form-label small" for="staffCredentialsConfirmPassword">Confirm New Password</label>
+              <input type="password" class="form-control" id="staffCredentialsConfirmPassword" placeholder="Re-type new password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" autocomplete="new-password">
+            </div>
+          </div>
+
+          <div class="staff-credentials-notice text-muted" id="staffCredentialsNotice" hidden></div>
+
+          <div class="staff-credentials-actions mt-3">
+            <button type="button" class="btn btn-secondary btn-modern d-none" id="staffCredentialsCancelBtn" data-bs-dismiss="modal">Close</button>
+            <a href="logout.php" class="btn btn-secondary btn-modern" id="staffCredentialsLogoutBtn">Logout</a>
+            <button type="button" class="btn btn-primary btn-modern" id="staffCredentialsSaveBtn">Save Changes</button>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -964,7 +1058,7 @@ $photoCaptureVersion = (string) (@filemtime(__DIR__ . '/assets/js/photo-capture.
       <h5 class="modal-title mb-2">No Household Members Added</h5>
       <p class="mb-3 text-muted">At least one household member is required. If this resident lives alone, you may proceed by saving this record as a Single-Person Household.</p>
       <div class="d-flex justify-content-center gap-2 flex-wrap">
-        <button type="button" class="btn btn-outline-secondary btn-modern" data-bs-dismiss="modal">Add Member</button>
+        <button type="button" class="btn btn-outline-secondary btn-modern" id="memberRequiredAddMemberBtn"><i class="bi bi-person-plus"></i> Add Member</button>
         <button type="button" class="btn btn-primary btn-modern" id="confirmSoloHouseholdBtn"><i class="bi bi-person-fill"></i> Save as Single-Person Household</button>
       </div>
     </div>

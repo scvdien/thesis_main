@@ -250,7 +250,7 @@ function auth_sync_session_user(array $sessionUser): array
     try {
         $pdo = auth_db();
         $stmt = $pdo->prepare(
-            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `must_change_password`, `offline_reauth_token`
+            'SELECT `id`, `full_name`, `username`, `role`, `contact_number`, `is_active`, `must_change_password`, `offline_reauth_token`, `created_at`
              FROM `users`
              WHERE `id` = :id
              LIMIT 1'
@@ -300,6 +300,8 @@ function auth_sync_session_user(array $sessionUser): array
             'full_name' => (string) ($row['full_name'] ?? ''),
             'username' => (string) ($row['username'] ?? ''),
             'role' => $role,
+            'contact_number' => (string) ($row['contact_number'] ?? ''),
+            'created_at' => (string) ($row['created_at'] ?? ''),
             'requires_credential_update' => (int) ($row['must_change_password'] ?? 0) === 1,
             'offline_reauth_token' => $verifiedOfflineToken,
         ],

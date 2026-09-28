@@ -91,6 +91,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   let requiresCredentialUpdate = String(document.body.dataset.requiresCredentialUpdate || "").toLowerCase() === "true";
   let currentSessionUsername = String(document.body.dataset.currentUsername || "").trim();
+  let currentSessionFullName = String(document.body.dataset.currentFullName || "").trim();
   let serverReachable = window.navigator.onLine === false ? false : null;
 
   const isOfflineSessionActive = () => {
@@ -323,6 +324,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const staffCredentialsCancelBtn = document.getElementById("staffCredentialsCancelBtn");
   const staffCredentialsLogoutBtn = document.getElementById("staffCredentialsLogoutBtn");
   const staffCredentialsSaveBtn = document.getElementById("staffCredentialsSaveBtn");
+  const staffTabProfileBtn = document.getElementById("staffTabProfileBtn");
+  const staffTabSecurityBtn = document.getElementById("staffTabSecurityBtn");
+  const staffProfileInfoPane = document.getElementById("staffProfileInfoPane");
+  const staffProfileSecurityPane = document.getElementById("staffProfileSecurityPane");
   const clearModalEl = document.getElementById("clearModal");
   const clearModal = clearModalEl ? new bootstrap.Modal(clearModalEl) : null;
   const clearConfirm = document.getElementById("clearConfirm");
@@ -1231,15 +1236,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     staffCredentialsNotice.classList.add("text-muted");
   };
 
+  const switchStaffProfileTab = (tab = "profile") => {
+    const isProfile = tab === "profile";
+    if (staffTabProfileBtn) {
+      staffTabProfileBtn.classList.toggle("active", isProfile);
+    }
+    if (staffTabSecurityBtn) {
+      staffTabSecurityBtn.classList.toggle("active", !isProfile);
+    }
+    if (staffProfileInfoPane) {
+      staffProfileInfoPane.classList.toggle("d-none", !isProfile);
+    }
+    if (staffProfileSecurityPane) {
+      staffProfileSecurityPane.classList.toggle("d-none", isProfile);
+    }
+  };
+
   const setStaffCredentialsMode = (mode = "optional") => {
     const isRequiredMode = mode === "required";
 
     if (staffCredentialsModeBadge) {
       staffCredentialsModeBadge.textContent = isRequiredMode ? "Required" : "";
       staffCredentialsModeBadge.hidden = !isRequiredMode;
-    }
-    if (staffCredentialsModalTitle) {
-      staffCredentialsModalTitle.textContent = "Change Credentials";
     }
     if (staffCredentialsModalDescription) {
       staffCredentialsModalDescription.textContent = isRequiredMode
@@ -1249,8 +1267,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (staffCredentialsSaveBtn) {
       staffCredentialsSaveBtn.textContent = "Save Changes";
     }
-    staffCredentialsCancelBtn?.classList.toggle("d-none", isRequiredMode);
-    staffCredentialsLogoutBtn?.classList.toggle("d-none", !isRequiredMode);
+
+    if (isRequiredMode) {
+      switchStaffProfileTab("security");
+      if (staffTabProfileBtn) {
+        staffTabProfileBtn.classList.add("d-none");
+      }
+      staffCredentialsCancelBtn?.classList.add("d-none");
+      staffCredentialsLogoutBtn?.classList.remove("d-none");
+    } else {
+      switchStaffProfileTab("profile");
+      if (staffTabProfileBtn) {
+        staffTabProfileBtn.classList.remove("d-none");
+      }
+      staffCredentialsCancelBtn?.classList.remove("d-none");
+      staffCredentialsLogoutBtn?.classList.add("d-none");
+    }
   };
 
   const resetStaffCredentialFields = () => {
@@ -3342,8 +3374,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!isEditMode) {
         await clearRegistration();
       } else {
-        saveHeadData();
-        renderMembers();
+        await clearRegistrationDraftState();
+        window.sessionStorage.removeItem(LOAD_EDIT_CONTEXT_KEY);
       }
 
       if (isAppOnline() && !queuedByError) {
@@ -3354,19 +3386,46 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!queuedByOffline && !queuedByError && pendingCount === 0 && !syncSuccessMessage) {
         showSyncSuccessState("Sync successfully.");
       }
+
+      let toastMessage = "";
+      let toastTone = "info";
+      let toastTitle = "Saved";
+
       if (queuedByOffline) {
-        showSyncToast(`Saved locally as ${record.household_id}. Offline mode is active; data will sync when online.`, "warning", "Saved Offline");
-        return true;
+        toastMessage = `Saved locally as ${record.household_id}. Offline mode is active; data will sync when online.`;
+        toastTone = "warning";
+        toastTitle = "Saved Offline";
+      } else if (queuedByError) {
+        toastMessage = `Saved locally as ${record.household_id}. Sync failed (${syncErrorMessage}) so this household was queued.`;
+        toastTone = "danger";
+        toastTitle = "Sync Failed";
+      } else if (pendingCount > 0) {
+        toastMessage = `${isEditMode ? "Household updated" : "Registration saved"} and synced. ${pendingCount} other pending household${pendingCount === 1 ? "" : "s"} remain in queue.`;
+        toastTone = "info";
+        toastTitle = isEditMode ? "Updated" : "Saved";
+      } else {
+        toastMessage = `${isEditMode ? "Household updated" : "Registration saved"} and synced. Household ID: ${record.household_id}.`;
+        toastTone = "success";
+        toastTitle = isEditMode ? "Updated" : "Saved";
       }
-      if (queuedByError) {
-        showSyncToast(`Saved locally as ${record.household_id}. Sync failed (${syncErrorMessage}) so this household was queued.`, "danger", "Sync Failed");
-        return true;
+
+      showSyncToast(toastMessage, toastTone, toastTitle);
+
+      if (isEditMode) {
+        try {
+          window.sessionStorage.setItem("cabarian_registration_post_redirect_toast", JSON.stringify({
+            message: toastMessage,
+            tone: toastTone,
+            title: toastTitle
+          }));
+        } catch {
+          // Ignore session storage write error.
+        }
+        window.setTimeout(() => {
+          window.location.assign(buildEditModeReturnUrl());
+        }, 600);
       }
-      if (pendingCount > 0) {
-        showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. ${pendingCount} other pending household${pendingCount === 1 ? "" : "s"} remain in queue.`, "info", "Saved");
-        return true;
-      }
-      showSyncToast(`${isEditMode ? "Household updated" : "Registration saved"} and synced. Household ID: ${record.household_id}.`, "success", "Saved");
+
       return true;
     } finally {
       await hideSavingHouseholdModal();
@@ -3412,6 +3471,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     const sections = [
+      buildSection(
+        "Encoder Information",
+        [
+          { label: "Encoder / Registered By", value: currentSessionFullName || currentSessionUsername || "Current Active Staff" }
+        ],
+        true
+      ),
       buildSection("A. Household Head Information", [
         { label: "First Name", value: valueOf("first_name") },
         { label: "Middle Name", value: valueOf("middle_name") },
@@ -5296,6 +5362,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const soloHouseholdCheckEl = document.getElementById("soloHouseholdCheck");
   const confirmSoloHouseholdBtnEl = document.getElementById("confirmSoloHouseholdBtn");
+  const memberRequiredAddMemberBtnEl = document.getElementById("memberRequiredAddMemberBtn");
 
   if (soloHouseholdCheckEl) {
     soloHouseholdCheckEl.addEventListener("change", () => {
@@ -5308,17 +5375,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  if (memberRequiredAddMemberBtnEl) {
+    memberRequiredAddMemberBtnEl.addEventListener("click", async (event) => {
+      event.preventDefault();
+      if (!requireRegistrationPhotosIdle()) {
+        return;
+      }
+      if (!isHeadComplete()) {
+        memberRequiredModal?.hide();
+        addMemberBlockedModal?.show();
+        return;
+      }
+
+      saveHeadData();
+      if (typeof localStorage.flush === "function") {
+        await localStorage.flush();
+      }
+      memberRequiredModal?.hide();
+      const nextUrl = buildMemberFormUrl();
+      window.location.href = nextUrl.toString();
+    });
+  }
+
   if (confirmSoloHouseholdBtnEl) {
-    confirmSoloHouseholdBtnEl.addEventListener("click", () => {
+    confirmSoloHouseholdBtnEl.addEventListener("click", async () => {
+      if (!requireRegistrationPhotosIdle()) return;
+      if (censusForm && !censusForm.reportValidity()) {
+        memberRequiredModal?.hide();
+        return;
+      }
       if (soloHouseholdCheckEl) {
         soloHouseholdCheckEl.checked = true;
         syncHouseholdCounts(getMembers());
         saveHeadData();
       }
       memberRequiredModal?.hide();
-      window.setTimeout(() => {
-        saveModal?.show();
-      }, 350);
+      await saveRegistration();
     });
   }
 
@@ -5385,6 +5477,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       openStaffCredentialsModal("optional");
+    });
+  }
+  if (staffTabProfileBtn) {
+    staffTabProfileBtn.addEventListener("click", () => switchStaffProfileTab("profile"));
+  }
+  if (staffTabSecurityBtn) {
+    staffTabSecurityBtn.addEventListener("click", () => {
+      switchStaffProfileTab("security");
+      staffCredentialsCurrentPassword?.focus();
     });
   }
   if (staffCredentialsSaveBtn) {
@@ -5464,5 +5565,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.setTimeout(() => {
       openStaffCredentialsModal("required");
     }, 0);
+  }
+
+  try {
+    const postToastRaw = window.sessionStorage.getItem("cabarian_registration_post_redirect_toast");
+    if (postToastRaw) {
+      window.sessionStorage.removeItem("cabarian_registration_post_redirect_toast");
+      const postToast = JSON.parse(postToastRaw);
+      if (postToast && postToast.message) {
+        window.setTimeout(() => {
+          showSyncToast(postToast.message, postToast.tone || "success", postToast.title || "Updated");
+        }, 400);
+      }
+    }
+  } catch {
+    // Ignore storage parse errors.
   }
 });
