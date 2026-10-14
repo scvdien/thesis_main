@@ -169,7 +169,7 @@
           await navigator.clipboard.writeText(key);
           if (copyText) copyText.textContent = 'Copied!';
           setTimeout(() => {
-            if (copyText) copyText.textContent = 'Copy';
+            if (copyText) copyText.textContent = 'Copy Key';
           }, 2000);
         } catch {
           const ta = document.createElement('textarea');
@@ -180,7 +180,7 @@
           document.body.removeChild(ta);
           if (copyText) copyText.textContent = 'Copied!';
           setTimeout(() => {
-            if (copyText) copyText.textContent = 'Copy';
+            if (copyText) copyText.textContent = 'Copy Key';
           }, 2000);
         }
       };

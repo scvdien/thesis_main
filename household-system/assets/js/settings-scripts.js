@@ -3548,7 +3548,7 @@ const showSettingsRecoveryKeyModal = (key) => {
         await navigator.clipboard.writeText(key);
         if (copyText) copyText.textContent = 'Copied!';
         setTimeout(() => {
-          if (copyText) copyText.textContent = 'Copy';
+          if (copyText) copyText.textContent = 'Copy Key';
         }, 2000);
       } catch {
         const ta = document.createElement('textarea');
@@ -3559,7 +3559,7 @@ const showSettingsRecoveryKeyModal = (key) => {
         document.body.removeChild(ta);
         if (copyText) copyText.textContent = 'Copied!';
         setTimeout(() => {
-          if (copyText) copyText.textContent = 'Copy';
+          if (copyText) copyText.textContent = 'Copy Key';
         }, 2000);
       }
     };
@@ -3567,7 +3567,7 @@ const showSettingsRecoveryKeyModal = (key) => {
 
   if (downloadBtn) {
     downloadBtn.onclick = () => {
-      const content = "BARANGAY CABARIAN LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY FOR BARANGAY CAPTAIN\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nKeep this key in a secure location. You will need this key to reset your Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
+      const content = "BARANGAY CABARIAN, LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY FOR BARANGAY CAPTAIN\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nStore this key in a secure location. You will need this key to reset your Barangay Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3600,7 +3600,7 @@ captainGenerateRecoveryKeyBtn?.addEventListener('click', async (event) => {
   }
 
   const confirmed = window.confirm(
-    'Sigurado ka bang nais mong mag-generate ng bagong Master Recovery Key? Mapapawalang-bisa ang lumang recovery key kung meron man.'
+    'Are you sure you want to generate a new Master Recovery Key? Any previous recovery key will no longer be valid.'
   );
   if (!confirmed) return;
 
@@ -3614,7 +3614,7 @@ captainGenerateRecoveryKeyBtn?.addEventListener('click', async (event) => {
       throw new Error(response?.error || response?.message || 'Failed to generate recovery key.');
     }
     showSettingsRecoveryKeyModal(response.recovery_key);
-    setCaptainCredentialsNotice('New Master Recovery Key generated successfully. Make sure to save it safely.', 'success');
+    setCaptainCredentialsNotice('New Master Recovery Key generated successfully. Make sure to store it securely.', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to generate recovery key.';
     setCaptainCredentialsNotice(message, 'danger');
