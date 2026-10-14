@@ -3134,9 +3134,9 @@ const attemptAdminAccountCredentialReset = async () => {
     if (adminAccountResetPasswordConfirm) adminAccountResetPasswordConfirm.value = '';
     hideAdminAccountResetForm();
     rerenderSettingsPanels();
-    setAdminAccountNotice(response.message || 'Admin credentials reset successfully.', 'success');
+    setAdminAccountNotice(response.message || 'Secretary credentials reset successfully.', 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to reset admin credentials right now.';
+    const message = error instanceof Error ? error.message : 'Unable to reset secretary credentials right now.';
     setAdminAccountNotice(message, 'danger');
   }
 };
@@ -3181,7 +3181,7 @@ const renderAdminCredentialsState = () => {
     if (adminCredentialsCurrentUsername) {
       adminCredentialsCurrentUsername.value = currentUser.username || '';
     }
-    setAdminCredentialsNotice('Temporary admin credentials are still active. Update them before accessing other admin tools.', 'muted');
+    setAdminCredentialsNotice('Temporary secretary credentials are still active. Update them before accessing other tools.', 'muted');
     return;
   }
 
@@ -3196,12 +3196,12 @@ const renderAdminAccountState = () => {
   adminAccountPanel.classList.toggle('is-created', hasAccount);
 
   if (!hasAccount) {
-    if (adminAccountSummaryName) adminAccountSummaryName.textContent = 'Admin Account';
+    if (adminAccountSummaryName) adminAccountSummaryName.textContent = 'Secretary Account';
     if (adminAccountSummaryUsername) adminAccountSummaryUsername.textContent = '-';
     if (adminAccountDeactivateBtn) adminAccountDeactivateBtn.disabled = true;
     if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = true;
     setAdminAccountStatusBadge('active');
-    setAdminAccountNotice('No admin account created yet.', 'muted');
+    setAdminAccountNotice('No secretary account created yet.', 'muted');
     return;
   }
 
@@ -3215,18 +3215,18 @@ const renderAdminAccountState = () => {
     adminAccountDeactivateBtn.classList.toggle('text-warning', !isDeactivated);
     adminAccountDeactivateBtn.classList.toggle('text-success', isDeactivated);
     adminAccountDeactivateBtn.innerHTML = isDeactivated
-      ? '<i class="bi bi-check2-circle"></i> Activate Admin'
-      : '<i class="bi bi-pause-circle"></i> Deactivate Admin';
+      ? '<i class="bi bi-check2-circle"></i> Activate Secretary'
+      : '<i class="bi bi-pause-circle"></i> Deactivate Secretary';
   }
 
   if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = false;
 
   setAdminAccountStatusBadge(account.status);
   if (account.status === 'deactivated') {
-    setAdminAccountNotice('Admin account is deactivated.', 'danger');
+    setAdminAccountNotice('Secretary account is deactivated.', 'danger');
     return;
   }
-  setAdminAccountNotice('Admin account is active.', 'success');
+  setAdminAccountNotice('Secretary account is active.', 'success');
 };
 
 adminAccountCreateBtn?.addEventListener('click', async (event) => {
@@ -3238,7 +3238,7 @@ adminAccountCreateBtn?.addEventListener('click', async (event) => {
   const confirmPassword = String(adminAccountCreatePasswordConfirm?.value || '');
 
   if (!fullName || !username || !password || !confirmPassword) {
-    setAdminAccountNotice('Complete all admin account fields before creating.', 'danger');
+    setAdminAccountNotice('Complete all secretary account fields before creating.', 'danger');
     return;
   }
   if (!validateAdminAccountPassword(password)) {
@@ -3262,9 +3262,9 @@ adminAccountCreateBtn?.addEventListener('click', async (event) => {
     if (adminAccountCreatePassword) adminAccountCreatePassword.value = '';
     if (adminAccountCreatePasswordConfirm) adminAccountCreatePasswordConfirm.value = '';
     rerenderSettingsPanels();
-    setAdminAccountNotice(response.message || 'Admin account created successfully.', 'success');
+    setAdminAccountNotice(response.message || 'Secretary account created successfully.', 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to create admin account right now.';
+    const message = error instanceof Error ? error.message : 'Unable to create secretary account right now.';
     setAdminAccountNotice(message, 'danger');
   }
 });
@@ -3280,7 +3280,7 @@ adminAccountResetStartBtn?.addEventListener('click', (event) => {
 
   const account = readAdminAccount();
   if (!account) {
-    setAdminAccountNotice('Create admin account first before resetting credentials.', 'danger');
+    setAdminAccountNotice('Create secretary account first before resetting credentials.', 'danger');
     return;
   }
 
@@ -3312,7 +3312,7 @@ adminAccountResetConfirmBtn?.addEventListener('click', () => {
 const updateAdminAccountStatus = async (nextStatus) => {
   const account = readAdminAccount();
   if (!account) {
-    setAdminAccountNotice('Create admin account first before changing access.', 'danger');
+    setAdminAccountNotice('Create secretary account first before changing access.', 'danger');
     return;
   }
 
@@ -3323,9 +3323,9 @@ const updateAdminAccountStatus = async (nextStatus) => {
       status: nextStatus
     });
     rerenderSettingsPanels();
-    setAdminAccountNotice(response.message || `Admin account ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`, 'success');
+    setAdminAccountNotice(response.message || `Secretary account ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`, 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to update admin status right now.';
+    const message = error instanceof Error ? error.message : 'Unable to update secretary status right now.';
     setAdminAccountNotice(message, 'danger');
   } finally {
     if (adminAccountDeactivateBtn) adminAccountDeactivateBtn.disabled = !hasValidAdminAccount(readAdminAccount());
@@ -3338,7 +3338,7 @@ adminAccountDeactivateBtn?.addEventListener('click', (event) => {
   event.preventDefault();
   const account = readAdminAccount();
   if (!account) {
-    setAdminAccountNotice('Create admin account first before changing access.', 'danger');
+    setAdminAccountNotice('Create secretary account first before changing access.', 'danger');
     return;
   }
 
@@ -3351,13 +3351,13 @@ adminAccountDeactivateBtn?.addEventListener('click', (event) => {
       : '<i class="bi bi-pause-circle-fill fs-1"></i>';
   }
   if (adminAccountStatusConfirmTitle) {
-    adminAccountStatusConfirmTitle.textContent = isActivating ? 'Activate Admin Account' : 'Deactivate Admin Account';
+    adminAccountStatusConfirmTitle.textContent = isActivating ? 'Activate Secretary Account' : 'Deactivate Secretary Account';
   }
   if (adminAccountStatusConfirmText) {
-    adminAccountStatusConfirmText.textContent = `${isActivating ? 'Activate' : 'Deactivate'} the admin account for ${account.fullName}?`;
+    adminAccountStatusConfirmText.textContent = `${isActivating ? 'Activate' : 'Deactivate'} the secretary account for ${account.fullName}?`;
   }
   if (adminAccountStatusConfirmBtn) {
-    adminAccountStatusConfirmBtn.textContent = isActivating ? 'Activate Admin' : 'Deactivate Admin';
+    adminAccountStatusConfirmBtn.textContent = isActivating ? 'Activate Secretary' : 'Deactivate Secretary';
     adminAccountStatusConfirmBtn.classList.toggle('btn-success', isActivating);
     adminAccountStatusConfirmBtn.classList.toggle('btn-warning', !isActivating);
   }
@@ -3386,7 +3386,7 @@ const removeAdminAccount = async () => {
   const account = readAdminAccount();
   if (!account) {
     adminAccountRemoveConfirmModal?.hide();
-    setAdminAccountNotice('Create admin account first before removing.', 'danger');
+    setAdminAccountNotice('Create secretary account first before removing.', 'danger');
     return;
   }
 
@@ -3397,9 +3397,9 @@ const removeAdminAccount = async () => {
     });
     rerenderSettingsPanels();
     hideAdminAccountResetForm();
-    setAdminAccountNotice(response.message || 'Admin account removed. You can create a new admin account.', 'success');
+    setAdminAccountNotice(response.message || 'Secretary account removed. You can create a new secretary account.', 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to remove admin account right now.';
+    const message = error instanceof Error ? error.message : 'Unable to remove secretary account right now.';
     setAdminAccountNotice(message, 'danger');
   } finally {
     if (adminAccountRemoveBtn) adminAccountRemoveBtn.disabled = !hasValidAdminAccount(readAdminAccount());
@@ -3411,12 +3411,12 @@ adminAccountRemoveBtn?.addEventListener('click', (event) => {
   event.preventDefault();
   const account = readAdminAccount();
   if (!account) {
-    setAdminAccountNotice('Create admin account first before removing.', 'danger');
+    setAdminAccountNotice('Create secretary account first before removing.', 'danger');
     return;
   }
 
   if (adminAccountRemoveConfirmText) {
-    adminAccountRemoveConfirmText.textContent = `Remove admin account for ${account.fullName}? This cannot be undone, but audit trail records will remain.`;
+    adminAccountRemoveConfirmText.textContent = `Remove secretary account for ${account.fullName}? This cannot be undone, but audit trail records will remain.`;
   }
 
   if (adminAccountRemoveConfirmModal) {
@@ -3424,9 +3424,9 @@ adminAccountRemoveBtn?.addEventListener('click', (event) => {
     return;
   }
 
-  const confirmRemove = window.confirm(`Remove admin account for ${account.fullName}? This cannot be undone.`);
+  const confirmRemove = window.confirm(`Remove secretary account for ${account.fullName}? This cannot be undone.`);
   if (!confirmRemove) {
-    setAdminAccountNotice('Admin account removal was cancelled.', 'muted');
+    setAdminAccountNotice('Secretary account removal was cancelled.', 'muted');
     return;
   }
 
@@ -4227,7 +4227,7 @@ settingsAuditClearFiltersBtn?.addEventListener('click', () => {
 
 const initializeSettingsState = async () => {
   if (adminAccountPanel) {
-    setAdminAccountNotice('Loading admin account...', 'muted');
+    setAdminAccountNotice('Loading secretary account...', 'muted');
     setAdminAccountStatusBadge('active');
     hideAdminAccountResetForm();
   }

@@ -2787,7 +2787,7 @@ try {
             users_api_error(422, 'Password must be at least 8 characters.');
         }
         if (users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY)) {
-            users_api_error(409, 'Admin account already exists. Use reset credentials instead.');
+            users_api_error(409, 'Secretary account already exists. Use reset credentials instead.');
         }
         if (users_api_username_exists($pdo, $username)) {
             users_api_error(409, 'Username already exists.');
@@ -2809,7 +2809,7 @@ try {
             $authUser,
             'settings_admin_account_created',
             'created',
-            'Created admin account.',
+            'Created secretary account.',
             'user',
             $username,
             [
@@ -2820,7 +2820,7 @@ try {
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Admin account created.',
+            'message' => 'Secretary account created.',
             'data' => users_api_settings_payload($pdo, $authUser),
         ]);
     }
@@ -2830,7 +2830,7 @@ try {
 
         $adminAccount = users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY);
         if (!is_array($adminAccount)) {
-            users_api_error(404, 'Admin account not found.');
+            users_api_error(404, 'Secretary account not found.');
         }
 
         $username = users_api_normalized_username($payload['username'] ?? '');
@@ -2867,7 +2867,7 @@ try {
             $authUser,
             'settings_admin_credentials_reset',
             'updated',
-            'Reset admin credentials.',
+            'Reset secretary credentials.',
             'user',
             $username,
             [
@@ -2878,7 +2878,7 @@ try {
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Admin credentials reset successfully.',
+            'message' => 'Secretary credentials reset successfully.',
             'data' => users_api_settings_payload($pdo, $authUser),
         ]);
     }
@@ -2888,7 +2888,7 @@ try {
 
         $adminAccount = users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY);
         if (!is_array($adminAccount)) {
-            users_api_error(404, 'Admin account not found.');
+            users_api_error(404, 'Secretary account not found.');
         }
 
         $adminAccountId = (int) ($adminAccount['id'] ?? 0);
@@ -2902,14 +2902,14 @@ try {
         ]);
 
         if ($stmt->rowCount() === 0) {
-            users_api_error(404, 'Admin account not found.');
+            users_api_error(404, 'Secretary account not found.');
         }
 
         users_api_audit_log(
             $authUser,
             'settings_admin_account_removed',
             'deleted',
-            'Removed admin account.',
+            'Removed secretary account.',
             'user',
             $adminUsername !== '' ? $adminUsername : (string) $adminAccountId,
             [
@@ -2921,7 +2921,7 @@ try {
 
         users_api_respond(200, [
             'success' => true,
-            'message' => 'Admin account removed. You can create a new admin account.',
+            'message' => 'Secretary account removed. You can create a new secretary account.',
             'data' => users_api_settings_payload($pdo, $authUser),
         ]);
     }
@@ -2931,7 +2931,7 @@ try {
 
         $adminAccount = users_api_find_by_role($pdo, AUTH_ROLE_SECRETARY);
         if (!is_array($adminAccount)) {
-            users_api_error(404, 'Admin account not found.');
+            users_api_error(404, 'Secretary account not found.');
         }
 
         $status = strtolower(users_api_text($payload['status'] ?? '', 20));
@@ -2998,13 +2998,13 @@ try {
         $message = $status === 'active'
             ? (
                 $affectedStaffCount > 0
-                    ? 'Admin account activated. Staff accounts under admin were also activated.'
-                    : 'Admin account activated.'
+                    ? 'Secretary account activated. Staff accounts under secretary were also activated.'
+                    : 'Secretary account activated.'
             )
             : (
                 $affectedStaffCount > 0
-                    ? 'Admin account deactivated. Staff accounts under admin were also deactivated.'
-                    : 'Admin account deactivated.'
+                    ? 'Secretary account deactivated. Staff accounts under secretary were also deactivated.'
+                    : 'Secretary account deactivated.'
             );
 
         users_api_respond(200, [

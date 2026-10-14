@@ -585,12 +585,19 @@ function auth_users_count(PDO $pdo): int
     return (int) $pdo->query('SELECT COUNT(*) FROM `users`')->fetchColumn();
 }
 
+function auth_captain_count(PDO $pdo): int
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM `users` WHERE `role` = :role');
+    $stmt->execute(['role' => AUTH_ROLE_CAPTAIN]);
+    return (int) $stmt->fetchColumn();
+}
+
 function auth_setup_required(?PDO $pdo = null): bool
 {
     $pdo = $pdo ?? auth_db();
     auth_bootstrap_users_table($pdo);
     auth_ensure_users_columns($pdo);
-    return auth_users_count($pdo) === 0;
+    return auth_captain_count($pdo) === 0;
 }
 
 function auth_initial_username(string $username): string
@@ -634,7 +641,7 @@ function auth_create_initial_captain(string $fullName, string $username, string 
     try {
         $pdo->beginTransaction();
 
-        if (auth_users_count($pdo) > 0) {
+        if (auth_captain_count($pdo) > 0) {
             throw new RuntimeException('Initial setup is already complete. Sign in with your existing account.');
         }
         if (!auth_initial_setup_allowed()) {
@@ -1048,7 +1055,7 @@ function auth_attempt_login(string $username, string $password, string $selected
 
     auth_bootstrap_store();
     $pdo = auth_db();
-    if (auth_users_count($pdo) === 0) {
+    if (auth_captain_count($pdo) === 0) {
         $auditLogin(false, 'Login failed: system setup is not complete.');
         return [
             'success' => false,
@@ -1371,7 +1378,7 @@ function auth_require_api(array $allowedRoles = [], bool $allowPendingCredential
     }
 
     if (!$allowPendingCredentialUpdate && auth_admin_requires_credential_update($user)) {
-        auth_json_error(403, 'Update your temporary admin credentials before using other admin tools.', 'credentials_update_required');
+        auth_json_error(403, 'Update your temporary secretary credentials before using other tools.', 'credentials_update_required');
     }
 
     return $user;

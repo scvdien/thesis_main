@@ -107,7 +107,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
       <?php if ($adminCredentialLock): ?>
       <div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
         <i class="bi bi-shield-lock"></i>
-        <div>Update your temporary admin username and password before using other admin tools.</div>
+        <div>Update your temporary secretary username and password before using other tools.</div>
       </div>
       <?php endif; ?>
 
@@ -116,11 +116,11 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           <div class="settings-nav-group">
             <div class="settings-nav-title">Account</div>
             <a class="active" href="#change-password" data-role="captain-only"><i class="bi bi-shield-lock"></i>Captain Credentials</a>
-            <a class="active" href="#admin-credentials" data-role="admin-only"><i class="bi bi-shield-lock"></i>Admin Credentials</a>
+            <a class="active" href="#admin-credentials" data-role="admin-only"><i class="bi bi-shield-lock"></i>Secretary Credentials</a>
           </div>
           <div class="settings-nav-group">
             <div class="settings-nav-title">Administration</div>
-            <a href="#admin-account" data-role="captain-only"><i class="bi bi-person-badge"></i>Admin Account</a>
+            <a href="#admin-account" data-role="captain-only"><i class="bi bi-person-badge"></i>Secretary Account</a>
             <a href="#create-staff-account" data-role="admin-only"><i class="bi bi-people"></i>Manage Staff</a>
           </div>
           <div class="settings-nav-group" data-role="admin-only">
@@ -193,7 +193,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           <section class="settings-section settings-panel is-active" style="--delay:0.02s" id="admin-credentials" data-role="admin-only">
             <div class="settings-section-head">
               <div>
-                <h5 class="mb-1">Admin Credentials</h5>
+                <h5 class="mb-1">Secretary Credentials</h5>
                 <p class="small text-muted mb-0 d-none" id="adminCredentialsTemporaryHint">Use your temporary credentials first, then set your own username and password.</p>
               </div>
               <div class="d-flex align-items-center gap-2">
@@ -239,12 +239,12 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             <section class="settings-section">
               <div class="settings-section-head">
                 <div>
-                  <h5 class="mb-1">Create Admin Account</h5>
-                  <p class="small text-muted mb-0">Set temporary username and password for admin access.</p>
+                  <h5 class="mb-1">Create Secretary Account</h5>
+                  <p class="small text-muted mb-0">Set temporary username and password for secretary access.</p>
                 </div>
                 <div class="d-flex align-items-center gap-2">
                   <span class="badge bg-warning-subtle text-warning">One-Time</span>
-                  <span class="badge bg-secondary-subtle text-secondary">1 Admin Only</span>
+                  <span class="badge bg-secondary-subtle text-secondary">1 Secretary Only</span>
                 </div>
               </div>
               <div class="settings-form-grid admin-create-fields">
@@ -255,12 +255,12 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 <div>
                   <label class="form-label small">Role</label>
                   <select class="form-select" id="adminAccountCreateRole" disabled>
-                    <option>Admin</option>
+                    <option>Secretary</option>
                   </select>
                 </div>
                 <div>
                   <label class="form-label small">Temporary Username</label>
-                  <input type="text" class="form-control" id="adminAccountCreateUsername" placeholder="admin.cabarian">
+                  <input type="text" class="form-control" id="adminAccountCreateUsername" placeholder="secretary.cabarian">
                 </div>
                 <div>
                   <label class="form-label small">Temporary Password</label>
@@ -272,7 +272,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 </div>
                 <div class="settings-form-full d-flex justify-content-end">
                   <button class="btn btn-cta" id="adminAccountCreateBtn">
-                    <i class="bi bi-person-plus"></i> Create Admin Account
+                    <i class="bi bi-person-plus"></i> Create Secretary Account
                   </button>
                 </div>
               </div>
@@ -280,7 +280,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                   <div class="d-flex align-items-center gap-2">
                     <i class="bi bi-check-circle text-success"></i>
-                    <div class="fw-semibold">Admin Status</div>
+                    <div class="fw-semibold">Secretary Status</div>
                     <span class="badge bg-success-subtle text-success" id="adminAccountStatusBadge">Active</span>
                   </div>
                   <button type="button" class="btn btn-cta" id="adminAccountResetStartBtn">
@@ -288,7 +288,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                   </button>
                 </div>
                 <div class="small text-muted mt-2">
-                  <span class="fw-semibold" id="adminAccountSummaryName">Admin Account</span>
+                  <span class="fw-semibold" id="adminAccountSummaryName">Secretary Account</span>
                   <span> | Username: </span>
                   <span id="adminAccountSummaryUsername">-</span>
                 </div>
@@ -314,25 +314,25 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                   </div>
                 </div>
               </div>
-              <div class="small text-muted mt-3" id="adminAccountActionNotice">No admin account created yet.</div>
+              <div class="small text-muted mt-3" id="adminAccountActionNotice">No secretary account created yet.</div>
             </section>
 
             <section class="settings-section" id="remove-admin-account">
               <div class="settings-list">
                 <div class="settings-list-item">
                   <div class="item-info">
-                    <div class="fw-semibold">Admin Account Actions</div>
+                    <div class="fw-semibold">Secretary Account Actions</div>
                   </div>
                   <div class="dropdown ms-auto">
-                    <button class="btn btn-outline-primary" type="button" id="adminAccountActionsBtn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Admin actions">
+                    <button class="btn btn-outline-primary" type="button" id="adminAccountActionsBtn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Secretary actions">
                       <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <div class="dropdown-menu dropdown-menu-end p-2" aria-labelledby="adminAccountActionsBtn">
                       <button type="button" class="dropdown-item rounded-2 text-warning" id="adminAccountDeactivateBtn">
-                        <i class="bi bi-pause-circle"></i> Deactivate Admin
+                        <i class="bi bi-pause-circle"></i> Deactivate Secretary
                       </button>
                       <button type="button" class="dropdown-item rounded-2 text-danger" id="adminAccountRemoveBtn">
-                        <i class="bi bi-trash3"></i> Remove Admin
+                        <i class="bi bi-trash3"></i> Remove Secretary
                       </button>
                     </div>
                   </div>
@@ -345,7 +345,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Create Staff Account</h5>
-                <p class="small text-muted mb-0">Admin creates staff accounts, then staff must replace temporary credentials on first login.</p>
+                <p class="small text-muted mb-0">Secretary creates staff accounts, then staff must replace temporary credentials on first login.</p>
               </div>
               <span class="badge bg-success-subtle text-success">Create Staff Account</span>
             </div>
@@ -734,7 +734,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           <i class="bi bi-shield-exclamation fs-1"></i>
         </div>
         <h5 class="modal-title mb-2">Confirm Credential Reset</h5>
-        <p class="mb-3">You are about to reset the admin credentials. Continue to open the reset form.</p>
+        <p class="mb-3">You are about to reset the secretary credentials. Continue to open the reset form.</p>
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="adminAccountResetConfirmBtn">Continue</button>
@@ -750,8 +750,8 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
         <div class="modal-icon mb-3 text-danger">
           <i class="bi bi-trash3-fill fs-1"></i>
         </div>
-        <h5 class="modal-title mb-2">Remove Admin Account</h5>
-        <p class="mb-3" id="adminAccountRemoveConfirmText">Remove the current admin account? This cannot be undone, but audit trail records will remain.</p>
+        <h5 class="modal-title mb-2">Remove Secretary Account</h5>
+        <p class="mb-3" id="adminAccountRemoveConfirmText">Remove the current secretary account? This cannot be undone, but audit trail records will remain.</p>
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-danger btn-modern" id="adminAccountRemoveConfirmBtn">Remove Account</button>
@@ -767,8 +767,8 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
         <div class="modal-icon mb-3 text-warning" id="adminAccountStatusConfirmIcon">
           <i class="bi bi-pause-circle-fill fs-1"></i>
         </div>
-        <h5 class="modal-title mb-2" id="adminAccountStatusConfirmTitle">Confirm Admin Access Change</h5>
-        <p class="mb-3" id="adminAccountStatusConfirmText">Confirm admin account access change?</p>
+        <h5 class="modal-title mb-2" id="adminAccountStatusConfirmTitle">Confirm Secretary Access Change</h5>
+        <p class="mb-3" id="adminAccountStatusConfirmText">Confirm secretary account access change?</p>
         <div class="d-flex justify-content-center gap-2">
           <button type="button" class="btn btn-secondary btn-modern" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-warning btn-modern" id="adminAccountStatusConfirmBtn">Continue</button>
