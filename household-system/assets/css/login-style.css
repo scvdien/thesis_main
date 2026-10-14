@@ -191,10 +191,17 @@ body::after{
   color:var(--muted);
 }
 
-.login-form{
+.login-form,
+#recoveryStep1,
+#recoveryStep2{
   display:flex;
   flex-direction:column;
   gap:16px;
+}
+
+#recoveryStep1.d-none,
+#recoveryStep2.d-none{
+  display:none !important;
 }
 
 .form-error{

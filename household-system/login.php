@@ -511,8 +511,8 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
             </div>
             
             <!-- STEP 1: VERIFY RECOVERY KEY -->
-            <div id="recoveryStep1">
-              <div class="form-head mb-3">
+            <div id="recoveryStep1" class="d-flex flex-column gap-3">
+              <div class="form-head mb-1">
                 <div class="form-kicker" style="color: var(--accent); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Account Recovery</div>
                 <h3 class="form-title" style="font-size: 22px; font-weight: 700; margin: 4px 0 6px;">Enter Master Recovery Key</h3>
                 <p class="form-subtitle" style="font-size: 13px; color: var(--muted); margin: 0;">Enter your 16-character backup key to verify your identity as Barangay Captain.</p>
@@ -534,7 +534,7 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
             </div>
 
             <!-- STEP 2: SET NEW USERNAME & PASSWORD -->
-            <div id="recoveryStep2" class="d-none">
+            <div id="recoveryStep2" class="d-none flex-column gap-3">
               <div class="p-3 mb-3 rounded-3 border d-flex align-items-center gap-3" style="background: #f0fdf4; border-color: #bbf7d0 !important;">
                 <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px;">
                   <i class="bi bi-shield-check" style="font-size: 1.3rem;"></i>
