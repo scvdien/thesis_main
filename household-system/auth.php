@@ -475,6 +475,7 @@ function auth_bootstrap_users_table(PDO $pdo): void
             `is_active` TINYINT(1) NOT NULL DEFAULT 1,
             `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
             `offline_reauth_token` VARCHAR(128) NULL DEFAULT NULL,
+            `recovery_key_hash` VARCHAR(255) NULL DEFAULT NULL,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             `last_seen_at` DATETIME NULL DEFAULT NULL,
@@ -516,6 +517,9 @@ function auth_ensure_users_columns(PDO $pdo): void
     }
     if (!auth_users_has_column($pdo, 'offline_reauth_token')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `offline_reauth_token` VARCHAR(128) NULL DEFAULT NULL AFTER `must_change_password`');
+    }
+    if (!auth_users_has_column($pdo, 'recovery_key_hash')) {
+        $pdo->exec('ALTER TABLE `users` ADD COLUMN `recovery_key_hash` VARCHAR(255) NULL DEFAULT NULL AFTER `offline_reauth_token`');
     }
     if (!auth_users_has_column($pdo, 'last_seen_at')) {
         $pdo->exec('ALTER TABLE `users` ADD COLUMN `last_seen_at` DATETIME NULL DEFAULT NULL AFTER `updated_at`');
@@ -617,6 +621,41 @@ function auth_initial_password_strong(string $password): bool
     return strlen($password) >= 8 && preg_match('/[^A-Za-z0-9]/', $password) === 1;
 }
 
+function auth_generate_recovery_key(): string
+{
+    $chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $charsLen = strlen($chars);
+    $p1 = '';
+    $p2 = '';
+    $p3 = '';
+    for ($i = 0; $i < 4; $i++) {
+        $p1 .= $chars[random_int(0, $charsLen - 1)];
+        $p2 .= $chars[random_int(0, $charsLen - 1)];
+        $p3 .= $chars[random_int(0, $charsLen - 1)];
+    }
+    return "CAB-{$p1}-{$p2}-{$p3}";
+}
+
+function auth_normalize_recovery_key(string $key): string
+{
+    return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $key) ?? '');
+}
+
+function auth_hash_recovery_key(string $key): string
+{
+    $normalized = auth_normalize_recovery_key($key);
+    return password_hash($normalized, PASSWORD_DEFAULT);
+}
+
+function auth_verify_recovery_key(string $candidateKey, string $storedHash): bool
+{
+    if ($storedHash === '' || $candidateKey === '') {
+        return false;
+    }
+    $normalized = auth_normalize_recovery_key($candidateKey);
+    return password_verify($normalized, $storedHash);
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -637,6 +676,9 @@ function auth_create_initial_captain(string $fullName, string $username, string 
 
     auth_bootstrap_store();
     $pdo = auth_db();
+
+    $recoveryKey = auth_generate_recovery_key();
+    $recoveryKeyHash = auth_hash_recovery_key($recoveryKey);
 
     try {
         $pdo->beginTransaction();
@@ -660,8 +702,8 @@ function auth_create_initial_captain(string $fullName, string $username, string 
         }
 
         $stmt = $pdo->prepare(
-            'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `role`, `contact_number`, `is_active`, `must_change_password`)
-             VALUES (:full_name, :username, :password_hash, :role, :contact_number, 1, 0)'
+            'INSERT INTO `users` (`full_name`, `username`, `password_hash`, `role`, `contact_number`, `is_active`, `must_change_password`, `recovery_key_hash`)
+             VALUES (:full_name, :username, :password_hash, :role, :contact_number, 1, 0, :recovery_key_hash)'
         );
         $stmt->execute([
             'full_name' => $fullName,
@@ -669,6 +711,7 @@ function auth_create_initial_captain(string $fullName, string $username, string 
             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'role' => AUTH_ROLE_CAPTAIN,
             'contact_number' => null,
+            'recovery_key_hash' => $recoveryKeyHash,
         ]);
 
         $userId = (int) $pdo->lastInsertId();
@@ -689,7 +732,7 @@ function auth_create_initial_captain(string $fullName, string $username, string 
         'module_name' => 'Authentication',
         'record_type' => 'user',
         'record_id' => $username,
-        'details' => 'Initial captain account created during secure setup.',
+        'details' => 'Initial captain account created during secure setup with master recovery key generated.',
         'metadata' => [
             'user_id' => $userId,
             'full_name' => $fullName,
@@ -703,7 +746,94 @@ function auth_create_initial_captain(string $fullName, string $username, string 
         'username' => $username,
         'role' => AUTH_ROLE_CAPTAIN,
         'requires_credential_update' => false,
+        'recovery_key' => $recoveryKey,
     ];
+}
+
+/**
+ * @return array{success: bool, error: string}
+ */
+function auth_reset_captain_with_recovery_key(string $username, string $recoveryKey, string $newPassword): array
+{
+    $username = trim($username);
+    $recoveryKey = trim($recoveryKey);
+    $newPassword = (string) $newPassword;
+
+    if ($username === '' || $recoveryKey === '' || $newPassword === '') {
+        return ['success' => false, 'error' => 'All fields are required.'];
+    }
+
+    if (!auth_initial_password_strong($newPassword)) {
+        return ['success' => false, 'error' => 'Password must be at least 8 characters and include at least 1 special character.'];
+    }
+
+    try {
+        auth_bootstrap_store();
+        $pdo = auth_db();
+        auth_ensure_users_columns($pdo);
+
+        $stmt = $pdo->prepare(
+            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `recovery_key_hash`
+             FROM `users`
+             WHERE `username` = :username
+             LIMIT 1'
+        );
+        $stmt->execute(['username' => $username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!is_array($user) || auth_normalize_role((string) ($user['role'] ?? '')) !== AUTH_ROLE_CAPTAIN) {
+            return ['success' => false, 'error' => 'Captain account not found.'];
+        }
+
+        $storedHash = (string) ($user['recovery_key_hash'] ?? '');
+        if ($storedHash === '') {
+            return ['success' => false, 'error' => 'No recovery key was registered for this captain account.'];
+        }
+
+        if (!auth_verify_recovery_key($recoveryKey, $storedHash)) {
+            auth_audit_log([
+                'actor_user_id' => (int) $user['id'],
+                'actor_username' => (string) $user['username'],
+                'actor_role' => AUTH_ROLE_CAPTAIN,
+                'action_key' => 'captain_recovery_failed',
+                'action_type' => 'security',
+                'module_name' => 'Authentication',
+                'record_type' => 'user',
+                'record_id' => (string) $user['username'],
+                'details' => 'Invalid master recovery key entered during password reset attempt.',
+            ]);
+            return ['success' => false, 'error' => 'Invalid recovery key. Please check the code and try again.'];
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE `users`
+             SET `password_hash` = :password_hash,
+                 `offline_reauth_token` = NULL,
+                 `updated_at` = CURRENT_TIMESTAMP
+             WHERE `id` = :id
+             LIMIT 1'
+        );
+        $updateStmt->execute([
+            'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+            'id' => (int) $user['id'],
+        ]);
+
+        auth_audit_log([
+            'actor_user_id' => (int) $user['id'],
+            'actor_username' => (string) $user['username'],
+            'actor_role' => AUTH_ROLE_CAPTAIN,
+            'action_key' => 'captain_password_recovered',
+            'action_type' => 'security',
+            'module_name' => 'Authentication',
+            'record_type' => 'user',
+            'record_id' => (string) $user['username'],
+            'details' => 'Captain password reset successfully using master recovery key.',
+        ]);
+
+        return ['success' => true, 'error' => ''];
+    } catch (Throwable $exception) {
+        return ['success' => false, 'error' => 'Unable to reset password right now. Please try again later.'];
+    }
 }
 
 function auth_remove_insecure_default_users(PDO $pdo): void

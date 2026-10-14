@@ -3273,6 +3273,40 @@ try {
         }
     }
 
+    if ($action === 'generate_captain_recovery_key') {
+        users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
+        $captainId = (int) ($authUser['id'] ?? 0);
+        if ($captainId <= 0) {
+            users_api_error(401, 'Invalid session.');
+        }
+
+        $newKey = auth_generate_recovery_key();
+        $newKeyHash = auth_hash_recovery_key($newKey);
+
+        $stmt = $pdo->prepare('UPDATE `users` SET `recovery_key_hash` = :hash, `updated_at` = CURRENT_TIMESTAMP WHERE `id` = :id AND `role` = :role LIMIT 1');
+        $stmt->execute([
+            'hash' => $newKeyHash,
+            'id' => $captainId,
+            'role' => AUTH_ROLE_CAPTAIN,
+        ]);
+
+        users_api_audit_log(
+            $authUser,
+            'captain_recovery_key_regenerated',
+            'updated',
+            'Generated new master recovery key.',
+            'user',
+            (string) ($authUser['username'] ?? ''),
+            ['user_id' => $captainId]
+        );
+
+        users_api_respond(200, [
+            'success' => true,
+            'recovery_key' => $newKey,
+            'message' => 'New master recovery key generated successfully.',
+        ]);
+    }
+
     if ($action === 'update_own_credentials') {
         users_api_require_role($requesterRole, [AUTH_ROLE_ADMIN, AUTH_ROLE_CAPTAIN, AUTH_ROLE_STAFF]);
 

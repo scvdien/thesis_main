@@ -296,6 +296,7 @@ const captainCredentialsSaveBtn = document.getElementById('captainCredentialsSav
 const captainCredentialsNotice = document.getElementById('captainCredentialsNotice');
 const captainCredentialsFormEl = document.getElementById('captainCredentialsForm');
 const captainCredentialsStartBtn = document.getElementById('captainCredentialsStartBtn');
+const captainGenerateRecoveryKeyBtn = document.getElementById('captainGenerateRecoveryKeyBtn');
 
 const adminCredentialsPanel = document.getElementById('admin-credentials');
 const adminCredentialsCurrentUsername = document.getElementById('adminCredentialsCurrentUsername');
@@ -3020,6 +3021,9 @@ const renderCaptainCredentialsState = () => {
   if (captainCredentialsStartBtn) {
     captainCredentialsStartBtn.disabled = !hasAccount || isDeactivated;
   }
+  if (captainGenerateRecoveryKeyBtn) {
+    captainGenerateRecoveryKeyBtn.disabled = !hasAccount || isDeactivated;
+  }
 
   if (!hasAccount) {
     openCaptainCredentialsForm();
@@ -3510,6 +3514,114 @@ captainCredentialsStartBtn?.addEventListener('click', (event) => {
   }
   openCaptainCredentialsForm();
   setCaptainCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
+});
+
+const showSettingsRecoveryKeyModal = (key) => {
+  const modalEl = document.getElementById('recoveryKeyModal');
+  if (!modalEl) return;
+
+  const keyDisplay = document.getElementById('recoveryKeyDisplay');
+  const copyBtn = document.getElementById('copyRecoveryKeyBtn');
+  const copyText = document.getElementById('copyKeyText');
+  const downloadBtn = document.getElementById('downloadRecoveryKeyBtn');
+  const checkbox = document.getElementById('confirmSavedKey');
+  const closeBtn = document.getElementById('closeRecoveryModalBtn');
+
+  if (keyDisplay) keyDisplay.textContent = key;
+  if (checkbox) {
+    checkbox.checked = false;
+  }
+
+  if (closeBtn) {
+    closeBtn.disabled = true;
+  }
+
+  if (checkbox && closeBtn) {
+    checkbox.onchange = () => {
+      closeBtn.disabled = !checkbox.checked;
+    };
+  }
+
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(key);
+        if (copyText) copyText.textContent = 'Copied!';
+        setTimeout(() => {
+          if (copyText) copyText.textContent = 'Copy';
+        }, 2000);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (copyText) copyText.textContent = 'Copied!';
+        setTimeout(() => {
+          if (copyText) copyText.textContent = 'Copy';
+        }, 2000);
+      }
+    };
+  }
+
+  if (downloadBtn) {
+    downloadBtn.onclick = () => {
+      const content = "BARANGAY CABARIAN LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY FOR BARANGAY CAPTAIN\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nKeep this key in a secure location. You will need this key to reset your Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "Cabarian_Captain_Recovery_Key.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  if (window.bootstrap && window.bootstrap.Modal) {
+    const modal = window.bootstrap.Modal.getInstance(modalEl) || new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+    modal.show();
+  }
+};
+
+captainGenerateRecoveryKeyBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+
+  const currentUser = readCurrentUser();
+  if (!currentUser) {
+    setCaptainCredentialsNotice('Unable to load your account details. Try reloading the page.', 'danger');
+    return;
+  }
+  if (currentUser.status === 'deactivated') {
+    setCaptainCredentialsNotice('Your account is deactivated.', 'danger');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    'Sigurado ka bang nais mong mag-generate ng bagong Master Recovery Key? Mapapawalang-bisa ang lumang recovery key kung meron man.'
+  );
+  if (!confirmed) return;
+
+  captainGenerateRecoveryKeyBtn.disabled = true;
+  const origHtml = captainGenerateRecoveryKeyBtn.innerHTML;
+  captainGenerateRecoveryKeyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Generating...';
+
+  try {
+    const response = await usersApiFetch('POST', { action: 'generate_captain_recovery_key' });
+    if (!response || !response.success || !response.recovery_key) {
+      throw new Error(response?.error || response?.message || 'Failed to generate recovery key.');
+    }
+    showSettingsRecoveryKeyModal(response.recovery_key);
+    setCaptainCredentialsNotice('New Master Recovery Key generated successfully. Make sure to save it safely.', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to generate recovery key.';
+    setCaptainCredentialsNotice(message, 'danger');
+  } finally {
+    captainGenerateRecoveryKeyBtn.disabled = false;
+    captainGenerateRecoveryKeyBtn.innerHTML = origHtml;
+  }
 });
 
 adminCredentialsSaveBtn?.addEventListener('click', async (event) => {

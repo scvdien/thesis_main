@@ -141,6 +141,80 @@
     return result;
   }
 
+  const showRecoveryKeyModal = (key, redirectUrl) => {
+    const modalEl = document.getElementById('recoveryKeyModal');
+    if (!modalEl) {
+      window.location.assign(redirectUrl || 'index.php');
+      return;
+    }
+    const keyDisplay = document.getElementById('recoveryKeyDisplay');
+    const copyBtn = document.getElementById('copyRecoveryKeyBtn');
+    const copyText = document.getElementById('copyKeyText');
+    const downloadBtn = document.getElementById('downloadRecoveryKeyBtn');
+    const checkbox = document.getElementById('confirmSavedKey');
+    const proceedBtn = document.getElementById('proceedDashboardBtn');
+
+    if (keyDisplay) keyDisplay.textContent = key;
+
+    if (checkbox && proceedBtn) {
+      proceedBtn.disabled = !checkbox.checked;
+      checkbox.onchange = () => {
+        proceedBtn.disabled = !checkbox.checked;
+      };
+    }
+
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(key);
+          if (copyText) copyText.textContent = 'Copied!';
+          setTimeout(() => {
+            if (copyText) copyText.textContent = 'Copy';
+          }, 2000);
+        } catch {
+          const ta = document.createElement('textarea');
+          ta.value = key;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (copyText) copyText.textContent = 'Copied!';
+          setTimeout(() => {
+            if (copyText) copyText.textContent = 'Copy';
+          }, 2000);
+        }
+      };
+    }
+
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        const content = "BARANGAY CABARIAN LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY FOR BARANGAY CAPTAIN\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nKeep this key in a secure location. You will need this key to reset your Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "Cabarian_Captain_Recovery_Key.txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+    }
+
+    if (proceedBtn) {
+      proceedBtn.onclick = () => {
+        proceedBtn.disabled = true;
+        proceedBtn.innerHTML = 'Opening Dashboard... <span class="spinner-border spinner-border-sm ms-1"></span>';
+        window.location.assign(redirectUrl || 'index.php');
+      };
+    }
+
+    if (window.bootstrap && window.bootstrap.Modal) {
+      const modal = new window.bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+      modal.show();
+    }
+  };
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearError();
@@ -300,6 +374,10 @@
           }
 
           if (payload && payload.success === true) {
+            if (payload.recovery_key) {
+              showRecoveryKeyModal(payload.recovery_key, payload.redirect || 'index.php');
+              return;
+            }
             await handleLoginSuccess(payload.redirect || 'registration.php');
             return;
           }
@@ -363,6 +441,139 @@
 
     await performOnlineLogin(false);
   });
+
+  if (window.__INITIAL_RECOVERY_KEY) {
+    showRecoveryKeyModal(window.__INITIAL_RECOVERY_KEY, window.__INITIAL_REDIRECT_URL || 'index.php');
+  }
+
+  const toggleRecoveryLink = document.getElementById('toggleRecoveryLink');
+  const recoveryForm = document.getElementById('recoveryForm');
+  const backToLoginBtn = document.getElementById('backToLoginBtn');
+  const recoveryError = document.getElementById('recoveryError');
+  const recoverySuccess = document.getElementById('recoverySuccess');
+  const recoverySubmitBtn = document.getElementById('recoverySubmitBtn');
+
+  const showRecoveryError = (msg) => {
+    if (!recoveryError) return;
+    recoveryError.textContent = String(msg || '');
+    recoveryError.classList.add('is-visible');
+    if (recoverySuccess) recoverySuccess.classList.add('d-none');
+    if (recoverySubmitBtn) {
+      recoverySubmitBtn.disabled = false;
+      recoverySubmitBtn.textContent = 'Reset Password';
+    }
+  };
+
+  const clearRecoveryMessages = () => {
+    if (recoveryError) {
+      recoveryError.textContent = '';
+      recoveryError.classList.remove('is-visible');
+    }
+    if (recoverySuccess) {
+      recoverySuccess.textContent = '';
+      recoverySuccess.classList.add('d-none');
+    }
+  };
+
+  if (toggleRecoveryLink && recoveryForm && form) {
+    toggleRecoveryLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearError();
+      clearRecoveryMessages();
+      form.classList.add('d-none');
+      recoveryForm.classList.remove('d-none');
+      const recUser = recoveryForm.querySelector('input[name="recovery_username"]');
+      if (recUser) recUser.focus();
+    });
+  }
+
+  if (backToLoginBtn && recoveryForm && form) {
+    backToLoginBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearError();
+      clearRecoveryMessages();
+      recoveryForm.classList.add('d-none');
+      form.classList.remove('d-none');
+      if (usernameInput) usernameInput.focus();
+    });
+  }
+
+  if (recoveryForm) {
+    recoveryForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearRecoveryMessages();
+
+      const recUser = String(recoveryForm.querySelector('input[name="recovery_username"]')?.value || '').trim();
+      const recKey = String(recoveryForm.querySelector('input[name="recovery_key"]')?.value || '').trim();
+      const recPass = String(recoveryForm.querySelector('input[name="recovery_password"]')?.value || '');
+      const recPassConfirm = String(recoveryForm.querySelector('input[name="recovery_password_confirm"]')?.value || '');
+
+      if (!recUser || !recKey || !recPass || !recPassConfirm) {
+        showRecoveryError('Please complete all recovery fields.');
+        return;
+      }
+      if (recPass !== recPassConfirm) {
+        showRecoveryError('Passwords do not match.');
+        return;
+      }
+      if (recPass.length < 8 || !/[^A-Za-z0-9]/.test(recPass)) {
+        showRecoveryError('Password must be at least 8 characters and include at least 1 special character.');
+        return;
+      }
+
+      if (recoverySubmitBtn) {
+        recoverySubmitBtn.disabled = true;
+        recoverySubmitBtn.textContent = 'Resetting password...';
+      }
+
+      try {
+        const formData = new FormData(recoveryForm);
+        const response = await fetch('login.php', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+
+        const data = await response.json();
+        if (data && data.success === true) {
+          if (recoverySuccess) {
+            recoverySuccess.textContent = data.message || 'Captain password reset successfully! You can now sign in.';
+            recoverySuccess.classList.remove('d-none');
+          }
+          if (recoverySubmitBtn) {
+            recoverySubmitBtn.disabled = true;
+            recoverySubmitBtn.textContent = 'Password Reset!';
+          }
+          recoveryForm.reset();
+          if (usernameInput) {
+            usernameInput.value = recUser;
+          }
+          setTimeout(() => {
+            recoveryForm.classList.add('d-none');
+            form.classList.remove('d-none');
+            if (passwordInput) passwordInput.focus();
+            if (error) {
+              error.textContent = 'Password reset successfully! Please sign in with your new password.';
+              error.classList.add('is-visible');
+              error.style.color = '#059669';
+              setTimeout(() => {
+                error.style.color = '';
+                clearError();
+              }, 4000);
+            }
+          }, 2000);
+        } else {
+          showRecoveryError(data?.error || 'Invalid recovery key or username.');
+        }
+      } catch (err) {
+        showRecoveryError('Unable to process password reset. Please try again.');
+      }
+    });
+  }
 
   // Mobile adaptive keyboard handler for smooth viewport transitions
   (function initKeyboardAdaptive() {

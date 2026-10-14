@@ -188,6 +188,23 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
               </div>
             </div>
             <div class="small text-muted mt-3" id="captainCredentialsNotice">Enter your current credentials to update your account.</div>
+
+            <hr class="my-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 p-3 bg-light rounded-3 border">
+              <div>
+                <div class="fw-semibold text-dark d-flex align-items-center gap-2 mb-1">
+                  <i class="bi bi-shield-lock-fill text-primary"></i> Master Recovery Key
+                </div>
+                <div class="small text-muted">
+                  Emergency backup key para ma-recover ang account kapag nakalimutan ang password.
+                </div>
+              </div>
+              <div>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="captainGenerateRecoveryKeyBtn">
+                  <i class="bi bi-key-fill"></i> Generate New Key
+                </button>
+              </div>
+            </div>
           </section>
 
           <section class="settings-section settings-panel is-active" style="--delay:0.02s" id="admin-credentials" data-role="admin-only">
@@ -950,6 +967,39 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  <!-- MASTER RECOVERY KEY MODAL -->
+  <div class="modal fade" id="recoveryKeyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center p-4" style="border-radius: 16px; border: none; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+        <div class="modal-icon mb-3">
+          <i class="bi bi-shield-lock-fill text-primary" style="font-size: 3rem;"></i>
+        </div>
+        <h4 class="fw-bold mb-1">Master Recovery Key</h4>
+        <p class="text-muted small mb-3">
+          Ito ang iyong bagong emergency backup key. <strong>Itago at i-save ito sa ligtas na lugar.</strong> Kakailanganin mo ito kung sakaling makalimutan mo ang iyong password.
+        </p>
+        <div class="p-3 mb-3 bg-light rounded-3 border d-flex align-items-center justify-content-between">
+          <code id="recoveryKeyDisplay" class="fs-4 fw-bold text-primary" style="letter-spacing: 2px;">CAB-XXXX-XXXX-XXXX</code>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="copyRecoveryKeyBtn" title="Copy Key">
+            <i class="bi bi-clipboard"></i> <span id="copyKeyText">Copy</span>
+          </button>
+        </div>
+        <div class="d-flex justify-content-center gap-2 mb-3">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="downloadRecoveryKeyBtn">
+            <i class="bi bi-download"></i> Download Key (.txt)
+          </button>
+        </div>
+        <div class="form-check text-start mb-3" style="max-width: 380px; margin: 0 auto;">
+          <input class="form-check-input" type="checkbox" id="confirmSavedKey">
+          <label class="form-check-label small" for="confirmSavedKey">
+            Naitabi ko na ang aking recovery key sa ligtas na lugar.
+          </label>
+        </div>
+        <button type="button" class="btn btn-primary w-100 py-2 fw-semibold" id="closeRecoveryModalBtn" disabled data-bs-dismiss="modal" style="border-radius: 8px;">
+          Done / Close <i class="bi bi-check2"></i>
+        </button>
       </div>
     </div>
   </div>
