@@ -836,6 +836,148 @@ function auth_reset_captain_with_recovery_key(string $username, string $recovery
     }
 }
 
+/**
+ * Find captain account by master recovery key.
+ *
+ * @return array{id: int, full_name: string, username: string, role: string}|null
+ */
+function auth_find_captain_by_recovery_key(string $recoveryKey): ?array
+{
+    $recoveryKey = trim($recoveryKey);
+    if ($recoveryKey === '') {
+        return null;
+    }
+
+    try {
+        auth_bootstrap_store();
+        $pdo = auth_db();
+        auth_ensure_users_columns($pdo);
+
+        $stmt = $pdo->prepare(
+            'SELECT `id`, `full_name`, `username`, `role`, `is_active`, `recovery_key_hash`
+             FROM `users`
+             WHERE `role` = :role AND `is_active` = 1'
+        );
+        $stmt->execute(['role' => AUTH_ROLE_CAPTAIN]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $user) {
+            $storedHash = (string) ($user['recovery_key_hash'] ?? '');
+            if ($storedHash !== '' && auth_verify_recovery_key($recoveryKey, $storedHash)) {
+                return [
+                    'id' => (int) $user['id'],
+                    'full_name' => (string) ($user['full_name'] ?? 'Barangay Captain'),
+                    'username' => (string) ($user['username'] ?? ''),
+                    'role' => AUTH_ROLE_CAPTAIN,
+                ];
+            }
+        }
+
+        auth_audit_log([
+            'actor_user_id' => null,
+            'actor_username' => 'guest',
+            'actor_role' => 'guest',
+            'action_key' => 'captain_recovery_key_invalid',
+            'action_type' => 'security',
+            'module_name' => 'Authentication',
+            'record_type' => 'user',
+            'record_id' => 'recovery_attempt',
+            'details' => 'Invalid master recovery key submitted in Step 1 verification.',
+        ]);
+
+        return null;
+    } catch (Throwable $exception) {
+        return null;
+    }
+}
+
+/**
+ * Complete captain recovery by updating username (optional) and setting new password.
+ *
+ * @return array{success: bool, error: string, user?: array<string, mixed>}
+ */
+function auth_complete_captain_recovery(int $userId, string $newUsername, string $newPassword): array
+{
+    $userId = (int) $userId;
+    $newUsername = trim($newUsername);
+    $newPassword = (string) $newPassword;
+
+    if ($userId <= 0 || $newUsername === '' || $newPassword === '') {
+        return ['success' => false, 'error' => 'All fields are required.'];
+    }
+
+    if (!preg_match('/^[A-Za-z0-9._-]{3,80}$/', $newUsername)) {
+        return ['success' => false, 'error' => 'Username must be 3-80 characters and contain only letters, numbers, dots, hyphens, or underscores.'];
+    }
+
+    if (!auth_initial_password_strong($newPassword)) {
+        return ['success' => false, 'error' => 'Password must be at least 8 characters and include at least 1 special character.'];
+    }
+
+    try {
+        auth_bootstrap_store();
+        $pdo = auth_db();
+        auth_ensure_users_columns($pdo);
+
+        $stmt = $pdo->prepare('SELECT `id`, `full_name`, `username`, `role`, `is_active` FROM `users` WHERE `id` = :id LIMIT 1');
+        $stmt->execute(['id' => $userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!is_array($user) || auth_normalize_role((string) ($user['role'] ?? '')) !== AUTH_ROLE_CAPTAIN) {
+            return ['success' => false, 'error' => 'Captain account not found.'];
+        }
+
+        // Check if username was changed and if taken by another user
+        $checkStmt = $pdo->prepare('SELECT `id` FROM `users` WHERE `username` = :username AND `id` != :id LIMIT 1');
+        $checkStmt->execute(['username' => $newUsername, 'id' => $userId]);
+        if ($checkStmt->fetch()) {
+            return ['success' => false, 'error' => 'Username is already taken by another account. Please choose another username.'];
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE `users`
+             SET `username` = :username,
+                 `password_hash` = :password_hash,
+                 `offline_reauth_token` = NULL,
+                 `updated_at` = CURRENT_TIMESTAMP
+             WHERE `id` = :id
+             LIMIT 1'
+        );
+        $updateStmt->execute([
+            'username' => $newUsername,
+            'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+            'id' => $userId,
+        ]);
+
+        $updatedUser = [
+            'id' => $userId,
+            'full_name' => (string) ($user['full_name'] ?? 'Barangay Captain'),
+            'username' => $newUsername,
+            'role' => AUTH_ROLE_CAPTAIN,
+        ];
+
+        auth_audit_log([
+            'actor_user_id' => $userId,
+            'actor_username' => $newUsername,
+            'actor_role' => AUTH_ROLE_CAPTAIN,
+            'action_key' => 'captain_password_recovered',
+            'action_type' => 'security',
+            'module_name' => 'Authentication',
+            'record_type' => 'user',
+            'record_id' => $newUsername,
+            'details' => 'Captain credentials updated successfully using master recovery key.',
+        ]);
+
+        return ['success' => true, 'error' => '', 'user' => $updatedUser];
+    } catch (Throwable $exception) {
+        return ['success' => false, 'error' => 'Unable to update credentials right now. Please try again later.'];
+    }
+}
+
 function auth_remove_insecure_default_users(PDO $pdo): void
 {
     $defaults = [

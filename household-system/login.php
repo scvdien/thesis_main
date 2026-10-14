@@ -79,7 +79,102 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
         || ($csrfToken === 'offline-token');
     $isCsrfValid = auth_csrf_valid($csrfToken) || $isAppClient;
 
-    if ($action === 'recover_captain') {
+    if ($action === 'verify_recovery_key') {
+        $recKey = trim(is_array($jsonData) ? (string) ($jsonData['recovery_key'] ?? '') : (string) ($_POST['recovery_key'] ?? ''));
+
+        if (!$isCsrfValid) {
+            $errorMessage = 'Your session expired. Please refresh the page.';
+        } elseif ($recKey === '') {
+            $errorMessage = 'Please enter your master recovery key.';
+        } else {
+            $captain = auth_find_captain_by_recovery_key($recKey);
+            if (is_array($captain)) {
+                $recoveryToken = bin2hex(random_bytes(32));
+                $_SESSION['recovery_verified_captain_id'] = (int) $captain['id'];
+                $_SESSION['recovery_verified_token'] = $recoveryToken;
+
+                if ($isJsonRequest) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode([
+                        'success' => true,
+                        'captain_name' => (string) ($captain['full_name'] ?? 'Barangay Captain'),
+                        'captain_username' => (string) ($captain['username'] ?? ''),
+                        'recovery_token' => $recoveryToken,
+                        'csrf_token' => auth_csrf_token(),
+                    ]);
+                    exit;
+                }
+            } else {
+                $errorMessage = 'Invalid master recovery key. Please check your backup code and try again.';
+            }
+        }
+
+        if ($isJsonRequest) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'error' => $errorMessage,
+                'csrf_token' => auth_csrf_token(),
+            ]);
+            exit;
+        }
+    } elseif ($action === 'complete_recovery') {
+        $recToken = trim(is_array($jsonData) ? (string) ($jsonData['recovery_token'] ?? '') : (string) ($_POST['recovery_token'] ?? ''));
+        $newUsername = trim(is_array($jsonData) ? (string) ($jsonData['new_username'] ?? '') : (string) ($_POST['new_username'] ?? ''));
+        $newPassword = (string) (is_array($jsonData) ? ($jsonData['new_password'] ?? '') : ($_POST['new_password'] ?? ''));
+        $newPasswordConfirm = (string) (is_array($jsonData) ? ($jsonData['new_password_confirm'] ?? '') : ($_POST['new_password_confirm'] ?? ''));
+
+        $verifiedId = (int) ($_SESSION['recovery_verified_captain_id'] ?? 0);
+        $sessionToken = (string) ($_SESSION['recovery_verified_token'] ?? '');
+
+        if (!$isCsrfValid) {
+            $errorMessage = 'Your session expired. Please refresh the page.';
+        } elseif ($verifiedId <= 0 || $sessionToken === '' || !hash_equals($sessionToken, $recToken)) {
+            $errorMessage = 'Recovery session expired. Please verify your recovery key again.';
+        } elseif ($newUsername === '' || $newPassword === '' || $newPasswordConfirm === '') {
+            $errorMessage = 'Please complete all fields.';
+        } elseif ($newPassword !== $newPasswordConfirm) {
+            $errorMessage = 'Passwords do not match.';
+        } elseif (strlen($newPassword) < 8 || !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
+            $errorMessage = 'Password must be at least 8 characters and include at least 1 special character.';
+        } else {
+            $updateResult = auth_complete_captain_recovery($verifiedId, $newUsername, $newPassword);
+            if ($updateResult['success']) {
+                unset($_SESSION['recovery_verified_captain_id'], $_SESSION['recovery_verified_token']);
+                
+                // Attempt automatic login
+                $loginResult = auth_attempt_login($newUsername, $newPassword);
+                $redirectUrl = 'index.php';
+                if (($loginResult['success'] ?? false) === true && is_array($loginResult['user'] ?? null)) {
+                    $redirectUrl = auth_user_home($loginResult['user']);
+                }
+
+                if ($isJsonRequest) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode([
+                        'success' => true,
+                        'message' => 'Credentials updated successfully! Logging you into the dashboard...',
+                        'redirect' => $redirectUrl,
+                        'csrf_token' => auth_csrf_token(),
+                    ]);
+                    exit;
+                }
+                auth_redirect($redirectUrl);
+            } else {
+                $errorMessage = (string) ($updateResult['error'] ?? 'Unable to update credentials.');
+            }
+        }
+
+        if ($isJsonRequest) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'error' => $errorMessage,
+                'csrf_token' => auth_csrf_token(),
+            ]);
+            exit;
+        }
+    } elseif ($action === 'recover_captain') {
         $recUsername = trim(is_array($jsonData) ? (string) ($jsonData['recovery_username'] ?? '') : (string) ($_POST['recovery_username'] ?? ''));
         $recKey = trim(is_array($jsonData) ? (string) ($jsonData['recovery_key'] ?? '') : (string) ($_POST['recovery_key'] ?? ''));
         $recPassword = (string) (is_array($jsonData) ? ($jsonData['recovery_password'] ?? '') : ($_POST['recovery_password'] ?? ''));
@@ -406,8 +501,8 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
 
           <?php if (!$setupRequired): ?>
           <form id="recoveryForm" class="login-form d-none" method="post" action="login.php" autocomplete="off" novalidate>
-            <input type="hidden" name="action" value="recover_captain">
-            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" id="recoveryCsrfToken" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" id="recoveryToken" name="recovery_token" value="">
             
             <div class="mb-3 text-start">
               <button type="button" class="btn btn-link text-decoration-none p-0" id="backToLoginBtn" style="color: var(--muted); font-size: 13px;">
@@ -415,49 +510,79 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
               </button>
             </div>
             
-            <div class="form-head mb-3">
-              <div class="form-kicker" style="color: var(--accent); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Account Recovery</div>
-              <h3 class="form-title" style="font-size: 22px; font-weight: 700; margin: 4px 0 6px;">Reset Captain Password</h3>
-              <p class="form-subtitle" style="font-size: 13px; color: var(--muted); margin: 0;">Enter your username and 16-character master recovery key to set a new password.</p>
-            </div>
-
-            <div class="field">
-              <label for="recovery_username">Captain Username</label>
-              <div class="input-wrap">
-                <i class="bi bi-person"></i>
-                <input type="text" id="recovery_username" name="recovery_username" class="form-control" placeholder="Enter captain username" required autocomplete="username">
+            <!-- STEP 1: VERIFY RECOVERY KEY -->
+            <div id="recoveryStep1">
+              <div class="form-head mb-3">
+                <div class="form-kicker" style="color: var(--accent); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Account Recovery</div>
+                <h3 class="form-title" style="font-size: 22px; font-weight: 700; margin: 4px 0 6px;">Enter Master Recovery Key</h3>
+                <p class="form-subtitle" style="font-size: 13px; color: var(--muted); margin: 0;">Enter your 16-character backup key to verify your identity as Barangay Captain.</p>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="recovery_key">Master Recovery Key</label>
-              <div class="input-wrap">
-                <i class="bi bi-key"></i>
-                <input type="text" id="recovery_key" name="recovery_key" class="form-control text-uppercase" placeholder="CAB-XXXX-XXXX-XXXX" maxlength="25" autocomplete="off" spellcheck="false" required>
+              <div class="field">
+                <label for="recovery_key">Master Recovery Key</label>
+                <div class="input-wrap">
+                  <i class="bi bi-key"></i>
+                  <input type="text" id="recovery_key" name="recovery_key" class="form-control text-uppercase font-monospace" placeholder="CAB-XXXX-XXXX-XXXX" maxlength="25" autocomplete="off" spellcheck="false" required style="letter-spacing: 1px;">
+                </div>
               </div>
+
+              <div id="recoveryStep1Error" class="form-error" role="alert" aria-live="polite"></div>
+
+              <button id="verifyRecoveryKeyBtn" class="btn btn-primary w-100" type="button">
+                Verify Recovery Key <i class="bi bi-arrow-right ms-1"></i>
+              </button>
             </div>
 
-            <div class="field">
-              <label for="recovery_password">New Password</label>
-              <div class="input-wrap">
-                <i class="bi bi-lock"></i>
-                <input type="password" id="recovery_password" name="recovery_password" class="form-control" placeholder="8+ chars, 1 special character" minlength="8" required autocomplete="new-password">
+            <!-- STEP 2: SET NEW USERNAME & PASSWORD -->
+            <div id="recoveryStep2" class="d-none">
+              <div class="p-3 mb-3 rounded-3 border d-flex align-items-center gap-3" style="background: #f0fdf4; border-color: #bbf7d0 !important;">
+                <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px;">
+                  <i class="bi bi-shield-check" style="font-size: 1.3rem;"></i>
+                </div>
+                <div class="text-start">
+                  <div class="text-uppercase text-muted fw-bold" style="font-size: 0.68rem; letter-spacing: 0.06em;">Verified Barangay Captain</div>
+                  <div class="fw-bold text-dark" id="verifiedCaptainName" style="font-size: 0.95rem;">Barangay Captain</div>
+                </div>
               </div>
-            </div>
 
-            <div class="field">
-              <label for="recovery_password_confirm">Confirm New Password</label>
-              <div class="input-wrap">
-                <i class="bi bi-shield-lock"></i>
-                <input type="password" id="recovery_password_confirm" name="recovery_password_confirm" class="form-control" placeholder="Re-enter new password" minlength="8" required autocomplete="new-password">
+              <div class="form-head mb-3">
+                <h3 class="form-title" style="font-size: 20px; font-weight: 700; margin: 0 0 4px;">Set New Credentials</h3>
+                <p class="form-subtitle" style="font-size: 13px; color: var(--muted); margin: 0;">Update your username and create a new secure password.</p>
               </div>
+
+              <div class="field">
+                <label for="recovery_new_username">Captain Username</label>
+                <div class="input-wrap">
+                  <i class="bi bi-person"></i>
+                  <input type="text" id="recovery_new_username" name="new_username" class="form-control" placeholder="Enter captain username" required autocomplete="username">
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="recovery_new_password">New Password</label>
+                <div class="input-wrap">
+                  <i class="bi bi-lock"></i>
+                  <input type="password" id="recovery_new_password" name="new_password" class="form-control" placeholder="8+ chars, 1 special character" minlength="8" required autocomplete="new-password">
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="recovery_new_password_confirm">Confirm New Password</label>
+                <div class="input-wrap">
+                  <i class="bi bi-shield-lock"></i>
+                  <input type="password" id="recovery_new_password_confirm" name="new_password_confirm" class="form-control" placeholder="Re-enter new password" minlength="8" required autocomplete="new-password">
+                </div>
+              </div>
+
+              <div id="recoveryStep2Error" class="form-error" role="alert" aria-live="polite"></div>
+              <div id="recoveryStep2Success" class="alert alert-success d-none small py-2 text-center" role="alert"></div>
+
+              <button id="completeRecoveryBtn" class="btn btn-primary w-100" type="button">
+                Save Credentials & Sign In <i class="bi bi-arrow-right ms-1"></i>
+              </button>
             </div>
 
-            <div id="recoveryError" class="form-error" role="alert" aria-live="polite"></div>
-            <div id="recoverySuccess" class="alert alert-success d-none small py-2 text-center" role="alert"></div>
-
-            <button id="recoverySubmitBtn" class="btn btn-primary w-100" type="submit">Reset Password</button>
-            <div class="mobile-auth-note">
+            <div class="mobile-auth-note mt-3">
               <i class="bi bi-shield-check"></i>
               <span>Authorized Captain Recovery Only</span>
             </div>

@@ -449,41 +449,91 @@
   const toggleRecoveryLink = document.getElementById('toggleRecoveryLink');
   const recoveryForm = document.getElementById('recoveryForm');
   const backToLoginBtn = document.getElementById('backToLoginBtn');
-  const recoveryError = document.getElementById('recoveryError');
-  const recoverySuccess = document.getElementById('recoverySuccess');
-  const recoverySubmitBtn = document.getElementById('recoverySubmitBtn');
+  const recoveryStep1 = document.getElementById('recoveryStep1');
+  const recoveryStep2 = document.getElementById('recoveryStep2');
+  const recoveryKeyInput = document.getElementById('recovery_key');
+  const verifyRecoveryKeyBtn = document.getElementById('verifyRecoveryKeyBtn');
+  const recoveryStep1Error = document.getElementById('recoveryStep1Error');
+  const verifiedCaptainName = document.getElementById('verifiedCaptainName');
+  const recoveryNewUsername = document.getElementById('recovery_new_username');
+  const recoveryNewPassword = document.getElementById('recovery_new_password');
+  const recoveryNewPasswordConfirm = document.getElementById('recovery_new_password_confirm');
+  const recoveryStep2Error = document.getElementById('recoveryStep2Error');
+  const recoveryStep2Success = document.getElementById('recoveryStep2Success');
+  const completeRecoveryBtn = document.getElementById('completeRecoveryBtn');
+  const recoveryTokenInput = document.getElementById('recoveryToken');
 
-  const showRecoveryError = (msg) => {
-    if (!recoveryError) return;
-    recoveryError.textContent = String(msg || '');
-    recoveryError.classList.add('is-visible');
-    if (recoverySuccess) recoverySuccess.classList.add('d-none');
-    if (recoverySubmitBtn) {
-      recoverySubmitBtn.disabled = false;
-      recoverySubmitBtn.textContent = 'Reset Password';
+  const showStep1Error = (msg) => {
+    if (recoveryStep1Error) {
+      recoveryStep1Error.textContent = String(msg || '');
+      recoveryStep1Error.classList.add('is-visible');
     }
   };
 
-  const clearRecoveryMessages = () => {
-    if (recoveryError) {
-      recoveryError.textContent = '';
-      recoveryError.classList.remove('is-visible');
+  const clearStep1Error = () => {
+    if (recoveryStep1Error) {
+      recoveryStep1Error.textContent = '';
+      recoveryStep1Error.classList.remove('is-visible');
     }
-    if (recoverySuccess) {
-      recoverySuccess.textContent = '';
-      recoverySuccess.classList.add('d-none');
+  };
+
+  const showStep2Error = (msg) => {
+    if (recoveryStep2Error) {
+      recoveryStep2Error.textContent = String(msg || '');
+      recoveryStep2Error.classList.add('is-visible');
     }
+  };
+
+  const clearStep2Messages = () => {
+    if (recoveryStep2Error) {
+      recoveryStep2Error.textContent = '';
+      recoveryStep2Error.classList.remove('is-visible');
+    }
+    if (recoveryStep2Success) {
+      recoveryStep2Success.textContent = '';
+      recoveryStep2Success.classList.add('d-none');
+    }
+  };
+
+  const resetRecoveryFlow = () => {
+    clearStep1Error();
+    clearStep2Messages();
+    if (recoveryStep1) recoveryStep1.classList.remove('d-none');
+    if (recoveryStep2) recoveryStep2.classList.add('d-none');
+    if (recoveryKeyInput) recoveryKeyInput.value = '';
+    if (recoveryNewUsername) recoveryNewUsername.value = '';
+    if (recoveryNewPassword) recoveryNewPassword.value = '';
+    if (recoveryNewPasswordConfirm) recoveryNewPasswordConfirm.value = '';
+    if (recoveryTokenInput) recoveryTokenInput.value = '';
+    if (verifyRecoveryKeyBtn) {
+      verifyRecoveryKeyBtn.disabled = false;
+      verifyRecoveryKeyBtn.innerHTML = 'Verify Recovery Key <i class="bi bi-arrow-right ms-1"></i>';
+    }
+    if (completeRecoveryBtn) {
+      completeRecoveryBtn.disabled = false;
+      completeRecoveryBtn.innerHTML = 'Save Credentials & Sign In <i class="bi bi-arrow-right ms-1"></i>';
+    }
+  };
+
+  const getCsrfToken = () => {
+    return document.querySelector('input[name="csrf_token"]')?.value || '';
+  };
+
+  const setAllCsrfTokens = (token) => {
+    if (!token) return;
+    document.querySelectorAll('input[name="csrf_token"]').forEach((input) => {
+      input.value = token;
+    });
   };
 
   if (toggleRecoveryLink && recoveryForm && form) {
     toggleRecoveryLink.addEventListener('click', (e) => {
       e.preventDefault();
       clearError();
-      clearRecoveryMessages();
+      resetRecoveryFlow();
       form.classList.add('d-none');
       recoveryForm.classList.remove('d-none');
-      const recUser = recoveryForm.querySelector('input[name="recovery_username"]');
-      if (recUser) recUser.focus();
+      if (recoveryKeyInput) recoveryKeyInput.focus();
     });
   }
 
@@ -491,89 +541,185 @@
     backToLoginBtn.addEventListener('click', (e) => {
       e.preventDefault();
       clearError();
-      clearRecoveryMessages();
+      resetRecoveryFlow();
       recoveryForm.classList.add('d-none');
       form.classList.remove('d-none');
       if (usernameInput) usernameInput.focus();
     });
   }
 
-  if (recoveryForm) {
-    recoveryForm.addEventListener('submit', async (e) => {
+  const handleVerifyRecoveryKey = async () => {
+    clearStep1Error();
+    const key = String(recoveryKeyInput?.value || '').trim();
+    if (!key) {
+      showStep1Error('Please enter your master recovery key.');
+      if (recoveryKeyInput) recoveryKeyInput.focus();
+      return;
+    }
+
+    if (verifyRecoveryKeyBtn) {
+      verifyRecoveryKeyBtn.disabled = true;
+      verifyRecoveryKeyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Verifying...';
+    }
+
+    try {
+      const token = getCsrfToken();
+      const response = await fetch('login.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          action: 'verify_recovery_key',
+          recovery_key: key,
+          csrf_token: token
+        })
+      });
+
+      const data = await response.json();
+      if (data && data.csrf_token) {
+        setAllCsrfTokens(data.csrf_token);
+      }
+
+      if (data && data.success === true) {
+        if (recoveryTokenInput) recoveryTokenInput.value = data.recovery_token || '';
+        if (verifiedCaptainName) verifiedCaptainName.textContent = data.captain_name || 'Barangay Captain';
+        if (recoveryNewUsername) recoveryNewUsername.value = data.captain_username || '';
+
+        // Transition to Step 2
+        if (recoveryStep1) recoveryStep1.classList.add('d-none');
+        if (recoveryStep2) recoveryStep2.classList.remove('d-none');
+        if (recoveryNewPassword) recoveryNewPassword.focus();
+      } else {
+        showStep1Error(data?.error || 'Invalid master recovery key. Please check your backup code and try again.');
+        if (recoveryKeyInput) recoveryKeyInput.focus();
+      }
+    } catch (err) {
+      showStep1Error('Unable to verify recovery key. Please try again.');
+    } finally {
+      if (verifyRecoveryKeyBtn) {
+        verifyRecoveryKeyBtn.disabled = false;
+        verifyRecoveryKeyBtn.innerHTML = 'Verify Recovery Key <i class="bi bi-arrow-right ms-1"></i>';
+      }
+    }
+  };
+
+  verifyRecoveryKeyBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleVerifyRecoveryKey();
+  });
+
+  recoveryKeyInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      clearRecoveryMessages();
+      handleVerifyRecoveryKey();
+    }
+  });
 
-      const recUser = String(recoveryForm.querySelector('input[name="recovery_username"]')?.value || '').trim();
-      const recKey = String(recoveryForm.querySelector('input[name="recovery_key"]')?.value || '').trim();
-      const recPass = String(recoveryForm.querySelector('input[name="recovery_password"]')?.value || '');
-      const recPassConfirm = String(recoveryForm.querySelector('input[name="recovery_password_confirm"]')?.value || '');
+  const handleCompleteRecovery = async () => {
+    clearStep2Messages();
 
-      if (!recUser || !recKey || !recPass || !recPassConfirm) {
-        showRecoveryError('Please complete all recovery fields.');
-        return;
+    const recoveryToken = String(recoveryTokenInput?.value || '').trim();
+    const newUsername = String(recoveryNewUsername?.value || '').trim();
+    const newPassword = String(recoveryNewPassword?.value || '');
+    const newPasswordConfirm = String(recoveryNewPasswordConfirm?.value || '');
+
+    if (!newUsername || !newPassword || !newPasswordConfirm) {
+      showStep2Error('Please complete all credential fields.');
+      return;
+    }
+
+    if (!/^[A-Za-z0-9._-]{3,80}$/.test(newUsername)) {
+      showStep2Error('Username must be 3-80 characters and contain only letters, numbers, dots, hyphens, or underscores.');
+      if (recoveryNewUsername) recoveryNewUsername.focus();
+      return;
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      showStep2Error('New password and confirmation do not match.');
+      if (recoveryNewPasswordConfirm) recoveryNewPasswordConfirm.focus();
+      return;
+    }
+
+    if (newPassword.length < 8 || !/[^A-Za-z0-9]/.test(newPassword)) {
+      showStep2Error('Password must be at least 8 characters and include at least 1 special character.');
+      if (recoveryNewPassword) recoveryNewPassword.focus();
+      return;
+    }
+
+    if (completeRecoveryBtn) {
+      completeRecoveryBtn.disabled = true;
+      completeRecoveryBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+    }
+
+    try {
+      const token = getCsrfToken();
+      const response = await fetch('login.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          action: 'complete_recovery',
+          recovery_token: recoveryToken,
+          new_username: newUsername,
+          new_password: newPassword,
+          new_password_confirm: newPasswordConfirm,
+          csrf_token: token
+        })
+      });
+
+      const data = await response.json();
+      if (data && data.csrf_token) {
+        setAllCsrfTokens(data.csrf_token);
       }
-      if (recPass !== recPassConfirm) {
-        showRecoveryError('Passwords do not match.');
-        return;
-      }
-      if (recPass.length < 8 || !/[^A-Za-z0-9]/.test(recPass)) {
-        showRecoveryError('Password must be at least 8 characters and include at least 1 special character.');
-        return;
-      }
 
-      if (recoverySubmitBtn) {
-        recoverySubmitBtn.disabled = true;
-        recoverySubmitBtn.textContent = 'Resetting password...';
-      }
-
-      try {
-        const formData = new FormData(recoveryForm);
-        const response = await fetch('login.php', {
-          method: 'POST',
-          body: formData,
-          credentials: 'same-origin',
-          headers: {
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          }
-        });
-
-        const data = await response.json();
-        if (data && data.success === true) {
-          if (recoverySuccess) {
-            recoverySuccess.textContent = data.message || 'Captain password reset successfully! You can now sign in.';
-            recoverySuccess.classList.remove('d-none');
-          }
-          if (recoverySubmitBtn) {
-            recoverySubmitBtn.disabled = true;
-            recoverySubmitBtn.textContent = 'Password Reset!';
-          }
-          recoveryForm.reset();
-          if (usernameInput) {
-            usernameInput.value = recUser;
-          }
-          setTimeout(() => {
-            recoveryForm.classList.add('d-none');
-            form.classList.remove('d-none');
-            if (passwordInput) passwordInput.focus();
-            if (error) {
-              error.textContent = 'Password reset successfully! Please sign in with your new password.';
-              error.classList.add('is-visible');
-              error.style.color = '#059669';
-              setTimeout(() => {
-                error.style.color = '';
-                clearError();
-              }, 4000);
-            }
-          }, 2000);
-        } else {
-          showRecoveryError(data?.error || 'Invalid recovery key or username.');
+      if (data && data.success === true) {
+        if (recoveryStep2Success) {
+          recoveryStep2Success.textContent = data.message || 'Credentials updated successfully! Logging you in...';
+          recoveryStep2Success.classList.remove('d-none');
         }
-      } catch (err) {
-        showRecoveryError('Unable to process password reset. Please try again.');
+        if (completeRecoveryBtn) {
+          completeRecoveryBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Success!';
+        }
+        setTimeout(() => {
+          window.location.assign(data.redirect || 'index.php');
+        }, 1200);
+      } else {
+        showStep2Error(data?.error || 'Unable to update credentials. Please try again.');
+        if (completeRecoveryBtn) {
+          completeRecoveryBtn.disabled = false;
+          completeRecoveryBtn.innerHTML = 'Save Credentials & Sign In <i class="bi bi-arrow-right ms-1"></i>';
+        }
+      }
+    } catch (err) {
+      showStep2Error('Unable to complete account recovery. Please try again.');
+      if (completeRecoveryBtn) {
+        completeRecoveryBtn.disabled = false;
+        completeRecoveryBtn.innerHTML = 'Save Credentials & Sign In <i class="bi bi-arrow-right ms-1"></i>';
+      }
+    }
+  };
+
+  completeRecoveryBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleCompleteRecovery();
+  });
+
+  [recoveryNewUsername, recoveryNewPassword, recoveryNewPasswordConfirm].forEach((inp) => {
+    inp?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleCompleteRecovery();
       }
     });
-  }
+  });
 
   // Mobile adaptive keyboard handler for smooth viewport transitions
   (function initKeyboardAdaptive() {
