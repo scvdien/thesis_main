@@ -223,6 +223,7 @@ const adminAccountResetPassword = document.getElementById('adminAccountResetPass
 const adminAccountResetPasswordConfirm = document.getElementById('adminAccountResetPasswordConfirm');
 const adminAccountResetStartBtn = document.getElementById('adminAccountResetStartBtn');
 const adminAccountResetBtn = document.getElementById('adminAccountResetBtn');
+const adminAccountResetCancelBtn = document.getElementById('adminAccountResetCancelBtn');
 const adminAccountCredentialsEl = document.getElementById('adminAccountCredentials');
 const adminAccountResetConfirmModalEl = document.getElementById('adminAccountResetConfirmModal');
 const adminAccountResetConfirmBtn = document.getElementById('adminAccountResetConfirmBtn');
@@ -307,6 +308,7 @@ const adminCredentialsNewUsername = document.getElementById('adminCredentialsNew
 const adminCredentialsNewPassword = document.getElementById('adminCredentialsNewPassword');
 const adminCredentialsConfirmPassword = document.getElementById('adminCredentialsConfirmPassword');
 const adminCredentialsSaveBtn = document.getElementById('adminCredentialsSaveBtn');
+const adminCredentialsCancelBtn = document.getElementById('adminCredentialsCancelBtn');
 const adminCredentialsNotice = document.getElementById('adminCredentialsNotice');
 const adminCredentialsFormEl = document.getElementById('adminCredentialsForm');
 const adminCredentialsStartBtn = document.getElementById('adminCredentialsStartBtn');
@@ -3318,6 +3320,13 @@ adminAccountResetConfirmBtn?.addEventListener('click', () => {
   setAdminAccountNotice('Enter new username and password, then save new credentials.', 'muted');
 });
 
+adminAccountResetCancelBtn?.addEventListener('click', (event) => {
+  event?.preventDefault?.();
+  clearAdminAccountResetFields();
+  hideAdminAccountResetForm();
+  setAdminAccountNotice('Credential reset was cancelled.', 'muted');
+});
+
 const updateAdminAccountStatus = async (nextStatus) => {
   const account = readAdminAccount();
   if (!account) {
@@ -3847,6 +3856,13 @@ adminCredentialsStartBtn?.addEventListener('click', (event) => {
 
   openAdminCredentialsForm();
   setAdminCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
+});
+
+adminCredentialsCancelBtn?.addEventListener('click', (event) => {
+  event?.preventDefault?.();
+  clearAdminCredentialsFields();
+  hideAdminCredentialsForm();
+  setAdminCredentialsNotice('Credentials updated. Click Change Credentials to update again.', 'muted');
 });
 
 const readBarangayProfileFormPayload = () => {
@@ -4489,7 +4505,8 @@ const initializeSettingsState = async () => {
     setCaptainCredentialsNotice('Credentials updated. Click Change Credentials to update again.', 'muted');
   }
   if (adminCredentialsPanel) {
-    setAdminCredentialsNotice('Loading account credentials...', 'muted');
+    hideAdminCredentialsForm();
+    setAdminCredentialsNotice('Credentials updated. Click Change Credentials to update again.', 'muted');
   }
   if (staffAccountsList) {
     setStaffAccountNotice('Loading staff accounts...', 'muted');

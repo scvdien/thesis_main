@@ -216,12 +216,12 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
               </div>
               <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-primary-subtle text-primary">Security</span>
-                <button type="button" class="btn btn-cta d-none" id="adminCredentialsStartBtn">
+                <button type="button" class="btn btn-cta" id="adminCredentialsStartBtn">
                   <i class="bi bi-key"></i> Change Credentials
                 </button>
               </div>
             </div>
-            <div class="collapse show" id="adminCredentialsForm">
+            <div class="collapse" id="adminCredentialsForm">
               <div class="settings-form-grid">
               <div>
                 <label class="form-label small">Current Username</label>
@@ -243,14 +243,15 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 <label class="form-label small">Confirm Password</label>
                 <input type="password" class="form-control" id="adminCredentialsConfirmPassword" placeholder="Re-type password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character.">
               </div>
-              <div class="settings-form-full d-flex justify-content-end">
+              <div class="settings-form-full d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" id="adminCredentialsCancelBtn">Cancel</button>
                 <button type="button" class="btn btn-cta" id="adminCredentialsSaveBtn">
                   <i class="bi bi-check2-circle"></i> Save Changes
                 </button>
               </div>
               </div>
             </div>
-            <div class="small text-muted mt-3" id="adminCredentialsNotice">Enter your current temporary credentials to continue.</div>
+            <div class="small text-muted mt-3" id="adminCredentialsNotice">Credentials updated. Click Change Credentials to update again.</div>
           </section>
 
           <div class="settings-panel settings-panel-stack admin-account" style="--delay:0.05s" id="admin-account" data-role="captain-only">
@@ -324,7 +325,8 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                       <label class="form-label small">Confirm Password</label>
                       <input type="password" class="form-control" id="adminAccountResetPasswordConfirm" placeholder="Re-type new password" minlength="8" title="Minimum 8 characters.">
                     </div>
-                    <div class="settings-form-full d-flex justify-content-end">
+                    <div class="settings-form-full d-flex justify-content-end gap-2">
+                      <button type="button" class="btn btn-secondary" id="adminAccountResetCancelBtn">Cancel</button>
                       <button type="button" class="btn btn-cta" id="adminAccountResetBtn">
                         <i class="bi bi-check2-circle"></i> Save New Credentials
                       </button>
