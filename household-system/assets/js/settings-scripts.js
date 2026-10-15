@@ -293,6 +293,7 @@ const captainCredentialsNewUsername = document.getElementById('captainCredential
 const captainCredentialsNewPassword = document.getElementById('captainCredentialsNewPassword');
 const captainCredentialsConfirmPassword = document.getElementById('captainCredentialsConfirmPassword');
 const captainCredentialsSaveBtn = document.getElementById('captainCredentialsSaveBtn');
+const captainCredentialsCancelBtn = document.getElementById('captainCredentialsCancelBtn');
 const captainCredentialsNotice = document.getElementById('captainCredentialsNotice');
 const captainCredentialsFormEl = document.getElementById('captainCredentialsForm');
 const captainCredentialsStartBtn = document.getElementById('captainCredentialsStartBtn');
@@ -3520,6 +3521,13 @@ captainCredentialsStartBtn?.addEventListener('click', (event) => {
   setCaptainCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
 });
 
+captainCredentialsCancelBtn?.addEventListener('click', (event) => {
+  event?.preventDefault?.();
+  clearCaptainCredentialsFields();
+  hideCaptainCredentialsForm();
+  setCaptainCredentialsNotice('Credentials updated. Click Change Credentials to update again.', 'muted');
+});
+
 const showSettingsRecoveryKeyModal = (key, options = {}) => {
   const modalEl = document.getElementById('recoveryKeyModal');
   if (!modalEl) return;
@@ -4477,7 +4485,8 @@ const initializeSettingsState = async () => {
     hideAdminAccountResetForm();
   }
   if (captainCredentialsPanel) {
-    setCaptainCredentialsNotice('Loading account credentials...', 'muted');
+    hideCaptainCredentialsForm();
+    setCaptainCredentialsNotice('Credentials updated. Click Change Credentials to update again.', 'muted');
   }
   if (adminCredentialsPanel) {
     setAdminCredentialsNotice('Loading account credentials...', 'muted');

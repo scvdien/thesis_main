@@ -153,12 +153,12 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
               </div>
               <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-primary-subtle text-primary">Security</span>
-                <button type="button" class="btn btn-cta d-none" id="captainCredentialsStartBtn">
+                <button type="button" class="btn btn-cta" id="captainCredentialsStartBtn">
                   <i class="bi bi-key"></i> Change Credentials
                 </button>
               </div>
             </div>
-            <div class="collapse show" id="captainCredentialsForm">
+            <div class="collapse" id="captainCredentialsForm">
               <div class="settings-form-grid">
                 <div>
                   <label class="form-label small">Current Username</label>
@@ -180,14 +180,15 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                   <label class="form-label small">Confirm Password</label>
                   <input type="password" class="form-control" id="captainCredentialsConfirmPassword" placeholder="Re-type password" minlength="8" pattern="(?=.*[^A-Za-z0-9]).{8,}" title="Minimum 8 characters and must include at least 1 special character.">
                 </div>
-                <div class="settings-form-full d-flex justify-content-end">
+                <div class="settings-form-full d-flex justify-content-end gap-2">
+                  <button type="button" class="btn btn-secondary" id="captainCredentialsCancelBtn">Cancel</button>
                   <button type="button" class="btn btn-cta" id="captainCredentialsSaveBtn">
                     <i class="bi bi-check2-circle"></i> Save Changes
                   </button>
                 </div>
               </div>
             </div>
-            <div class="small text-muted mt-3" id="captainCredentialsNotice">Enter your current credentials to update your account.</div>
+            <div class="small text-muted mt-3" id="captainCredentialsNotice">Credentials updated. Click Change Credentials to update again.</div>
 
             <hr class="my-4">
             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 p-3 rounded-3 border" style="background: #fffdf5; border-color: #fef08a !important;">
