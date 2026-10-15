@@ -297,6 +297,7 @@ const captainCredentialsNotice = document.getElementById('captainCredentialsNoti
 const captainCredentialsFormEl = document.getElementById('captainCredentialsForm');
 const captainCredentialsStartBtn = document.getElementById('captainCredentialsStartBtn');
 const captainGenerateRecoveryKeyBtn = document.getElementById('captainGenerateRecoveryKeyBtn');
+const captainTurnoverStartBtn = document.getElementById('captainTurnoverStartBtn');
 
 const adminCredentialsPanel = document.getElementById('admin-credentials');
 const adminCredentialsCurrentUsername = document.getElementById('adminCredentialsCurrentUsername');
@@ -3024,6 +3025,9 @@ const renderCaptainCredentialsState = () => {
   if (captainGenerateRecoveryKeyBtn) {
     captainGenerateRecoveryKeyBtn.disabled = !hasAccount || isDeactivated;
   }
+  if (captainTurnoverStartBtn) {
+    captainTurnoverStartBtn.disabled = !hasAccount || isDeactivated;
+  }
 
   if (!hasAccount) {
     openCaptainCredentialsForm();
@@ -3516,7 +3520,7 @@ captainCredentialsStartBtn?.addEventListener('click', (event) => {
   setCaptainCredentialsNotice('Enter your current username and password, then set your new credentials.', 'muted');
 });
 
-const showSettingsRecoveryKeyModal = (key) => {
+const showSettingsRecoveryKeyModal = (key, options = {}) => {
   const modalEl = document.getElementById('recoveryKeyModal');
   if (!modalEl) return;
 
@@ -3567,7 +3571,8 @@ const showSettingsRecoveryKeyModal = (key) => {
 
   if (downloadBtn) {
     downloadBtn.onclick = () => {
-      const content = "BARANGAY CABARIAN, LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY FOR BARANGAY CAPTAIN\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nStore this key in a secure location. You will need this key to reset your Barangay Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
+      const captainName = options.captainName ? (' FOR ' + options.captainName.toUpperCase()) : ' FOR BARANGAY CAPTAIN';
+      const content = "BARANGAY CABARIAN, LIGAO CITY\nONLINE HOUSEHOLD INFORMATION MANAGEMENT SYSTEM\n=======================================================\nMASTER RECOVERY KEY" + captainName + "\n=======================================================\n\nRecovery Key: " + key + "\nDate Generated: " + new Date().toLocaleString() + "\n\nIMPORTANT NOTICE:\nStore this key in a secure location. You will need this key to reset your Barangay Captain account password if you ever forget it. Do not share this key with unauthorized personnel.\n";
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3577,6 +3582,14 @@ const showSettingsRecoveryKeyModal = (key) => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    };
+  }
+
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      if (options.isTurnover) {
+        window.location.assign('login.php?turnover_done=1');
+      }
     };
   }
 
@@ -3621,6 +3634,117 @@ captainGenerateRecoveryKeyBtn?.addEventListener('click', async (event) => {
   } finally {
     captainGenerateRecoveryKeyBtn.disabled = false;
     captainGenerateRecoveryKeyBtn.innerHTML = origHtml;
+  }
+});
+
+const captainTurnoverModalEl = document.getElementById('captainTurnoverModal');
+const turnoverCurrentPassword = document.getElementById('turnoverCurrentPassword');
+const turnoverNewFullName = document.getElementById('turnoverNewFullName');
+const turnoverNewUsername = document.getElementById('turnoverNewUsername');
+const turnoverNewPassword = document.getElementById('turnoverNewPassword');
+const turnoverNewPasswordConfirm = document.getElementById('turnoverNewPasswordConfirm');
+const turnoverNotice = document.getElementById('turnoverNotice');
+const turnoverSubmitBtn = document.getElementById('turnoverSubmitBtn');
+
+const showTurnoverNotice = (msg) => {
+  if (turnoverNotice) {
+    turnoverNotice.textContent = msg;
+    turnoverNotice.classList.remove('d-none');
+  }
+};
+
+const clearTurnoverNotice = () => {
+  if (turnoverNotice) {
+    turnoverNotice.textContent = '';
+    turnoverNotice.classList.add('d-none');
+  }
+};
+
+const clearTurnoverFields = () => {
+  clearTurnoverNotice();
+  if (turnoverCurrentPassword) turnoverCurrentPassword.value = '';
+  if (turnoverNewFullName) turnoverNewFullName.value = '';
+  if (turnoverNewUsername) turnoverNewUsername.value = '';
+  if (turnoverNewPassword) turnoverNewPassword.value = '';
+  if (turnoverNewPasswordConfirm) turnoverNewPasswordConfirm.value = '';
+};
+
+captainTurnoverStartBtn?.addEventListener('click', () => {
+  clearTurnoverFields();
+});
+
+turnoverSubmitBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  clearTurnoverNotice();
+
+  const currentPassword = String(turnoverCurrentPassword?.value || '');
+  const newFullName = String(turnoverNewFullName?.value || '').trim();
+  const newUsername = String(turnoverNewUsername?.value || '').trim();
+  const newPassword = String(turnoverNewPassword?.value || '');
+  const newPasswordConfirm = String(turnoverNewPasswordConfirm?.value || '');
+
+  if (!currentPassword || !newFullName || !newUsername || !newPassword || !newPasswordConfirm) {
+    showTurnoverNotice('Please complete all turnover fields.');
+    return;
+  }
+
+  if (newFullName.length < 3) {
+    showTurnoverNotice('Incoming Captain full name must be at least 3 characters.');
+    return;
+  }
+
+  if (!/^[A-Za-z0-9._-]{3,80}$/.test(newUsername)) {
+    showTurnoverNotice('Username must be 3-80 characters and contain only letters, numbers, dots, hyphens, or underscores.');
+    return;
+  }
+
+  if (newPassword !== newPasswordConfirm) {
+    showTurnoverNotice('New password and confirmation do not match.');
+    return;
+  }
+
+  if (newPassword.length < 8 || !/[^A-Za-z0-9]/.test(newPassword)) {
+    showTurnoverNotice('New password must be at least 8 characters and include at least 1 special character.');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    'Confirm official leadership turnover to ' + newFullName + '?\n\nThis will immediately revoke your access and all previous recovery keys. A new Master Recovery Key will be issued.'
+  );
+  if (!confirmed) return;
+
+  turnoverSubmitBtn.disabled = true;
+  const origHtml = turnoverSubmitBtn.innerHTML;
+  turnoverSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing Turnover...';
+
+  try {
+    const response = await usersApiFetch('POST', {
+      action: 'turnover_captain',
+      current_password: currentPassword,
+      new_full_name: newFullName,
+      new_username: newUsername,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm
+    });
+
+    if (!response || !response.success || !response.recovery_key) {
+      throw new Error(response?.error || response?.message || 'Failed to complete leadership turnover.');
+    }
+
+    if (captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal) {
+      const turnoverModal = window.bootstrap.Modal.getInstance(captainTurnoverModalEl);
+      if (turnoverModal) turnoverModal.hide();
+    }
+
+    showSettingsRecoveryKeyModal(response.recovery_key, {
+      isTurnover: true,
+      captainName: newFullName
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to complete turnover at this time.';
+    showTurnoverNotice(message);
+    turnoverSubmitBtn.disabled = false;
+    turnoverSubmitBtn.innerHTML = origHtml;
   }
 });
 

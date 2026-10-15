@@ -3307,6 +3307,130 @@ try {
         ]);
     }
 
+    if ($action === 'turnover_captain') {
+        users_api_require_role($requesterRole, [AUTH_ROLE_CAPTAIN]);
+        $captainId = (int) ($authUser['id'] ?? 0);
+        if ($captainId <= 0) {
+            users_api_error(401, 'Invalid session.');
+        }
+
+        $captainRow = users_api_find_user($pdo, $captainId);
+        if (!is_array($captainRow)) {
+            users_api_error(404, 'Captain account not found.');
+        }
+
+        $currentPassword = (string) ($payload['current_password'] ?? '');
+        if ($currentPassword === '' || !password_verify($currentPassword, (string) ($captainRow['password_hash'] ?? ''))) {
+            users_api_error(400, 'Invalid current password. Please enter your correct password to authorize the turnover.');
+        }
+
+        $newFullName = users_api_text($payload['new_full_name'] ?? '', 160);
+        $newUsername = users_api_normalized_username($payload['new_username'] ?? '');
+        $newPassword = (string) ($payload['new_password'] ?? '');
+        $newPasswordConfirm = (string) ($payload['new_password_confirm'] ?? '');
+
+        if ($newFullName === '' || strlen($newFullName) < 3) {
+            users_api_error(400, 'Please provide the incoming Captain full name (at least 3 characters).');
+        }
+
+        if ($newUsername === '' || !users_api_valid_username($newUsername)) {
+            users_api_error(400, 'Incoming username must be 3-80 characters and contain only letters, numbers, dots, hyphens, or underscores.');
+        }
+
+        $existingUser = users_api_find_by_username($pdo, $newUsername);
+        if (is_array($existingUser) && (int) ($existingUser['id'] ?? 0) !== $captainId) {
+            users_api_error(409, 'Username is already taken by another account.');
+        }
+
+        if ($newPassword === '' || $newPasswordConfirm === '') {
+            users_api_error(400, 'Please enter and confirm the new password.');
+        }
+
+        if ($newPassword !== $newPasswordConfirm) {
+            users_api_error(400, 'New password and confirmation do not match.');
+        }
+
+        if (strlen($newPassword) < 8 || !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
+            users_api_error(400, 'New password must be at least 8 characters and include at least 1 special character.');
+        }
+
+        $oldCaptainName = (string) ($captainRow['full_name'] ?? 'Barangay Captain');
+        $oldUsername = (string) ($captainRow['username'] ?? '');
+
+        // Generate brand new Master Recovery Key
+        $newRecoveryKey = auth_generate_recovery_key();
+        $newRecoveryKeyHash = auth_hash_recovery_key($newRecoveryKey);
+
+        try {
+            $pdo->beginTransaction();
+
+            $updateUserStmt = $pdo->prepare(
+                'UPDATE `users`
+                 SET `full_name` = :full_name,
+                     `username` = :username,
+                     `password_hash` = :password_hash,
+                     `recovery_key_hash` = :recovery_key_hash,
+                     `offline_reauth_token` = NULL,
+                     `must_change_password` = 0,
+                     `updated_at` = CURRENT_TIMESTAMP
+                 WHERE `id` = :id AND `role` = :role
+                 LIMIT 1'
+            );
+            $updateUserStmt->execute([
+                'full_name' => $newFullName,
+                'username' => $newUsername,
+                'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+                'recovery_key_hash' => $newRecoveryKeyHash,
+                'id' => $captainId,
+                'role' => AUTH_ROLE_CAPTAIN,
+            ]);
+
+            users_api_ensure_barangay_profile_table($pdo);
+            $updateProfileStmt = $pdo->prepare(
+                'UPDATE `barangay_profile`
+                 SET `captain_name` = :captain_name,
+                     `updated_at` = CURRENT_TIMESTAMP
+                 WHERE `id` = 1
+                 LIMIT 1'
+            );
+            $updateProfileStmt->execute([
+                'captain_name' => $newFullName,
+            ]);
+
+            users_api_audit_log(
+                $authUser,
+                'captain_turnover_completed',
+                'updated',
+                "Official leadership turnover completed from {$oldCaptainName} ({$oldUsername}) to {$newFullName} ({$newUsername}). Old recovery key revoked and new master recovery key issued.",
+                'user',
+                $newUsername,
+                [
+                    'old_captain_name' => $oldCaptainName,
+                    'new_captain_name' => $newFullName,
+                    'old_username' => $oldUsername,
+                    'new_username' => $newUsername,
+                ]
+            );
+
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            users_api_error(500, 'Unable to complete turnover: ' . $exception->getMessage());
+        }
+
+        auth_logout();
+
+        users_api_respond(200, [
+            'success' => true,
+            'message' => 'Official leadership turnover completed successfully.',
+            'recovery_key' => $newRecoveryKey,
+            'new_captain_name' => $newFullName,
+            'new_username' => $newUsername,
+        ]);
+    }
+
     if ($action === 'update_own_credentials') {
         users_api_require_role($requesterRole, [AUTH_ROLE_ADMIN, AUTH_ROLE_CAPTAIN, AUTH_ROLE_STAFF]);
 

@@ -491,6 +491,11 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
                 <?php echo htmlspecialchars($recoverySuccessMessage, ENT_QUOTES, 'UTF-8'); ?>
               </div>
             <?php endif; ?>
+            <?php if (isset($_GET['turnover_done'])): ?>
+              <div class="alert alert-success small py-2 text-center" role="alert">
+                <i class="bi bi-check-circle-fill me-1"></i> Leadership turnover completed successfully! Incoming Barangay Captain may now sign in.
+              </div>
+            <?php endif; ?>
 
             <button id="loginBtn" class="btn btn-primary w-100" type="submit"><?= $setupRequired ? 'Create Secure Account' : 'Sign In' ?></button>
             <div class="mobile-auth-note">

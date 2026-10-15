@@ -205,6 +205,23 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 </button>
               </div>
             </div>
+
+            <hr class="my-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 p-3 rounded-3 border" style="background: #fffdf5; border-color: #fef08a !important;">
+              <div>
+                <div class="fw-semibold text-dark d-flex align-items-center gap-2 mb-1">
+                  <i class="bi bi-person-badge-fill text-warning"></i> Leadership Turnover
+                </div>
+                <div class="small text-muted">
+                  Official turnover to an incoming Barangay Captain. This will update the official name, set new credentials, revoke the old recovery key, and generate a new Master Recovery Key.
+                </div>
+              </div>
+              <div class="flex-shrink-0">
+                <button type="button" class="btn btn-warning btn-sm fw-semibold" id="captainTurnoverStartBtn" data-bs-toggle="modal" data-bs-target="#captainTurnoverModal">
+                  <i class="bi bi-arrow-repeat me-1"></i> Turnover to New Captain
+                </button>
+              </div>
+            </div>
           </section>
 
           <section class="settings-section settings-panel is-active" style="--delay:0.02s" id="admin-credentials" data-role="admin-only">
@@ -968,7 +985,69 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           </div>
         </div>
       </div>
+  <!-- LEADERSHIP TURNOVER MODAL -->
+  <div class="modal fade" id="captainTurnoverModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content modern-modal p-4" style="border-radius: 16px;">
+        <div class="modal-header border-0 pb-0">
+          <div>
+            <div class="badge bg-warning-subtle text-warning mb-2 fw-semibold px-2 py-1">
+              <i class="bi bi-arrow-repeat me-1"></i> Leadership Turnover
+            </div>
+            <h5 class="modal-title fw-bold text-dark mb-1">Turnover to Incoming Captain</h5>
+            <p class="small text-muted mb-0">Hand over the Barangay Captain account to the newly elected or appointed Captain.</p>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body pt-3">
+          <div class="alert alert-warning small d-flex align-items-start gap-2 mb-3">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+            <div>
+              <strong>Security Handover Notice:</strong> This action will update the official Barangay Captain name, set new credentials, and <strong>immediately revoke the previous Master Recovery Key</strong>. A new key will be generated for the incoming Captain.
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Current Captain Password</label>
+            <input type="password" class="form-control" id="turnoverCurrentPassword" placeholder="Enter your current password to authorize" required>
+            <div class="form-text" style="font-size: 0.78rem;">Required to authorize the official turnover.</div>
+          </div>
+
+          <hr class="my-3">
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Incoming Captain Full Name</label>
+            <input type="text" class="form-control" id="turnoverNewFullName" placeholder="e.g. Hon. Maria Santos" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Incoming Captain Username</label>
+            <input type="text" class="form-control" id="turnoverNewUsername" placeholder="e.g. captain.santos" autocomplete="off" autocapitalize="none" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">New Password</label>
+            <input type="password" class="form-control" id="turnoverNewPassword" placeholder="8+ chars, 1 special character" minlength="8" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Confirm New Password</label>
+            <input type="password" class="form-control" id="turnoverNewPasswordConfirm" placeholder="Re-type new password" minlength="8" required>
+          </div>
+
+          <div id="turnoverNotice" class="alert alert-danger d-none small py-2 mb-3"></div>
+
+          <div class="d-flex justify-content-end gap-2 pt-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-warning btn-sm fw-semibold" id="turnoverSubmitBtn">
+              <i class="bi bi-check2-circle me-1"></i> Confirm Official Turnover
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
+
   <!-- MASTER RECOVERY KEY MODAL -->
   <div class="modal fade" id="recoveryKeyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
