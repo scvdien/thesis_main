@@ -17,6 +17,41 @@
     } catch {}
   }
 
+  // Auto-dismiss turnover / recovery success alerts after 3 seconds (3s)
+  (function handleAutoDismissAlerts() {
+    const alerts = document.querySelectorAll('#turnoverSuccessAlert, #recoverySuccessAlert');
+    if (!alerts.length) return;
+
+    if (window.history && window.history.replaceState && window.location.search.includes('turnover_done')) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('turnover_done');
+      window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    }
+
+    alerts.forEach((alertEl) => {
+      window.setTimeout(() => {
+        if (!alertEl || !alertEl.isConnected) return;
+        if (window.bootstrap && window.bootstrap.Alert) {
+          try {
+            const bsAlert = window.bootstrap.Alert.getOrCreateInstance(alertEl);
+            if (bsAlert) {
+              bsAlert.close();
+              return;
+            }
+          } catch {}
+        }
+        alertEl.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        alertEl.style.opacity = '0';
+        alertEl.style.transform = 'translateY(-6px)';
+        window.setTimeout(() => {
+          if (alertEl && alertEl.parentNode) {
+            alertEl.parentNode.removeChild(alertEl);
+          }
+        }, 500);
+      }, 3000);
+    });
+  })();
+
   const showError = (message) => {
     if (!error) return;
     error.textContent = String(message || '');

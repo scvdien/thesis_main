@@ -216,7 +216,7 @@ if ($brandSidebarLabel === '') {
           <div class="settings-form-grid">
             <div>
               <label class="form-label small">Report Title</label>
-              <input type="text" class="form-control" id="createTitle" placeholder="e.g., Household Summary">
+              <input type="text" class="form-control" id="createTitle" placeholder="Enter report title">
             </div>
             <div>
               <label class="form-label small">Reporting Period</label>

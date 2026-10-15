@@ -269,7 +269,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
               <div class="settings-form-grid admin-create-fields">
                 <div>
                   <label class="form-label small">Full Name</label>
-                  <input type="text" class="form-control" id="adminAccountCreateFullName" placeholder="Juan Dela Cruz">
+                  <input type="text" class="form-control" id="adminAccountCreateFullName" placeholder="Enter full name">
                 </div>
                 <div>
                   <label class="form-label small">Role</label>
@@ -279,7 +279,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
                 </div>
                 <div>
                   <label class="form-label small">Temporary Username</label>
-                  <input type="text" class="form-control" id="adminAccountCreateUsername" placeholder="secretary.cabarian">
+                  <input type="text" class="form-control" id="adminAccountCreateUsername" placeholder="Enter username">
                 </div>
                 <div>
                   <label class="form-label small">Temporary Password</label>
@@ -372,7 +372,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             <div class="settings-form-grid" id="staffCreateForm">
               <div>
                 <label class="form-label small">Full Name</label>
-                <input type="text" class="form-control" id="staffCreateFullName" placeholder="Maria L. Santos">
+                <input type="text" class="form-control" id="staffCreateFullName" placeholder="Enter full name">
               </div>
               <div>
                 <label class="form-label small">Role</label>
@@ -382,7 +382,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
               </div>
               <div>
                 <label class="form-label small">Username</label>
-                <input type="text" class="form-control" id="staffCreateUsername" placeholder="maria.santos">
+                <input type="text" class="form-control" id="staffCreateUsername" placeholder="Enter username">
               </div>
               <div>
                 <label class="form-label small">Password</label>
@@ -863,7 +863,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           </div>
           <div>
             <label class="form-label small">Temporary Username</label>
-            <input type="text" class="form-control" id="staffResetUsername" placeholder="maria.santos">
+            <input type="text" class="form-control" id="staffResetUsername" placeholder="Enter username">
           </div>
           <div>
             <label class="form-label small">Temporary Password</label>
@@ -1005,12 +1005,12 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Incoming Captain Full Name <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="turnoverNewFullName" placeholder="e.g. Hon. Maria Santos" required>
+              <input type="text" class="form-control" id="turnoverNewFullName" placeholder="Enter full name" required>
             </div>
 
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Incoming Captain Username <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="turnoverNewUsername" placeholder="e.g. captain.santos" autocomplete="off" autocapitalize="none" required>
+              <input type="text" class="form-control" id="turnoverNewUsername" placeholder="Enter username" autocomplete="off" autocapitalize="none" required>
             </div>
 
             <div class="col-md-6">

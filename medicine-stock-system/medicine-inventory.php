@@ -439,7 +439,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               <div class="row g-2">
                 <div class="col-sm-6">
                   <label for="stockActionBatchNumber" class="form-label" id="stockActionBatchNumberLabel">Batch / Lot Number</label>
-                  <input type="text" id="stockActionBatchNumber" class="form-control" placeholder="e.g. BATCH-2026-002">
+                  <input type="text" id="stockActionBatchNumber" class="form-control" placeholder="Enter batch or lot number">
                   <small class="inventory-field-hint" id="stockActionBatchHint">Lot/batch number (Leave blank to auto-generate for donations)</small>
                 </div>
                 <div class="col-sm-6">
@@ -609,7 +609,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
 
             <div class="mb-3">
               <label for="editBatchNumber" class="form-label">Batch / Lot Number</label>
-              <input type="text" id="editBatchNumber" class="form-control" placeholder="e.g. BATCH-2026-001" required>
+              <input type="text" id="editBatchNumber" class="form-control" placeholder="Enter batch or lot number" required>
             </div>
 
             <div class="mb-3">
