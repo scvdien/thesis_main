@@ -61,6 +61,11 @@ function users_api_normalized_username(mixed $value): string
     return $username;
 }
 
+function users_api_valid_username(string $username): bool
+{
+    return preg_match('/^[A-Za-z0-9._-]{3,80}$/', $username) === 1;
+}
+
 function users_api_password_min(string $password): bool
 {
     return strlen($password) >= 8;
