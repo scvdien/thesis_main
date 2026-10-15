@@ -3342,8 +3342,7 @@ try {
             users_api_error(400, 'Incoming username must be 3-80 characters and contain only letters, numbers, dots, hyphens, or underscores.');
         }
 
-        $existingUser = users_api_find_by_username($pdo, $newUsername);
-        if (is_array($existingUser) && (int) ($existingUser['id'] ?? 0) !== $captainId) {
+        if (users_api_username_exists($pdo, $newUsername, $captainId)) {
             users_api_error(409, 'Username is already taken by another account.');
         }
 
