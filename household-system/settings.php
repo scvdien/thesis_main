@@ -1037,6 +1037,31 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
     </div>
   </div>
 
+  <!-- LEADERSHIP TURNOVER CONFIRM MODAL -->
+  <div class="modal fade" id="turnoverConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+      <div class="modal-content modern-modal text-center p-4" style="border-radius: 16px;">
+        <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-warning-subtle text-warning mx-auto" style="width: 60px; height: 60px;">
+          <i class="bi bi-shield-exclamation fs-2"></i>
+        </div>
+        <h5 class="modal-title fw-bold text-dark mb-2">Confirm Leadership Turnover?</h5>
+        <p class="text-secondary small mb-3" style="line-height: 1.55;">
+          Confirm official leadership turnover to <strong class="text-dark" id="turnoverConfirmTargetName">Incoming Captain</strong>?
+        </p>
+        <div class="alert alert-danger small text-start py-2 px-3 mb-4 rounded-3 d-flex align-items-center gap-2">
+          <i class="bi bi-exclamation-triangle-fill text-danger flex-shrink-0 fs-5"></i>
+          <div>This action will <strong>immediately revoke your access</strong> and all previous recovery keys. A new Master Recovery Key will be issued.</div>
+        </div>
+        <div class="d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning btn-sm px-3 fw-semibold text-dark" id="turnoverFinalConfirmBtn">
+            <i class="bi bi-check2-circle me-1"></i> Yes, Proceed Turnover
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MASTER RECOVERY KEY MODAL -->
   <div class="modal fade" id="recoveryKeyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

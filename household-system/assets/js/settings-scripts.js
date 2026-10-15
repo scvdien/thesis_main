@@ -3659,6 +3659,13 @@ const captainTurnoverModal =
   captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal
     ? new window.bootstrap.Modal(captainTurnoverModalEl)
     : null;
+const turnoverConfirmModalEl = document.getElementById('turnoverConfirmModal');
+const turnoverConfirmModal =
+  turnoverConfirmModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(turnoverConfirmModalEl)
+    : null;
+const turnoverConfirmTargetName = document.getElementById('turnoverConfirmTargetName');
+const turnoverFinalConfirmBtn = document.getElementById('turnoverFinalConfirmBtn');
 const turnoverCurrentPassword = document.getElementById('turnoverCurrentPassword');
 const turnoverNewFullName = document.getElementById('turnoverNewFullName');
 const turnoverNewUsername = document.getElementById('turnoverNewUsername');
@@ -3697,7 +3704,64 @@ captainTurnoverStartBtn?.addEventListener('click', (event) => {
   }
 });
 
-turnoverSubmitBtn?.addEventListener('click', async (event) => {
+const executeTurnoverRequest = async () => {
+  const currentPassword = String(turnoverCurrentPassword?.value || '');
+  const newFullName = String(turnoverNewFullName?.value || '').trim();
+  const newUsername = String(turnoverNewUsername?.value || '').trim();
+  const newPassword = String(turnoverNewPassword?.value || '');
+  const newPasswordConfirm = String(turnoverNewPasswordConfirm?.value || '');
+
+  if (turnoverFinalConfirmBtn) {
+    turnoverFinalConfirmBtn.disabled = true;
+    turnoverFinalConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+  }
+  if (turnoverSubmitBtn) {
+    turnoverSubmitBtn.disabled = true;
+  }
+
+  try {
+    const response = await usersApiFetch('POST', {
+      action: 'turnover_captain',
+      current_password: currentPassword,
+      new_full_name: newFullName,
+      new_username: newUsername,
+      new_password: newPassword,
+      new_password_confirm: newPasswordConfirm
+    });
+
+    if (!response || !response.success || !response.recovery_key) {
+      throw new Error(response?.error || response?.message || 'Failed to complete leadership turnover.');
+    }
+
+    turnoverConfirmModal?.hide();
+
+    if (captainTurnoverModal) {
+      captainTurnoverModal.hide();
+    } else if (captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal) {
+      const turnoverModal = window.bootstrap.Modal.getInstance(captainTurnoverModalEl);
+      if (turnoverModal) turnoverModal.hide();
+    }
+
+    showSettingsRecoveryKeyModal(response.recovery_key, {
+      isTurnover: true,
+      captainName: newFullName
+    });
+  } catch (error) {
+    turnoverConfirmModal?.hide();
+    const message = error instanceof Error ? error.message : 'Unable to complete turnover at this time.';
+    showTurnoverNotice(message);
+  } finally {
+    if (turnoverFinalConfirmBtn) {
+      turnoverFinalConfirmBtn.disabled = false;
+      turnoverFinalConfirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Yes, Proceed Turnover';
+    }
+    if (turnoverSubmitBtn) {
+      turnoverSubmitBtn.disabled = false;
+    }
+  }
+};
+
+turnoverSubmitBtn?.addEventListener('click', (event) => {
   event.preventDefault();
   clearTurnoverNotice();
 
@@ -3732,46 +3796,25 @@ turnoverSubmitBtn?.addEventListener('click', async (event) => {
     return;
   }
 
-  const confirmed = window.confirm(
-    'Confirm official leadership turnover to ' + newFullName + '?\n\nThis will immediately revoke your access and all previous recovery keys. A new Master Recovery Key will be issued.'
-  );
-  if (!confirmed) return;
-
-  turnoverSubmitBtn.disabled = true;
-  const origHtml = turnoverSubmitBtn.innerHTML;
-  turnoverSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing Turnover...';
-
-  try {
-    const response = await usersApiFetch('POST', {
-      action: 'turnover_captain',
-      current_password: currentPassword,
-      new_full_name: newFullName,
-      new_username: newUsername,
-      new_password: newPassword,
-      new_password_confirm: newPasswordConfirm
-    });
-
-    if (!response || !response.success || !response.recovery_key) {
-      throw new Error(response?.error || response?.message || 'Failed to complete leadership turnover.');
-    }
-
-    if (captainTurnoverModal) {
-      captainTurnoverModal.hide();
-    } else if (captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal) {
-      const turnoverModal = window.bootstrap.Modal.getInstance(captainTurnoverModalEl);
-      if (turnoverModal) turnoverModal.hide();
-    }
-
-    showSettingsRecoveryKeyModal(response.recovery_key, {
-      isTurnover: true,
-      captainName: newFullName
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to complete turnover at this time.';
-    showTurnoverNotice(message);
-    turnoverSubmitBtn.disabled = false;
-    turnoverSubmitBtn.innerHTML = origHtml;
+  if (turnoverConfirmTargetName) {
+    turnoverConfirmTargetName.textContent = newFullName;
   }
+
+  if (turnoverConfirmModal) {
+    turnoverConfirmModal.show();
+  } else {
+    const confirmed = window.confirm(
+      'Confirm official leadership turnover to ' + newFullName + '?\n\nThis will immediately revoke your access and all previous recovery keys. A new Master Recovery Key will be issued.'
+    );
+    if (confirmed) {
+      void executeTurnoverRequest();
+    }
+  }
+});
+
+turnoverFinalConfirmBtn?.addEventListener('click', async (event) => {
+  event.preventDefault();
+  await executeTurnoverRequest();
 });
 
 adminCredentialsSaveBtn?.addEventListener('click', async (event) => {
