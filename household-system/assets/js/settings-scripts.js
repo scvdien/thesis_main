@@ -3638,6 +3638,10 @@ captainGenerateRecoveryKeyBtn?.addEventListener('click', async (event) => {
 });
 
 const captainTurnoverModalEl = document.getElementById('captainTurnoverModal');
+const captainTurnoverModal =
+  captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal
+    ? new window.bootstrap.Modal(captainTurnoverModalEl)
+    : null;
 const turnoverCurrentPassword = document.getElementById('turnoverCurrentPassword');
 const turnoverNewFullName = document.getElementById('turnoverNewFullName');
 const turnoverNewUsername = document.getElementById('turnoverNewUsername');
@@ -3669,8 +3673,11 @@ const clearTurnoverFields = () => {
   if (turnoverNewPasswordConfirm) turnoverNewPasswordConfirm.value = '';
 };
 
-captainTurnoverStartBtn?.addEventListener('click', () => {
+captainTurnoverStartBtn?.addEventListener('click', (event) => {
   clearTurnoverFields();
+  if (captainTurnoverModal) {
+    captainTurnoverModal.show();
+  }
 });
 
 turnoverSubmitBtn?.addEventListener('click', async (event) => {
@@ -3731,7 +3738,9 @@ turnoverSubmitBtn?.addEventListener('click', async (event) => {
       throw new Error(response?.error || response?.message || 'Failed to complete leadership turnover.');
     }
 
-    if (captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal) {
+    if (captainTurnoverModal) {
+      captainTurnoverModal.hide();
+    } else if (captainTurnoverModalEl && window.bootstrap && window.bootstrap.Modal) {
       const turnoverModal = window.bootstrap.Modal.getInstance(captainTurnoverModalEl);
       if (turnoverModal) turnoverModal.hide();
     }

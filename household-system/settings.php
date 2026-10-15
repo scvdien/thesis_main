@@ -985,6 +985,9 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
   <!-- LEADERSHIP TURNOVER MODAL -->
   <div class="modal fade" id="captainTurnoverModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
