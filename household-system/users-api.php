@@ -3547,8 +3547,8 @@ try {
         $countStmt = $pdo->prepare('SELECT COUNT(*) FROM `users` WHERE `role` = :role');
         $countStmt->execute(['role' => AUTH_ROLE_STAFF]);
         $staffCount = (int) $countStmt->fetchColumn();
-        if ($staffCount >= 5) {
-            users_api_error(422, 'Cannot create more than 5 staff accounts.');
+        if ($staffCount >= 7) {
+            users_api_error(422, 'Cannot create more than 7 staff accounts.');
         }
 
         $stmt = $pdo->prepare(

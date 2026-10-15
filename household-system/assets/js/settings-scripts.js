@@ -151,7 +151,7 @@ const ADMIN_ACCOUNT_PASSWORD_RULE = /^.{8,}$/;
 const ADMIN_CREDENTIALS_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
 const STAFF_PASSWORD_RULE = /^(?=.*[^A-Za-z0-9]).{8,}$/;
 const USERNAME_RULE = /^[A-Za-z0-9._-]{3,80}$/;
-const STAFF_ACCOUNT_LIMIT = 5;
+const STAFF_ACCOUNT_LIMIT = 7;
 const USERS_API_ENDPOINT = 'users-api.php';
 const SETTINGS_ROLLOVER_API_ENDPOINT = 'registration-sync.php';
 const SETTINGS_ROLLOVER_FETCH_LIMIT = 500;
