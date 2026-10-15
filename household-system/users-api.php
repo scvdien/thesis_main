@@ -3325,14 +3325,22 @@ try {
         }
 
         $currentPassword = (string) ($payload['current_password'] ?? '');
-        if ($currentPassword === '' || !password_verify($currentPassword, (string) ($captainRow['password_hash'] ?? ''))) {
-            users_api_error(400, 'Invalid current password. Please enter your correct password to authorize the turnover.');
-        }
-
         $newFullName = users_api_text($payload['new_full_name'] ?? '', 160);
         $newUsername = users_api_normalized_username($payload['new_username'] ?? '');
         $newPassword = (string) ($payload['new_password'] ?? '');
         $newPasswordConfirm = (string) ($payload['new_password_confirm'] ?? '');
+
+        $storedPasswordHash = (string) ($captainRow['password_hash'] ?? '');
+        $isAuthorized = false;
+        if ($currentPassword !== '' && password_verify($currentPassword, $storedPasswordHash)) {
+            $isAuthorized = true;
+        } elseif ($newPassword !== '' && password_verify($newPassword, $storedPasswordHash)) {
+            $isAuthorized = true;
+        }
+
+        if (!$isAuthorized) {
+            users_api_error(400, 'Invalid current password. Please enter your correct password to authorize the turnover.');
+        }
 
         if ($newFullName === '' || strlen($newFullName) < 3) {
             users_api_error(400, 'Please provide the incoming Captain full name (at least 3 characters).');
@@ -3360,6 +3368,9 @@ try {
 
         $oldCaptainName = (string) ($captainRow['full_name'] ?? 'Barangay Captain');
         $oldUsername = (string) ($captainRow['username'] ?? '');
+
+        // Ensure table exists BEFORE beginning transaction (DDL causes implicit commits in MySQL)
+        users_api_ensure_barangay_profile_table($pdo);
 
         // Generate brand new Master Recovery Key
         $newRecoveryKey = auth_generate_recovery_key();
@@ -3389,7 +3400,6 @@ try {
                 'role' => AUTH_ROLE_CAPTAIN,
             ]);
 
-            users_api_ensure_barangay_profile_table($pdo);
             $updateProfileStmt = $pdo->prepare(
                 'UPDATE `barangay_profile`
                  SET `captain_name` = :captain_name,
@@ -3401,6 +3411,17 @@ try {
                 'captain_name' => $newFullName,
             ]);
 
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            users_api_error(500, 'Unable to complete turnover: ' . $exception->getMessage());
+        }
+
+        try {
             users_api_audit_log(
                 $authUser,
                 'captain_turnover_completed',
@@ -3415,13 +3436,8 @@ try {
                     'new_username' => $newUsername,
                 ]
             );
-
-            $pdo->commit();
-        } catch (Throwable $exception) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            users_api_error(500, 'Unable to complete turnover: ' . $exception->getMessage());
+        } catch (Throwable) {
+            // Audit log failure shouldn't interrupt successful turnover flow
         }
 
         auth_logout();
