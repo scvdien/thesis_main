@@ -7,6 +7,7 @@ $settingsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/settings.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $passwordToggleCssVersion = (string) @filemtime(__DIR__ . '/assets/css/password-toggle.css');
 $settingsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/settings.js');
+$supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
 $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-toggle.js');
 ?><!doctype html>
@@ -441,6 +442,7 @@ $passwordToggleJsVersion = (string) @filemtime(__DIR__ . '/assets/js/password-to
   <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
   <script src="assets/js/password-toggle.js?v=<?= urlencode($passwordToggleJsVersion) ?>"></script>
   <script src="assets/js/settings.js?v=<?= urlencode($settingsJsVersion) ?>"></script>
+  <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>

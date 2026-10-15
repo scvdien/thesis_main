@@ -6,6 +6,7 @@ $adminDashboardCssVersion = (string) @filemtime(__DIR__ . '/assets/css/admin-das
 $reportsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/reports.css');
 $systemNotificationsCssVersion = (string) @filemtime(__DIR__ . '/assets/css/system-notifications.css');
 $reportsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/reports.js');
+$supplyMonitoringJsVersion = (string) @filemtime(__DIR__ . '/assets/js/supply-monitoring.js');
 $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system-notifications.js');
 ?><!doctype html>
 <html lang="en">
@@ -216,6 +217,7 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="assets/js/session-heartbeat.js?v=20260820-presence"></script>
   <script src="assets/js/reports.js?v=<?= urlencode($reportsJsVersion) ?>"></script>
+  <script src="assets/js/supply-monitoring.js?v=<?= urlencode($supplyMonitoringJsVersion) ?>"></script>
   <script src="assets/js/system-notifications.js?v=<?= urlencode($systemNotificationsJsVersion) ?>"></script>
 </body>
 </html>

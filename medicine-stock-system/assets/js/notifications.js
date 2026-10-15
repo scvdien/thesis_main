@@ -373,9 +373,10 @@
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
       if (!normalized.resolved && normalized.id && normalized.signature && (
-        normalized.read || matchesNotificationReadState(normalized, nextReadState[normalized.id])
+        normalized.read || isNotificationReadInState(normalized, nextReadState)
       )) {
-        nextReadState[normalized.id] = normalized.id;
+        nextReadState[normalized.id] = normalized.signature;
+        nextReadState[normalized.signature] = normalized.signature;
       }
     });
     return nextReadState;
@@ -385,8 +386,8 @@
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
       normalized.read = normalized.resolved
-        ? Boolean(normalized.read) || matchesNotificationReadState(normalized, readState[normalized.id])
-        : matchesNotificationReadState(normalized, readState[normalized.id]);
+        ? Boolean(normalized.read) || isNotificationReadInState(normalized, readState)
+        : isNotificationReadInState(normalized, readState);
       return normalized;
     })
   );
@@ -577,13 +578,17 @@
   });
 
   const normalizeMovement = (entry = {}) => ({
-    medicineId: text(entry.medicineId),
-    medicineName: text(entry.medicineName),
-    actionType: keyOf(entry.actionType) || "adjusted",
+    medicineId: text(entry.medicineId || entry.medicine_id),
+    medicineName: text(entry.medicineName || entry.medicine_name),
+    actionType: keyOf(entry.actionType || entry.action_type) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
     diseaseCategory: text(entry.diseaseCategory || entry.disease_category),
     illness: text(entry.illness),
-    createdAt: text(entry.createdAt) || nowIso()
+    linkedRequestId: text(entry.linkedRequestId || entry.linked_request_id),
+    linkedRequestItemId: text(entry.linkedRequestItemId || entry.linked_request_item_id),
+    linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.linked_request_group_id),
+    linkedRequestCode: text(entry.linkedRequestCode || entry.linked_request_code),
+    createdAt: text(entry.createdAt || entry.created_at) || nowIso()
   });
 
   const fallbackInventory = [
@@ -1087,6 +1092,24 @@
     return candidate === normalized.id || matchesNotificationSignature(normalized, candidate);
   };
 
+  const isNotificationReadInState = (notification, readState = {}) => {
+    const normalized = normalizeNotification(notification);
+    if (!readState || typeof readState !== "object") return false;
+    if (readState[normalized.id] && matchesNotificationReadState(normalized, readState[normalized.id])) {
+      return true;
+    }
+    const signature = normalized.signature;
+    if (signature && readState[signature] && matchesNotificationReadState(normalized, readState[signature])) {
+      return true;
+    }
+    for (const key in readState) {
+      if (matchesNotificationReadState(normalized, readState[key])) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const normalizeDismissedState = (entry = {}) => {
     const dismissedState = {};
     Object.entries(entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}).forEach(([key, value]) => {
@@ -1301,14 +1324,19 @@
       delete nextResolvedState[nextNotification.id];
       activeIds.add(nextNotification.id);
       const preserveCreatedAt = Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature);
-      const preserveRead = matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])
+      const preserveRead = isNotificationReadInState(nextNotification, nextReadState)
         || (Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature) && previousEntry.read && !previousEntry.resolved);
+
+      if (preserveRead && nextNotification.id && nextNotification.signature) {
+        nextReadState[nextNotification.id] = nextNotification.signature;
+        nextReadState[nextNotification.signature] = nextNotification.signature;
+      }
 
       notifications.push(normalizeNotification({
         ...nextNotification,
         createdAt: preserveCreatedAt && previousEntry ? previousEntry.createdAt : (nextNotification.createdAt || nowIso()),
         updatedAt: nowIso(),
-        read: preserveRead ? (previousEntry?.read || matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])) : false,
+        read: Boolean(preserveRead),
         resolved: false,
         resolvedAt: ""
       }));
@@ -1678,7 +1706,8 @@
       if (!normalized.resolved) {
         state.notificationReadState = {
           ...state.notificationReadState,
-          [normalized.id]: normalized.id
+          [normalized.id]: normalized.signature,
+          [normalized.signature]: normalized.signature
         };
       } else {
         state.notificationResolvedState = mergeResolvedStates(state.notificationResolvedState, {

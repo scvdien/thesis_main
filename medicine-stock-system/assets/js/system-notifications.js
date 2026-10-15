@@ -223,13 +223,17 @@
   });
 
   const normalizeMovement = (entry = {}) => ({
-    medicineId: text(entry.medicineId),
-    medicineName: text(entry.medicineName),
-    actionType: keyOf(entry.actionType) || "adjusted",
+    medicineId: text(entry.medicineId || entry.medicine_id),
+    medicineName: text(entry.medicineName || entry.medicine_name),
+    actionType: keyOf(entry.actionType || entry.action_type) || "adjusted",
     quantity: Math.max(0, Math.round(numeric(entry.quantity))),
     diseaseCategory: text(entry.diseaseCategory || entry.disease_category),
     illness: text(entry.illness),
-    createdAt: text(entry.createdAt) || nowIso()
+    linkedRequestId: text(entry.linkedRequestId || entry.linked_request_id),
+    linkedRequestItemId: text(entry.linkedRequestItemId || entry.linked_request_item_id),
+    linkedRequestGroupId: text(entry.linkedRequestGroupId || entry.linked_request_group_id),
+    linkedRequestCode: text(entry.linkedRequestCode || entry.linked_request_code),
+    createdAt: text(entry.createdAt || entry.created_at) || nowIso()
   });
 
   const fallbackInventory = [
@@ -257,7 +261,10 @@
   };
 
   const readMovements = () => {
-    const records = readList(MOVEMENTS_STORAGE)
+    const sourceList = Array.isArray(state.movements) && state.movements.length
+      ? state.movements
+      : readList(MOVEMENTS_STORAGE);
+    const records = sourceList
       .map(normalizeMovement)
       .filter((entry) => text(entry.medicineId) || text(entry.medicineName));
     return records;
@@ -267,8 +274,10 @@
     if (window.MSSSupplyMonitoring && typeof window.MSSSupplyMonitoring.readRequests === "function") {
       return window.MSSSupplyMonitoring.readRequests();
     }
-    const raw = readList(REQUESTS_STORAGE);
-    return Array.isArray(raw) ? raw : [];
+    const sourceList = Array.isArray(state.requests) && state.requests.length
+      ? state.requests
+      : readList(REQUESTS_STORAGE);
+    return Array.isArray(sourceList) ? sourceList : [];
   };
 
   const medicineLabel = (medicine) => `${text(medicine.name)}${text(medicine.strength) ? ` ${text(medicine.strength)}` : ""}`;
@@ -696,6 +705,24 @@
     return candidate === normalized.id || matchesNotificationSignature(normalized, candidate);
   };
 
+  const isNotificationReadInState = (notification, readState = {}) => {
+    const normalized = normalizeNotification(notification);
+    if (!readState || typeof readState !== "object") return false;
+    if (readState[normalized.id] && matchesNotificationReadState(normalized, readState[normalized.id])) {
+      return true;
+    }
+    const signature = normalized.signature;
+    if (signature && readState[signature] && matchesNotificationReadState(normalized, readState[signature])) {
+      return true;
+    }
+    for (const key in readState) {
+      if (matchesNotificationReadState(normalized, readState[key])) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const hasActionableRecommendation = (notification) => {
     const recommendation = text(notification?.recommendation);
     return Boolean(recommendation) && recommendation !== DEFAULT_NOTIFICATION_MESSAGE;
@@ -949,9 +976,10 @@
     notifications.forEach((notification) => {
       const normalized = normalizeNotification(notification);
       if (!normalized.resolved && normalized.id && normalized.signature && (
-        normalized.read || matchesNotificationReadState(normalized, nextReadState[normalized.id])
+        normalized.read || isNotificationReadInState(normalized, nextReadState)
       )) {
-        nextReadState[normalized.id] = normalized.id;
+        nextReadState[normalized.id] = normalized.signature;
+        nextReadState[normalized.signature] = normalized.signature;
       }
     });
     return nextReadState;
@@ -961,8 +989,8 @@
     notifications.map((notification) => {
       const normalized = normalizeNotification(notification);
       normalized.read = normalized.resolved
-        ? Boolean(normalized.read) || matchesNotificationReadState(normalized, readState[normalized.id])
-        : matchesNotificationReadState(normalized, readState[normalized.id]);
+        ? Boolean(normalized.read) || isNotificationReadInState(normalized, readState)
+        : isNotificationReadInState(normalized, readState);
       return normalized;
     })
   );
@@ -1161,14 +1189,19 @@
       delete nextResolvedState[nextNotification.id];
       activeIds.add(nextNotification.id);
       const preserveCreatedAt = Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature);
-      const preserveRead = matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])
+      const preserveRead = isNotificationReadInState(nextNotification, nextReadState)
         || (Boolean(previousEntry) && text(previousEntry.signature) === text(nextNotification.signature) && previousEntry.read && !previousEntry.resolved);
+
+      if (preserveRead && nextNotification.id && nextNotification.signature) {
+        nextReadState[nextNotification.id] = nextNotification.signature;
+        nextReadState[nextNotification.signature] = nextNotification.signature;
+      }
 
       notifications.push(normalizeNotification({
         ...nextNotification,
         createdAt: preserveCreatedAt && previousEntry ? previousEntry.createdAt : nextNotification.createdAt,
         updatedAt: nowIso(),
-        read: preserveRead ? (previousEntry?.read || matchesNotificationReadState(nextNotification, nextReadState[nextNotification.id])) : false,
+        read: Boolean(preserveRead),
         resolved: false,
         resolvedAt: ""
       }));
@@ -1857,7 +1890,7 @@
   };
 
   let refreshTimer = 0;
-  const queueRefresh = ({ showToasts = true } = {}) => {
+  const queueRefresh = ({ showToasts = false } = {}) => {
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(() => {
       void syncNotifications({ showToasts });
@@ -1865,7 +1898,7 @@
   };
 
   window.addEventListener("mss:inventory-updated", () => {
-    queueRefresh({ showToasts: true });
+    queueRefresh({ showToasts: false });
   });
 
   window.addEventListener("mss:notifications-state-updated", (event) => {
@@ -1914,7 +1947,7 @@
 
   window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
-    queueRefresh({ showToasts: true });
+    queueRefresh({ showToasts: false });
   }, NOTIFICATION_SYNC_POLL_INTERVAL_MS);
 
   window.MSSSystemNotifications = {

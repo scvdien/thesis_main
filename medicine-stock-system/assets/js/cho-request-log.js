@@ -26,6 +26,7 @@
     requestSubmitBtn: byId("requestSubmitBtn"),
     requestId: byId("requestId"),
     requestDetailsView: byId("requestDetailsView"),
+    printRequestSlipBtn: byId("printRequestSlipBtn"),
     requestDetailCode: byId("requestDetailCode"),
     requestDetailRequestDate: byId("requestDetailRequestDate"),
     requestDetailExpectedDate: byId("requestDetailExpectedDate"),
@@ -82,7 +83,8 @@
     medicinePickerIndex: -1,
     pendingDeleteGroupId: "",
     medicinePickerFilter: "all",
-    wizardStep: 1
+    wizardStep: 1,
+    currentViewRequestGroup: null
   };
 
   let alertTimer = 0;
@@ -798,6 +800,12 @@
           <i class="bi bi-eye"></i>
           <span>View</span>
         </button>
+      `,
+      `
+        <button type="button" class="request-action-item text-success" data-action="print-slip" data-id="${esc(requestGroup.requestGroupId)}">
+          <i class="bi bi-download"></i>
+          <span>Export Slip</span>
+        </button>
       `
     ];
 
@@ -980,6 +988,7 @@
 
   const renderRequestDetails = (requestGroup) => {
     if (!requestGroup) return;
+    uiState.currentViewRequestGroup = requestGroup;
 
     if (refs.requestDetailCode) refs.requestDetailCode.textContent = requestGroup.requestCode || "-";
     if (refs.requestDetailRequestDate) refs.requestDetailRequestDate.textContent = formatDate(requestGroup.requestDate);
@@ -1335,6 +1344,292 @@
     requestDeleteModal?.hide();
   };
 
+  const PDF_HEADER_LOGOS = [
+    "assets/img/CityHealthOffice_LOGO.png",
+    "assets/img/ligao-city-logo.png"
+  ];
+
+  const loadImageAsDataUrl = (src) => new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve("");
+          return;
+        }
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+        context.drawImage(image, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        resolve("");
+      }
+    };
+    image.onerror = () => resolve("");
+    image.src = src;
+  });
+
+  const generateRequestSlipPdf = async (requestGroup) => {
+    if (!requestGroup) return false;
+    const jsPDFCtor = window.jspdf?.jsPDF;
+    if (!jsPDFCtor) {
+      showNotice("PDF export library is not available. Please check your internet connection or reload the page.", "warning");
+      return false;
+    }
+
+    const doc = new jsPDFCtor({ orientation: "portrait", unit: "pt", format: "a4" });
+    if (typeof doc.autoTable !== "function") {
+      showNotice("PDF table generator is not available. Please reload the page.", "warning");
+      return false;
+    }
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    const centerX = pageWidth / 2;
+
+    const logos = await Promise.all(PDF_HEADER_LOGOS.map((src) => loadImageAsDataUrl(src)));
+    const [leftLogo, rightLogo] = logos;
+
+    if (leftLogo) doc.addImage(leftLogo, "PNG", margin, 24, 46, 46, undefined, "FAST");
+    if (rightLogo) doc.addImage(rightLogo, "PNG", pageWidth - margin - 46, 24, 46, 46, undefined, "FAST");
+
+    let cursorY = 30;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 115, 95);
+    doc.text("Republic of the Philippines", centerX, cursorY, { align: "center" });
+
+    cursorY += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(70, 85, 65);
+    doc.text("Province of Albay • City of Ligao", centerX, cursorY, { align: "center" });
+
+    cursorY += 13;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(27, 67, 50);
+    doc.text("LIGAO CITY COASTAL RURAL HEALTH UNIT", centerX, cursorY, { align: "center" });
+
+    cursorY += 11;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 115, 95);
+    doc.text("Cabarian, Ligao City, Albay", centerX, cursorY, { align: "center" });
+
+    cursorY += 14;
+    doc.setDrawColor(27, 67, 50);
+    doc.setLineWidth(1.2);
+    doc.line(margin, cursorY, pageWidth - margin, cursorY);
+    doc.setDrawColor(185, 205, 180);
+    doc.setLineWidth(0.4);
+    doc.line(margin, cursorY + 2.5, pageWidth - margin, cursorY + 2.5);
+
+    cursorY += 18;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(27, 67, 50);
+    doc.text("OFFICIAL MEDICINE REQUISITION SLIP", centerX, cursorY, { align: "center" });
+
+    cursorY += 16;
+    const boxX = margin;
+    const boxY = cursorY;
+    const boxWidth = pageWidth - (margin * 2);
+    const boxHeight = 58;
+
+    doc.setFillColor(250, 252, 248);
+    doc.setDrawColor(215, 228, 212);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3, 3, "FD");
+
+    const col1X = boxX + 14;
+    const col2X = boxX + (boxWidth / 2) + 12;
+    let metaY = boxY + 16;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(27, 67, 50);
+    doc.text("Requisition No.:", col1X, metaY);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(18, 48, 38);
+    doc.text(String(requestGroup.requestCode || "-"), col1X + 80, metaY);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 67, 50);
+    doc.text("Issuing Office:", col2X, metaY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(30, 45, 30);
+    doc.text(String(requestGroup.source || "City Health Office (CHO)"), col2X + 75, metaY);
+
+    metaY += 15;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 67, 50);
+    doc.text("Date Requested:", col1X, metaY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(30, 45, 30);
+    doc.text(formatDate(requestGroup.requestDate), col1X + 80, metaY);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 67, 50);
+    doc.text("Requested By:", col2X, metaY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(30, 45, 30);
+    doc.text(String(requestGroup.requestedBy || requesterName()), col2X + 75, metaY);
+
+    metaY += 15;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 67, 50);
+    doc.text("Requesting Unit:", col1X, metaY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(30, 45, 30);
+    doc.text("Coastal RHU - Cabarian", col1X + 80, metaY);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 67, 50);
+    doc.text("Target Delivery:", col2X, metaY);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(30, 45, 30);
+    doc.text(formatDate(requestGroup.expectedDate), col2X + 75, metaY);
+
+    cursorY = boxY + boxHeight + 14;
+
+    const formatMedicineDescription = (item) => {
+      const name = String(item.medicineName || "").trim();
+      const str = String(item.strength || "").trim();
+      if (!str) return name || "-";
+      if (name.toLowerCase().includes(str.toLowerCase())) return name;
+      return `${name} (${str})`;
+    };
+
+    const items = Array.isArray(requestGroup.items) ? requestGroup.items : [];
+    const tableRows = items.map((item, idx) => [
+      String(idx + 1),
+      formatMedicineDescription(item),
+      item.genericName || "-",
+      formatNumber(item.quantityRequested || 0),
+      item.unit || "units",
+      item.notes && item.notes.trim() ? item.notes.trim() : ""
+    ]);
+
+    const totalQty = items.reduce((acc, it) => acc + (numeric(it.quantityRequested) || 0), 0);
+    const footRow = [
+      {
+        content: `Total Medicines Requested: ${items.length} item(s)`,
+        colSpan: 3,
+        styles: { fontStyle: "bold", fontSize: 8.5, textColor: [27, 67, 50], fillColor: [244, 248, 243], halign: "left" }
+      },
+      {
+        content: `${formatNumber(totalQty)}`,
+        styles: { fontStyle: "bold", fontSize: 8.5, textColor: [27, 67, 50], fillColor: [244, 248, 243], halign: "center" }
+      },
+      {
+        content: "units total",
+        colSpan: 2,
+        styles: { fontStyle: "bold", fontSize: 8, textColor: [27, 67, 50], fillColor: [244, 248, 243], halign: "left" }
+      }
+    ];
+
+    doc.autoTable({
+      startY: cursorY,
+      head: [["#", "Medicine Description", "Generic Name", "Qty Req.", "Unit", "Remarks"]],
+      body: tableRows.length ? tableRows : [["-", "No medicines recorded", "-", "0", "-", ""]],
+      foot: [footRow],
+      margin: { top: 120, right: margin, bottom: 60, left: margin },
+      styles: {
+        font: "helvetica",
+        fontSize: 8,
+        cellPadding: { top: 5.5, right: 6, bottom: 5.5, left: 6 },
+        lineColor: [215, 225, 210],
+        lineWidth: 0.45,
+        textColor: [25, 45, 25],
+        valign: "middle"
+      },
+      headStyles: {
+        fillColor: [27, 67, 50],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 8.5
+      },
+      footStyles: {
+        fillColor: [244, 248, 243]
+      },
+      alternateRowStyles: {
+        fillColor: [250, 252, 248]
+      },
+      columnStyles: {
+        0: { cellWidth: 26, halign: "center" },
+        1: { cellWidth: 165 },
+        2: { cellWidth: 134 },
+        3: { cellWidth: 60, halign: "center", fontStyle: "bold" },
+        4: { cellWidth: 50, halign: "center" },
+        5: { cellWidth: 80 }
+      }
+    });
+
+    let sigY = (doc.lastAutoTable?.finalY || cursorY) + 28;
+    if (sigY > pageHeight - 120) {
+      doc.addPage();
+      sigY = 60;
+    }
+
+    const blockWidth = 195;
+    const leftBlockX = margin;
+    const rightBlockX = pageWidth - margin - blockWidth;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(85, 100, 80);
+    doc.text("REQUESTED & PREPARED BY:", leftBlockX, sigY);
+
+    const leftLineY = sigY + 34;
+    doc.setDrawColor(120, 135, 115);
+    doc.setLineWidth(0.65);
+    doc.line(leftBlockX, leftLineY, leftBlockX + blockWidth, leftLineY);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(25, 45, 25);
+    doc.text(String(requestGroup.requestedBy || requesterName()).toUpperCase(), leftBlockX + (blockWidth / 2), leftLineY - 4, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.8);
+    doc.setTextColor(95, 110, 90);
+    doc.text("Nurse-in-Charge / Property Custodian", leftBlockX + (blockWidth / 2), leftLineY + 10, { align: "center" });
+    doc.text("Ligao City Coastal RHU", leftBlockX + (blockWidth / 2), leftLineY + 20, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(85, 100, 80);
+    doc.text("APPROVED & ALLOCATED BY:", rightBlockX, sigY);
+
+    const rightLineY = sigY + 34;
+    doc.line(rightBlockX, rightLineY, rightBlockX + blockWidth, rightLineY);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.8);
+    doc.setTextColor(95, 110, 90);
+    doc.text("City Health Officer / Pharmacist", rightBlockX + (blockWidth / 2), rightLineY + 10, { align: "center" });
+    doc.text("City Health Office - Ligao City", rightBlockX + (blockWidth / 2), rightLineY + 20, { align: "center" });
+    doc.text("Date: ________________________", rightBlockX + (blockWidth / 2), rightLineY + 30, { align: "center" });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(112, 124, 106);
+      doc.text("System-generated Requisition Slip • Ligao City Coastal RHU Medicine Inventory", margin, pageHeight - 16);
+      doc.text(`Page ${page} of ${pageCount}`, pageWidth - margin, pageHeight - 16, { align: "right" });
+    }
+
+    const cleanCode = (requestGroup.requestCode || "CHO-REQ").replace(/[^a-zA-Z0-9-_]/g, "_");
+    doc.save(`Requisition_Slip_${cleanCode}.pdf`);
+    return true;
+  };
+
   refs.sidebarToggle?.addEventListener("click", toggleSidebar);
   refs.sidebarBackdrop?.addEventListener("click", closeMobileSidebar);
   refs.logoutLink?.addEventListener("click", (event) => {
@@ -1356,6 +1651,11 @@
 
   refs.confirmDeleteRequestBtn?.addEventListener("click", () => {
     void confirmDeleteRequest();
+  });
+  refs.printRequestSlipBtn?.addEventListener("click", () => {
+    if (uiState.currentViewRequestGroup) {
+      void generateRequestSlipPdf(uiState.currentViewRequestGroup);
+    }
   });
   refs.requestForm?.addEventListener("submit", (event) => {
     void handleRequestSubmit(event);
@@ -1570,6 +1870,11 @@
 
       if (action === "delete") {
         handleDeleteRequest(requestGroupId);
+        return;
+      }
+
+      if (action === "print-slip") {
+        void generateRequestSlipPdf(requestGroup);
         return;
       }
 

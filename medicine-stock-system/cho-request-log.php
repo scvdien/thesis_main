@@ -391,7 +391,10 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
               </div>
             </section>
 
-            <div class="request-detail-footer">
+            <div class="request-detail-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <button type="button" class="btn btn-outline-success btn-modern" id="printRequestSlipBtn">
+                <i class="bi bi-download me-1"></i> Export Slip
+              </button>
               <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
             </div>
           </div>
@@ -433,6 +436,8 @@ $systemNotificationsJsVersion = (string) @filemtime(__DIR__ . '/assets/js/system
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
   <script>
     window.MSS_AUTH_USER = <?= json_encode(mss_auth_user_payload($authUser), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
   </script>
