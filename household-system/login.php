@@ -465,8 +465,8 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
               </div>
             </div>
 
-            <?php if (!$setupRequired): ?>
-              <div class="d-flex justify-content-end mt-1 mb-2">
+            <?php if (!$setupRequired && !$isAndroidApp): ?>
+              <div class="d-flex justify-content-end mt-1 mb-2 captain-recovery-wrap">
                 <button type="button" class="btn btn-link p-0 text-decoration-none" id="toggleRecoveryLink" style="font-size: 13px; color: #0a66d3; font-weight: 500;">
                   <i class="bi bi-key"></i> Forgot Captain Password?
                 </button>
@@ -504,7 +504,7 @@ $isAndroidApp = (isset($_SERVER['HTTP_USER_AGENT']) && stripos((string) $_SERVER
             </div>
           </form>
 
-          <?php if (!$setupRequired): ?>
+          <?php if (!$setupRequired && !$isAndroidApp): ?>
           <form id="recoveryForm" class="login-form d-none" method="post" action="login.php" autocomplete="off" novalidate>
             <input type="hidden" id="recoveryCsrfToken" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" id="recoveryToken" name="recovery_token" value="">

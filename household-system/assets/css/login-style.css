@@ -315,6 +315,15 @@ html.is-cabarian-app .app-version-badge{
   vertical-align: middle;
 }
 
+body.is-cabarian-app #toggleRecoveryLink,
+html.is-cabarian-app #toggleRecoveryLink,
+body.is-cabarian-app .captain-recovery-wrap,
+html.is-cabarian-app .captain-recovery-wrap,
+body.is-cabarian-app #recoveryForm,
+html.is-cabarian-app #recoveryForm{
+  display: none !important;
+}
+
 .reveal{
   opacity:0;
   transform:translateY(14px);
