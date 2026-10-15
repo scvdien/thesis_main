@@ -190,23 +190,6 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             <div class="small text-muted mt-3" id="captainCredentialsNotice">Enter your current credentials to update your account.</div>
 
             <hr class="my-4">
-            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 p-3 bg-light rounded-3 border">
-              <div>
-                <div class="fw-semibold text-dark d-flex align-items-center gap-2 mb-1">
-                  <i class="bi bi-shield-lock-fill text-primary"></i> Master Recovery Key
-                </div>
-                <div class="small text-muted">
-                  Emergency backup key used to recover your account if you forget your password.
-                </div>
-              </div>
-              <div>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="captainGenerateRecoveryKeyBtn">
-                  <i class="bi bi-key-fill me-1"></i> Generate New Key
-                </button>
-              </div>
-            </div>
-
-            <hr class="my-4">
             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 p-3 rounded-3 border" style="background: #fffdf5; border-color: #fef08a !important;">
               <div>
                 <div class="fw-semibold text-dark d-flex align-items-center gap-2 mb-1">
