@@ -843,6 +843,13 @@ h1,h2,h3,h4,h5,h6{
 .settings-panel.is-active{
   display:block;
 }
+body[data-role="captain"] [data-role="admin-only"]{
+  display:none !important;
+}
+body[data-role="admin"] [data-role="captain-only"],
+body[data-role="secretary"] [data-role="captain-only"]{
+  display:none !important;
+}
 .settings-panel-stack{
   flex-direction:column;
   gap:16px;

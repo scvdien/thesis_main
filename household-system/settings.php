@@ -44,6 +44,9 @@ $systemLabel = trim($brandFooterLabel . ' Online Household Information Managemen
 $settingsCsrfToken = auth_csrf_token();
 $requiresCredentialUpdate = !empty($authUser['requires_credential_update']);
 $adminCredentialLock = $authRole === AUTH_ROLE_ADMIN && $requiresCredentialUpdate;
+$isCaptainRole = ($authRole === AUTH_ROLE_CAPTAIN);
+$isAdminRole = ($authRole === AUTH_ROLE_ADMIN || $authRole === AUTH_ROLE_SECRETARY);
+$dashboardLabel = $isAdminRole ? 'Secretary Dashboard' : 'Barangay Captain Dashboard';
 $siteStyleVersion = (string) (@filemtime(__DIR__ . '/assets/css/site-style.css') ?: time());
 $settingsScriptVersion = (string) (@filemtime(__DIR__ . '/assets/js/settings-scripts.js') ?: time());
 $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-toggle.js') ?: time());
@@ -52,7 +55,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Settings | Barangay Captain Dashboard</title>
+<title>Settings | <?= htmlspecialchars($dashboardLabel, ENT_QUOTES, 'UTF-8') ?></title>
 <link rel="icon" type="image/png" href="assets/img/barangay-cabarian-logo.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="<?= htmlspecialchars($settingsCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
@@ -115,8 +118,8 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
         <aside class="settings-nav">
           <div class="settings-nav-group">
             <div class="settings-nav-title">Account</div>
-            <a class="active" href="#change-password" data-role="captain-only"><i class="bi bi-shield-lock"></i>Captain Credentials</a>
-            <a class="active" href="#admin-credentials" data-role="admin-only"><i class="bi bi-shield-lock"></i>Secretary Credentials</a>
+            <a class="<?= $isCaptainRole ? 'active' : '' ?>" href="#change-password" data-role="captain-only"><i class="bi bi-shield-lock"></i>Captain Credentials</a>
+            <a class="<?= $isAdminRole ? 'active' : '' ?>" href="#admin-credentials" data-role="admin-only"><i class="bi bi-shield-lock"></i>Secretary Credentials</a>
           </div>
           <div class="settings-nav-group">
             <div class="settings-nav-title">Administration</div>
@@ -146,7 +149,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
         </aside>
 
         <div class="settings-content">
-          <section class="settings-section settings-panel is-active" style="--delay:0s" id="change-password" data-role="captain-only">
+          <section class="settings-section settings-panel <?= $isCaptainRole ? 'is-active' : '' ?>" style="--delay:0s" id="change-password" data-role="captain-only">
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Captain Credentials</h5>
@@ -208,7 +211,7 @@ $passwordToggleVersion = (string) (@filemtime(__DIR__ . '/assets/js/password-tog
             </div>
           </section>
 
-          <section class="settings-section settings-panel is-active" style="--delay:0.02s" id="admin-credentials" data-role="admin-only">
+          <section class="settings-section settings-panel <?= $isAdminRole ? 'is-active' : '' ?>" style="--delay:0.02s" id="admin-credentials" data-role="admin-only">
             <div class="settings-section-head">
               <div>
                 <h5 class="mb-1">Secretary Credentials</h5>
